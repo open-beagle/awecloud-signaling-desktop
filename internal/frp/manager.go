@@ -15,8 +15,8 @@ import (
 
 // DesktopFRP 是 Desktop-FRP 线程，负责 FRP 客户端管理
 type DesktopFRP struct {
-	serverAddr string // FRP Server 地址，例如 "localhost:7000"
-	frpToken   string // FRP 认证 Token
+	serverAddr string // Server 地址，例如 "localhost:7000"
+	token      string // 认证 Token
 
 	// 每个 Visitor 对应一个独立的 FRP Service
 	services map[string]*client.Service
@@ -34,11 +34,11 @@ type DesktopFRP struct {
 }
 
 // NewDesktopFRP 创建 Desktop-FRP 线程
-func NewDesktopFRP(serverAddr string, frpToken string, commandChan chan *models.VisitorCommand, statusChan chan *models.VisitorStatus) *DesktopFRP {
+func NewDesktopFRP(serverAddr string, token string, commandChan chan *models.VisitorCommand, statusChan chan *models.VisitorStatus) *DesktopFRP {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &DesktopFRP{
 		serverAddr:  serverAddr,
-		frpToken:    frpToken,
+		token:       token,
 		services:    make(map[string]*client.Service),
 		commandChan: commandChan,
 		statusChan:  statusChan,
@@ -49,7 +49,7 @@ func NewDesktopFRP(serverAddr string, frpToken string, commandChan chan *models.
 
 // Start 启动 Desktop-FRP 线程
 func (f *DesktopFRP) Start() error {
-	log.Printf("[Desktop-FRP] Started, server: %s:7000, token: %s", f.serverAddr, f.frpToken[:10]+"...")
+	log.Printf("[Desktop-FRP] Started, server: %s:7000, token: %s", f.serverAddr, f.token[:10]+"...")
 
 	// 启动命令处理 goroutine
 	go f.commandHandler()
@@ -128,7 +128,7 @@ func (f *DesktopFRP) addVisitor(cmd *models.VisitorCommand) error {
 		ServerPort: 7000,
 		Auth: v1.AuthClientConfig{
 			Method: "token",
-			Token:  f.frpToken,
+			Token:  f.token,
 		},
 		Transport: v1.ClientTransportConfig{
 			Protocol: "websocket",
@@ -162,7 +162,7 @@ func (f *DesktopFRP) addVisitor(cmd *models.VisitorCommand) error {
 	log.Printf("  - Local Port: %d", cmd.LocalPort)
 	log.Printf("  - Server Name: %s", cmd.InstanceName)
 	log.Printf("  - Secret Key: %s", cmd.SecretKey[:10]+"...")
-	log.Printf("  - FRP Token: %s", f.frpToken[:10]+"...")
+	log.Printf("  - Token: %s", f.token[:10]+"...")
 
 	// 发送状态更新
 	f.sendStatus(&models.VisitorStatus{

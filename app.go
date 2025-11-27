@@ -53,15 +53,31 @@ func (a *App) startup(ctx context.Context) {
 	if err != nil {
 		log.Printf("Failed to load config: %v, using defaults", err)
 		cfg = &config.Config{
-			ServerAddress:   "localhost:9090",
+			ServerAddress:   getDefaultServerAddress(),
 			RememberMe:      true,
 			PortPreferences: make(map[int64]int),
 		}
 	}
+
+	// 如果配置中没有 Server 地址，使用默认值
+	if cfg.ServerAddress == "" {
+		cfg.ServerAddress = getDefaultServerAddress()
+	}
+
 	a.config = cfg
 
 	log.Printf("Desktop app started")
 	log.Printf("Server address: %s", a.config.ServerAddress)
+}
+
+// getDefaultServerAddress 获取默认的 Server 地址
+// 优先级：BUILD_URL > 硬编码默认值
+func getDefaultServerAddress() string {
+	if BUILD_URL != "" {
+		log.Printf("使用编译时注入的 BUILD_URL: %s", BUILD_URL)
+		return BUILD_URL
+	}
+	return "localhost:8080"
 }
 
 // shutdown is called when the app is closing
@@ -125,21 +141,36 @@ func (a *App) Login(serverAddr, clientID, clientSecret string, rememberMe bool) 
 	log.Printf("Authentication successful: %s", authResult.Message)
 
 	// 创建 Desktop-FRP 线程
-	// 使用从Server获取的FRP配置
-	frpServer := authResult.FRPServer
-	if frpServer == "" || frpServer == "0.0.0.0" {
-		// 如果Server返回0.0.0.0，使用Server的主机名
-		frpServer = extractHost(serverAddr)
+	// 使用从Server获取的隧道配置
+	var tunnelAddr string
+
+	if authResult.TunnelServer != "" {
+		// Server 配置了公网 URL，直接使用
+		tunnelAddr = authResult.TunnelServer
+		log.Printf("使用 Server 提供的隧道地址: %s", tunnelAddr)
+	} else {
+		// Server 没有配置公网 URL，使用 Server 地址 + 端口
+		tunnelHost := extractHost(serverAddr)
+		tunnelPort := authResult.TunnelPort
+		if tunnelPort == 0 {
+			tunnelPort = 7000 // 默认端口
+		}
+		tunnelAddr = fmt.Sprintf("%s:%d", tunnelHost, tunnelPort)
+		log.Printf("使用推导的隧道地址: %s (从 Server 地址 %s)", tunnelAddr, serverAddr)
 	}
 
-	frpToken := authResult.FRPToken
-	if frpToken == "" {
-		log.Printf("Warning: FRP token not provided by server, using default")
-		frpToken = "awecloud-frp-secret-token-2024"
+	token := authResult.TunnelToken
+	if token == "" {
+		log.Printf("Warning: 隧道 token 未提供，使用默认值")
+		token = "awecloud-frp-secret-token-2024"
 	}
 
-	log.Printf("FRP config: server=%s, port=%d, token=%s...", frpServer, authResult.FRPPort, frpToken[:10])
-	a.desktopFRP = frp.NewDesktopFRP(frpServer, frpToken, a.commandChan, a.statusChan)
+	log.Printf("隧道配置: addr=%s, token=%s...", tunnelAddr, token[:10])
+
+	// 从 tunnelAddr 中提取主机和端口（用于 FRP 客户端）
+	tunnelHost := extractHost(tunnelAddr)
+
+	a.desktopFRP = frp.NewDesktopFRP(tunnelHost, token, a.commandChan, a.statusChan)
 	if err := a.desktopFRP.Start(); err != nil {
 		a.desktopClient.Stop()
 		a.desktopClient = nil

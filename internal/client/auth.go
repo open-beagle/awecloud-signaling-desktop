@@ -77,9 +77,9 @@ func (c *DesktopClient) AuthWithSecret(clientID, clientSecret string, rememberMe
 		Success:      true,
 		SessionToken: resp.SessionToken,
 		ExpiresAt:    resp.ExpiresAt,
-		FRPToken:     resp.FrpToken,
-		FRPServer:    resp.FrpServer,
-		FRPPort:      int(resp.FrpPort),
+		TunnelToken:  resp.Token,
+		TunnelServer: resp.Server,
+		TunnelPort:   int(resp.Port),
 		Message:      "Login successful",
 	}, nil
 }
@@ -149,8 +149,8 @@ type AuthResult struct {
 	Success      bool
 	SessionToken string
 	ExpiresAt    int64
-	FRPToken     string
-	FRPServer    string
-	FRPPort      int
+	TunnelToken  string
+	TunnelServer string
+	TunnelPort   int
 	Message      string
 }

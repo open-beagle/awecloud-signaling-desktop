@@ -17,6 +17,7 @@ var (
 	version   = "dev"
 	gitCommit = "unknown"
 	buildDate = "unknown"
+	BUILD_URL = "" // 编译时注入的默认 Server 地址
 )
 
 func main() {
