@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"awecloud-desktop/internal/device"
 	"awecloud-desktop/internal/models"
 	pb "awecloud-desktop/pkg/proto"
 
@@ -21,6 +22,9 @@ type DesktopClient struct {
 	// gRPC 连接
 	grpcConn   *grpc.ClientConn
 	grpcClient pb.ClientServiceClient
+
+	// 审计日志客户端
+	auditClient *AuditClient
 
 	// 认证信息
 	sessionToken string
@@ -117,8 +121,11 @@ func (c *DesktopClient) GetServices() ([]*models.ServiceInfo, error) {
 		SessionToken: c.sessionToken,
 	})
 	if err != nil {
+		log.Printf("[Desktop-Web] GetServices error: %v", err)
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
+
+	log.Printf("[Desktop-Web] GetServices response: success=%v, services_count=%d", resp.Success, len(resp.Services))
 
 	// 更新服务列表
 	c.servicesMutex.Lock()
@@ -198,12 +205,18 @@ func (c *DesktopClient) ConnectService(instanceID int64, localPort int) error {
 		// 等待响应
 		select {
 		case err := <-cmd.Response:
+			// 记录审计日志
+			c.recordAuditLog(instanceID, "connect", localPort, err == nil, err)
 			return err
 		case <-time.After(30 * time.Second):
-			return fmt.Errorf("connect timeout")
+			err := fmt.Errorf("connect timeout")
+			c.recordAuditLog(instanceID, "connect", localPort, false, err)
+			return err
 		}
 	case <-time.After(5 * time.Second):
-		return fmt.Errorf("command channel full")
+		err := fmt.Errorf("command channel full")
+		c.recordAuditLog(instanceID, "connect", localPort, false, err)
+		return err
 	}
 }
 
@@ -232,9 +245,13 @@ func (c *DesktopClient) DisconnectService(instanceID int64) error {
 		// 等待响应
 		select {
 		case err := <-cmd.Response:
+			// 记录审计日志
+			c.recordAuditLog(instanceID, "disconnect", 0, err == nil, err)
 			return err
 		case <-time.After(10 * time.Second):
-			return fmt.Errorf("disconnect timeout")
+			err := fmt.Errorf("disconnect timeout")
+			c.recordAuditLog(instanceID, "disconnect", 0, false, err)
+			return err
 		}
 	case <-time.After(5 * time.Second):
 		return fmt.Errorf("command channel full")
@@ -262,4 +279,100 @@ func (c *DesktopClient) GetSessionToken() string {
 // IsAuthenticated 检查是否已认证
 func (c *DesktopClient) IsAuthenticated() bool {
 	return c.sessionToken != ""
+}
+
+// recordAuditLog 记录审计日志（异步，不阻塞主流程）
+func (c *DesktopClient) recordAuditLog(instanceID int64, action string, localPort int, success bool, err error) {
+	// 异步记录，避免阻塞
+	go func() {
+		if c.auditClient == nil {
+			log.Printf("[Audit] Audit client not initialized, skipping log")
+			return
+		}
+
+		// 获取设备指纹和信息
+		fingerprint, fpErr := device.GetFingerprint()
+		if fpErr != nil {
+			log.Printf("[Audit] Failed to get device fingerprint: %v", fpErr)
+			return
+		}
+
+		// 构建错误消息
+		errorMessage := ""
+		if err != nil {
+			errorMessage = err.Error()
+		}
+
+		// 构建设备信息
+		deviceInfo := DeviceInfo{
+			OS:        fingerprint.OS,
+			OSVersion: device.GetOSInfo(),
+			Arch:      fingerprint.Arch,
+			CPUModel:  "",
+			MachineID: fingerprint.MachineID,
+			Hostname:  fingerprint.Hostname,
+		}
+
+		// 记录审计日志
+		req := &RecordConnectionRequest{
+			STCPInstanceID:    instanceID,
+			Action:            action,
+			LocalPort:         localPort,
+			DeviceFingerprint: fingerprint.Hash,
+			DeviceInfo:        deviceInfo,
+			Success:           success,
+			ErrorMessage:      errorMessage,
+			ServerAddress:     c.serverAddr, // Desktop连接的Server地址
+		}
+
+		if err := c.auditClient.RecordConnection(req); err != nil {
+			log.Printf("[Audit] Failed to record audit log: %v", err)
+		} else {
+			log.Printf("[Audit] Recorded %s action for instance %d (success=%v)", action, instanceID, success)
+		}
+	}()
+}
+
+// DeviceInfoResult 设备信息结果（用于返回给App层）
+type DeviceInfoResult struct {
+	DeviceToken string
+	DeviceName  string
+	OS          string
+	Arch        string
+	Hostname    string
+	Status      string
+	LastUsedAt  string
+	CreatedAt   string
+	IsCurrent   bool
+}
+
+// GetDevices 获取已登录的设备列表
+func (c *DesktopClient) GetDevices() ([]*DeviceInfoResult, error) {
+	if c.sessionToken == "" {
+		return nil, fmt.Errorf("not authenticated")
+	}
+
+	// 使用HTTP客户端调用Server API
+	// TODO: 实现HTTP API调用
+	// 暂时返回当前设备信息
+	fingerprint, err := device.GetFingerprint()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get device fingerprint: %w", err)
+	}
+
+	devices := []*DeviceInfoResult{
+		{
+			DeviceToken: c.sessionToken,
+			DeviceName:  "当前设备",
+			OS:          fingerprint.OS,
+			Arch:        fingerprint.Arch,
+			Hostname:    fingerprint.Hostname,
+			Status:      "online",
+			LastUsedAt:  time.Now().Format(time.RFC3339),
+			CreatedAt:   time.Now().Format(time.RFC3339),
+			IsCurrent:   true,
+		},
+	}
+
+	return devices, nil
 }

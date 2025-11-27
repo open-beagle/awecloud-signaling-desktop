@@ -5,6 +5,7 @@ go 1.24.0
 toolchain go1.24.10
 
 require (
+	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/fatedier/frp v0.65.0
 	github.com/wailsapp/wails/v2 v2.11.0
 	google.golang.org/grpc v1.77.0

@@ -4,6 +4,7 @@ export namespace config {
 	    server_address: string;
 	    client_id: string;
 	    client_secret: string;
+	    device_token: string;
 	    remember_me: boolean;
 	    token_expires_at: number;
 	    port_preferences: Record<number, number>;
@@ -17,6 +18,7 @@ export namespace config {
 	        this.server_address = source["server_address"];
 	        this.client_id = source["client_id"];
 	        this.client_secret = source["client_secret"];
+	        this.device_token = source["device_token"];
 	        this.remember_me = source["remember_me"];
 	        this.token_expires_at = source["token_expires_at"];
 	        this.port_preferences = source["port_preferences"];
@@ -27,11 +29,41 @@ export namespace config {
 
 export namespace main {
 	
+	export class DeviceInfo {
+	    device_token: string;
+	    device_name: string;
+	    os: string;
+	    arch: string;
+	    hostname: string;
+	    status: string;
+	    last_used_at: string;
+	    created_at: string;
+	    is_current: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new DeviceInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.device_token = source["device_token"];
+	        this.device_name = source["device_name"];
+	        this.os = source["os"];
+	        this.arch = source["arch"];
+	        this.hostname = source["hostname"];
+	        this.status = source["status"];
+	        this.last_used_at = source["last_used_at"];
+	        this.created_at = source["created_at"];
+	        this.is_current = source["is_current"];
+	    }
+	}
 	export class SavedCredentials {
 	    server_address: string;
 	    client_id: string;
 	    client_secret: string;
 	    remember_me: boolean;
+	    has_token: boolean;
+	    is_online: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new SavedCredentials(source);
@@ -43,6 +75,8 @@ export namespace main {
 	        this.client_id = source["client_id"];
 	        this.client_secret = source["client_secret"];
 	        this.remember_me = source["remember_me"];
+	        this.has_token = source["has_token"];
+	        this.is_online = source["is_online"];
 	    }
 	}
 	export class VersionInfo {

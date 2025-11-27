@@ -13,6 +13,9 @@
         <el-button :icon="Refresh" @click="handleRefresh" :loading="servicesStore.loading">
           刷新
         </el-button>
+        <el-button @click="handleViewDevices">
+          设备管理
+        </el-button>
         <el-button @click="handleViewLogs">
           查看日志
         </el-button>
@@ -120,6 +123,10 @@ const handleDisconnect = async (instanceId: number) => {
   } catch (error: any) {
     ElMessage.error(error.message || '断开连接失败')
   }
+}
+
+const handleViewDevices = () => {
+  router.push('/devices')
 }
 
 const handleViewLogs = () => {

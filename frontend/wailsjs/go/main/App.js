@@ -6,8 +6,16 @@ export function CheckSavedCredentials() {
   return window['go']['main']['App']['CheckSavedCredentials']();
 }
 
+export function ClearCredentials() {
+  return window['go']['main']['App']['ClearCredentials']();
+}
+
 export function ConnectService(arg1, arg2) {
   return window['go']['main']['App']['ConnectService'](arg1, arg2);
+}
+
+export function DeleteDevice(arg1) {
+  return window['go']['main']['App']['DeleteDevice'](arg1);
 }
 
 export function DisconnectService(arg1) {
@@ -16,6 +24,10 @@ export function DisconnectService(arg1) {
 
 export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
+}
+
+export function GetDevices() {
+  return window['go']['main']['App']['GetDevices']();
 }
 
 export function GetLogs() {
@@ -40,4 +52,8 @@ export function Login(arg1, arg2, arg3, arg4) {
 
 export function Logout() {
   return window['go']['main']['App']['Logout']();
+}
+
+export function OfflineDevice(arg1) {
+  return window['go']['main']['App']['OfflineDevice'](arg1);
 }
