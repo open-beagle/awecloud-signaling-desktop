@@ -16,12 +16,10 @@ import (
 // DesktopFRP 是 Desktop-FRP 线程，负责 FRP 客户端管理
 type DesktopFRP struct {
 	serverAddr string // FRP Server 地址，例如 "localhost:7000"
+	frpToken   string // FRP 认证 Token
 
-	// FRP 客户端
-	service *client.Service
-
-	// Visitor 配置
-	visitors map[string]*v1.VisitorConfigurer
+	// 每个 Visitor 对应一个独立的 FRP Service
+	services map[string]*client.Service
 	mutex    sync.RWMutex
 
 	// 命令通道（接收自 Desktop-Web）
@@ -36,11 +34,12 @@ type DesktopFRP struct {
 }
 
 // NewDesktopFRP 创建 Desktop-FRP 线程
-func NewDesktopFRP(serverAddr string, commandChan chan *models.VisitorCommand, statusChan chan *models.VisitorStatus) *DesktopFRP {
+func NewDesktopFRP(serverAddr string, frpToken string, commandChan chan *models.VisitorCommand, statusChan chan *models.VisitorStatus) *DesktopFRP {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &DesktopFRP{
 		serverAddr:  serverAddr,
-		visitors:    make(map[string]*v1.VisitorConfigurer),
+		frpToken:    frpToken,
+		services:    make(map[string]*client.Service),
 		commandChan: commandChan,
 		statusChan:  statusChan,
 		ctx:         ctx,
@@ -50,36 +49,7 @@ func NewDesktopFRP(serverAddr string, commandChan chan *models.VisitorCommand, s
 
 // Start 启动 Desktop-FRP 线程
 func (f *DesktopFRP) Start() error {
-	// 创建基础 FRP 配置
-	cfg := &v1.ClientCommonConfig{
-		ServerAddr: f.serverAddr,
-		ServerPort: 7000,
-		Transport: v1.ClientTransportConfig{
-			Protocol: "websocket",
-		},
-	}
-
-	// 创建 FRP Service
-	svr, err := client.NewService(client.ServiceOptions{
-		Common:         cfg,
-		ProxyCfgs:      nil, // Desktop 不需要 Proxy，只需要 Visitor
-		VisitorCfgs:    nil, // 初始为空，动态添加
-		ConfigFilePath: "",
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create FRP service: %w", err)
-	}
-
-	f.service = svr
-
-	// 启动 FRP Service
-	go func() {
-		if err := f.service.Run(f.ctx); err != nil {
-			log.Printf("[Desktop-FRP] FRP service error: %v", err)
-		}
-	}()
-
-	log.Printf("[Desktop-FRP] Started, connecting to: %s:7000", f.serverAddr)
+	log.Printf("[Desktop-FRP] Started, server: %s:7000, token: %s", f.serverAddr, f.frpToken[:10]+"...")
 
 	// 启动命令处理 goroutine
 	go f.commandHandler()
@@ -90,9 +60,16 @@ func (f *DesktopFRP) Start() error {
 // Stop 停止 Desktop-FRP 线程
 func (f *DesktopFRP) Stop() {
 	f.cancel()
-	if f.service != nil {
-		f.service.Close()
+
+	// 关闭所有 FRP Service
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+
+	for name, service := range f.services {
+		log.Printf("[Desktop-FRP] Closing service: %s", name)
+		service.Close()
 	}
+	f.services = make(map[string]*client.Service)
 }
 
 // commandHandler 处理来自 Desktop-Web 的命令
@@ -129,7 +106,7 @@ func (f *DesktopFRP) addVisitor(cmd *models.VisitorCommand) error {
 	visitorName := cmd.InstanceName + "-visitor"
 
 	// 检查是否已存在
-	if _, exists := f.visitors[visitorName]; exists {
+	if _, exists := f.services[visitorName]; exists {
 		return fmt.Errorf("visitor already exists: %s", visitorName)
 	}
 
@@ -145,11 +122,47 @@ func (f *DesktopFRP) addVisitor(cmd *models.VisitorCommand) error {
 		},
 	}
 
-	// 保存配置
-	var configurer v1.VisitorConfigurer = visitorCfg
-	f.visitors[visitorName] = &configurer
+	// 创建基础 FRP 配置
+	cfg := &v1.ClientCommonConfig{
+		ServerAddr: f.serverAddr,
+		ServerPort: 7000,
+		Auth: v1.AuthClientConfig{
+			Method: "token",
+			Token:  f.frpToken,
+		},
+		Transport: v1.ClientTransportConfig{
+			Protocol: "websocket",
+		},
+	}
 
-	log.Printf("[Desktop-FRP] Added visitor: %s (local port: %d)", visitorName, cmd.LocalPort)
+	// 创建 FRP Service（每个 Visitor 一个独立的 Service）
+	var visitorConfigurer v1.VisitorConfigurer = visitorCfg
+	svr, err := client.NewService(client.ServiceOptions{
+		Common:         cfg,
+		ProxyCfgs:      nil,
+		VisitorCfgs:    []v1.VisitorConfigurer{visitorConfigurer},
+		ConfigFilePath: "",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create FRP service: %w", err)
+	}
+
+	// 启动 FRP Service
+	go func() {
+		if err := svr.Run(f.ctx); err != nil {
+			log.Printf("[Desktop-FRP] FRP service error for %s: %v", visitorName, err)
+		}
+	}()
+
+	// 保存 Service
+	f.services[visitorName] = svr
+
+	log.Printf("[Desktop-FRP] Added visitor: %s", visitorName)
+	log.Printf("  - Server: %s:7000", f.serverAddr)
+	log.Printf("  - Local Port: %d", cmd.LocalPort)
+	log.Printf("  - Server Name: %s", cmd.InstanceName)
+	log.Printf("  - Secret Key: %s", cmd.SecretKey[:10]+"...")
+	log.Printf("  - FRP Token: %s", f.frpToken[:10]+"...")
 
 	// 发送状态更新
 	f.sendStatus(&models.VisitorStatus{
@@ -158,13 +171,6 @@ func (f *DesktopFRP) addVisitor(cmd *models.VisitorCommand) error {
 		Status:       "connected",
 		LocalPort:    cmd.LocalPort,
 	})
-
-	// TODO: 实际添加到 FRP Service（需要 FRP 支持动态添加）
-	// 目前 FRP 不支持运行时动态添加 Visitor，需要重启 Service
-	// 这是一个已知限制，后续版本可以考虑：
-	// 1. 使用 FRP 的 API（如果有）
-	// 2. 重启 FRP Service
-	// 3. 为每个 Visitor 创建独立的 FRP Client
 
 	return nil
 }
@@ -177,12 +183,16 @@ func (f *DesktopFRP) removeVisitor(cmd *models.VisitorCommand) error {
 	visitorName := cmd.InstanceName + "-visitor"
 
 	// 检查是否存在
-	if _, exists := f.visitors[visitorName]; !exists {
+	service, exists := f.services[visitorName]
+	if !exists {
 		return fmt.Errorf("visitor not found: %s", visitorName)
 	}
 
-	// 删除配置
-	delete(f.visitors, visitorName)
+	// 关闭 FRP Service
+	service.Close()
+
+	// 删除 Service
+	delete(f.services, visitorName)
 
 	log.Printf("[Desktop-FRP] Removed visitor: %s", visitorName)
 
@@ -192,8 +202,6 @@ func (f *DesktopFRP) removeVisitor(cmd *models.VisitorCommand) error {
 		InstanceName: cmd.InstanceName,
 		Status:       "disconnected",
 	})
-
-	// TODO: 实际从 FRP Service 移除（需要 FRP 支持动态移除）
 
 	return nil
 }
@@ -212,8 +220,8 @@ func (f *DesktopFRP) GetVisitors() []string {
 	f.mutex.RLock()
 	defer f.mutex.RUnlock()
 
-	visitors := make([]string, 0, len(f.visitors))
-	for name := range f.visitors {
+	visitors := make([]string, 0, len(f.services))
+	for name := range f.services {
 		visitors = append(visitors, name)
 	}
 	return visitors

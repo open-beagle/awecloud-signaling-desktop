@@ -2,6 +2,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import Login from '../views/Login.vue'
 import Services from '../views/Services.vue'
+import Logs from '../views/Logs.vue'
 
 const routes = [
   {
@@ -18,6 +19,11 @@ const routes = [
     name: 'Services',
     component: Services,
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/logs',
+    name: 'Logs',
+    component: Logs
   }
 ]
 

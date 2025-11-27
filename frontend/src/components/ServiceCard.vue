@@ -2,7 +2,17 @@
   <el-card class="service-card" :class="{ 'connected': isConnected }">
     <template #header>
       <div class="card-header">
-        <span class="service-name">{{ service.instance_name }}</span>
+        <div class="header-left">
+          <span class="service-name">{{ service.instance_name }}</span>
+          <el-tag
+            v-if="service.access_type"
+            :type="getAccessTypeColor(service.access_type)"
+            size="small"
+            style="margin-left: 8px"
+          >
+            {{ getAccessTypeLabel(service.access_type) }}
+          </el-tag>
+        </div>
         <StatusBadge :status="connection.status" />
       </div>
     </template>
@@ -13,6 +23,14 @@
         <span class="value">{{ service.agent_name }}</span>
       </div>
       
+      <div class="info-item">
+        <span class="label">状态:</span>
+        <span class="value">
+          <el-tag v-if="service.status === 'online'" type="success" size="small">在线</el-tag>
+          <el-tag v-else type="info" size="small">离线</el-tag>
+        </span>
+      </div>
+
       <div class="info-item">
         <span class="label">远程端口:</span>
         <span class="value">{{ service.service_port }}</span>
@@ -46,9 +64,9 @@
           <el-button
             type="primary"
             @click="handleConnect"
-            :disabled="!localPort || localPort < 1 || localPort > 65535"
+            :disabled="!localPort || localPort < 1 || localPort > 65535 || service.status !== 'online'"
           >
-            连接
+            {{ service.status === 'online' ? '连接' : '服务离线' }}
           </el-button>
         </template>
 
@@ -89,9 +107,28 @@ const emit = defineEmits<{
   disconnect: [instanceId: number]
 }>()
 
-const localPort = ref(props.service.service_port)
+// 使用偏好端口，如果没有则使用服务端口
+const localPort = ref(props.service.preferred_port || props.service.service_port)
 
 const isConnected = computed(() => props.connection.status === 'connected')
+
+const getAccessTypeLabel = (type: string) => {
+  const labels: Record<string, string> = {
+    'public': 'Public',
+    'private': 'Private',
+    'group': 'Group'
+  }
+  return labels[type] || 'Public'
+}
+
+const getAccessTypeColor = (type: string) => {
+  const colors: Record<string, any> = {
+    'public': 'success',
+    'private': 'warning',
+    'group': 'info'
+  }
+  return colors[type] || 'success'
+}
 
 const handleConnect = () => {
   if (localPort.value && localPort.value > 0 && localPort.value <= 65535) {
@@ -121,6 +158,12 @@ const handleDisconnect = () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  flex: 1;
 }
 
 .service-name {

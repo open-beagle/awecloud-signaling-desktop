@@ -12,13 +12,20 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// 版本信息（通过 ldflags 注入）
+var (
+	version   = "dev"
+	gitCommit = "unknown"
+	buildDate = "unknown"
+)
+
 func main() {
 	// 创建应用实例
 	app := NewApp()
 
 	// 创建 Wails 应用
 	err := wails.Run(&options.App{
-		Title:  "AWECloud Desktop",
+		Title:  "awecloud-signaling",
 		Width:  1024,
 		Height: 768,
 		AssetServer: &assetserver.Options{

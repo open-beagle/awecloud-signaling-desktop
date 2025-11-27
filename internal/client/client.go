@@ -134,6 +134,8 @@ func (c *DesktopClient) GetServices() ([]*models.ServiceInfo, error) {
 			AgentName:    svc.AgentName,
 			Description:  svc.Description,
 			ServicePort:  int(svc.LocalPort),
+			AccessType:   svc.AccessType,
+			Status:       svc.Status,
 			// SecretKey 需要通过 ConnectService 获取
 		}
 		c.services[service.InstanceID] = service

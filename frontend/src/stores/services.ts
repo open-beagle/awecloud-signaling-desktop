@@ -6,7 +6,10 @@ export interface ServiceInfo {
   instance_name: string
   agent_name: string
   description: string
-  service_port: number
+  service_port: number      // 远程服务端口
+  preferred_port?: number   // 用户偏好的本地端口
+  access_type?: string      // 'public', 'private', 'group'
+  status?: string           // 'online', 'offline'
 }
 
 export interface ConnectionStatus {

@@ -8,9 +8,12 @@ import (
 
 // Config 是 Desktop 应用的配置
 type Config struct {
-	ServerAddress string `json:"server_address"` // Server gRPC 地址，例如 "localhost:8081"
-	ClientID      string `json:"client_id"`      // Client ID（用户名/邮箱）
-	ClientSecret  string `json:"client_secret"`  // Client Secret（加密存储）
+	ServerAddress   string        `json:"server_address"`   // Server gRPC 地址，例如 "localhost:8081"
+	ClientID        string        `json:"client_id"`        // Client ID（用户名/邮箱）
+	ClientSecret    string        `json:"client_secret"`    // Client Secret（加密存储）
+	RememberMe      bool          `json:"remember_me"`      // 是否记住登录
+	TokenExpiresAt  int64         `json:"token_expires_at"` // Token 过期时间（Unix 时间戳）
+	PortPreferences map[int64]int `json:"port_preferences"` // 服务 ID -> 本地端口映射
 }
 
 // GetConfigPath 返回配置文件的路径
@@ -22,12 +25,12 @@ func GetConfigPath() (string, error) {
 	}
 
 	// 创建应用配置目录
-	appConfigDir := filepath.Join(configDir, "awecloud-desktop")
+	appConfigDir := filepath.Join(configDir, "awecloud-signaling")
 	if err := os.MkdirAll(appConfigDir, 0755); err != nil {
 		return "", err
 	}
 
-	return filepath.Join(appConfigDir, "config.json"), nil
+	return filepath.Join(appConfigDir, "desktop.json"), nil
 }
 
 // Load 从文件加载配置
@@ -40,7 +43,9 @@ func Load() (*Config, error) {
 	// 如果文件不存在，返回默认配置
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		return &Config{
-			ServerAddress: "localhost:8080",
+			ServerAddress:   "localhost:9090",
+			RememberMe:      true,
+			PortPreferences: make(map[int64]int),
 		}, nil
 	}
 
@@ -53,6 +58,11 @@ func Load() (*Config, error) {
 	var config Config
 	if err := json.Unmarshal(data, &config); err != nil {
 		return nil, err
+	}
+
+	// 初始化 map（如果为 nil）
+	if config.PortPreferences == nil {
+		config.PortPreferences = make(map[int64]int)
 	}
 
 	return &config, nil
