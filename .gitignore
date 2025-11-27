@@ -1,0 +1,50 @@
+# Build outputs
+build/bin/
+build/tmp/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.vscode/
+frontend/package-lock.json.bak
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Config
+config/config.json
+*.local.json
+
+# Logs
+*.log
+logs/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Wails
+.wails/
+wails_build.log
+
+# Temp files
+*.tmp
+*.temp
+.cache/

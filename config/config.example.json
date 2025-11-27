@@ -1,0 +1,5 @@
+{
+  "server_address": "localhost:8081",
+  "client_id": "user@example.com",
+  "client_secret": "your-secret-here"
+}
