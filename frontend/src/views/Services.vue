@@ -1,57 +1,60 @@
 <template>
-  <div class="services-container">
-    <!-- 顶部栏 -->
-    <div class="header">
-      <div class="header-left">
-        <img src="../assets/logo.png" alt="Logo" class="logo" />
-        <h2>我的服务</h2>
-        <el-tag type="success" v-if="authStore.isAuthenticated">
-          {{ authStore.clientId }}
-        </el-tag>
+  <Layout>
+    <div class="services-page">
+      <!-- 页面头部 -->
+      <div class="page-header">
+        <div class="header-left">
+          <h2>我的服务</h2>
+          <el-tag type="success" v-if="authStore.isAuthenticated">
+            {{ authStore.clientId }}
+          </el-tag>
+          <el-tag v-if="!servicesStore.loading">
+            共 {{ servicesStore.services.length }} 个服务
+          </el-tag>
+        </div>
+        <div class="header-right">
+          <el-button 
+            :icon="Refresh" 
+            @click="handleRefresh" 
+            :loading="servicesStore.loading"
+          >
+            刷新
+          </el-button>
+        </div>
       </div>
-      <div class="header-right">
-        <el-button :icon="Refresh" @click="handleRefresh" :loading="servicesStore.loading">
-          刷新
-        </el-button>
-        <el-button @click="handleViewDevices">
-          设备管理
-        </el-button>
-        <el-button @click="handleViewLogs">
-          查看日志
-        </el-button>
-        <el-button @click="handleLogout">退出登录</el-button>
-      </div>
-    </div>
 
-    <!-- 服务列表 -->
-    <div class="services-list">
-      <el-empty v-if="!servicesStore.loading && servicesStore.services.length === 0" description="暂无可用服务" />
-      
-      <div v-else class="services-grid">
-        <ServiceCard
-          v-for="service in servicesStore.services"
-          :key="service.instance_id"
-          :service="service"
-          :connection="servicesStore.getConnectionStatus(service.instance_id)"
-          @connect="handleConnect"
-          @disconnect="handleDisconnect"
+      <!-- 服务列表 -->
+      <div class="services-content">
+        <el-empty 
+          v-if="!servicesStore.loading && servicesStore.services.length === 0" 
+          description="暂无可用服务" 
         />
+        
+        <div v-else class="services-grid">
+          <ServiceCard
+            v-for="service in servicesStore.services"
+            :key="service.instance_id"
+            :service="service"
+            :connection="servicesStore.getConnectionStatus(service.instance_id)"
+            @connect="handleConnect"
+            @disconnect="handleDisconnect"
+          />
+        </div>
       </div>
     </div>
-  </div>
+  </Layout>
 </template>
 
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
+import Layout from '../components/Layout.vue'
 import ServiceCard from '../components/ServiceCard.vue'
-import { GetServices, ConnectService, DisconnectService, Logout } from '../../wailsjs/go/main/App'
+import { GetServices, ConnectService, DisconnectService } from '../../wailsjs/go/main/App'
 
-const router = useRouter()
 const authStore = useAuthStore()
 const servicesStore = useServicesStore()
 
@@ -125,55 +128,36 @@ const handleDisconnect = async (instanceId: number) => {
   }
 }
 
-const handleViewDevices = () => {
-  router.push('/devices')
-}
 
-const handleViewLogs = () => {
-  router.push('/logs')
-}
-
-const handleLogout = () => {
-  Logout()
-  authStore.logout()
-  servicesStore.clearConnections()
-  router.push('/login')
-  ElMessage.success('已退出登录')
-}
 </script>
 
 <style scoped>
-.services-container {
-  height: 100vh;
+.services-page {
+  height: 100%;
   display: flex;
   flex-direction: column;
   background: #f5f5f5;
 }
 
-.header {
+.page-header {
   background: white;
   padding: 20px 30px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 15px;
-}
-
-.header-left .logo {
-  width: 40px;
-  height: 40px;
-  object-fit: contain;
+  gap: 12px;
 }
 
 .header-left h2 {
   margin: 0;
-  font-size: 24px;
+  font-size: 20px;
+  font-weight: 500;
   color: #333;
 }
 
@@ -182,9 +166,9 @@ const handleLogout = () => {
   gap: 10px;
 }
 
-.services-list {
+.services-content {
   flex: 1;
-  padding: 30px;
+  padding: 24px;
   overflow-y: auto;
 }
 

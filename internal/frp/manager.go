@@ -52,7 +52,7 @@ func NewDesktopFRP(serverAddr string, frpToken string, commandChan chan *models.
 
 // Start 启动 Desktop-FRP 线程
 func (f *DesktopFRP) Start() error {
-	log.Printf("[Desktop-FRP] Started, server: %s:7000, token: %s", f.serverAddr, f.frpToken[:10]+"...")
+	log.Printf("[Desktop-FRP] Started, server: %s, token: %s", f.serverAddr, f.frpToken[:10]+"...")
 
 	// 启动命令处理 goroutine
 	go f.commandHandler()

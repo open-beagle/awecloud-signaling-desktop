@@ -20,7 +20,8 @@ import (
 
 // DesktopClient 是 Desktop-Web 线程，负责 gRPC 通信
 type DesktopClient struct {
-	serverAddr string
+	serverAddr string // gRPC地址（去掉协议前缀）
+	serverURL  string // 完整的服务器URL（包含协议）
 
 	// gRPC 连接
 	grpcConn   *grpc.ClientConn
@@ -53,6 +54,7 @@ func NewDesktopClient(serverAddr string, commandChan chan *models.VisitorCommand
 	ctx, cancel := context.WithCancel(context.Background())
 	return &DesktopClient{
 		serverAddr:  serverAddr,
+		serverURL:   serverAddr, // 保存原始URL
 		services:    make(map[int64]*models.ServiceInfo),
 		commandChan: commandChan,
 		statusChan:  statusChan,
@@ -63,6 +65,9 @@ func NewDesktopClient(serverAddr string, commandChan chan *models.VisitorCommand
 
 // Start 启动 Desktop-Web 线程
 func (c *DesktopClient) Start() error {
+	// 保存原始URL（包含协议）
+	c.serverURL = c.serverAddr
+
 	// 根据地址判断是否使用 TLS
 	var opts []grpc.DialOption
 
@@ -87,6 +92,8 @@ func (c *DesktopClient) Start() error {
 		// 没有协议前缀，默认使用 plaintext
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		log.Printf("[Desktop-Web] Using plaintext connection (no protocol specified)")
+		// 为没有协议的地址添加 http:// 前缀
+		c.serverURL = "http://" + c.serverAddr
 	}
 
 	// 连接 gRPC Server
@@ -167,6 +174,7 @@ func (c *DesktopClient) GetServices() ([]*models.ServiceInfo, error) {
 			AgentName:    svc.AgentName,
 			Description:  svc.Description,
 			ServicePort:  int(svc.LocalPort),
+			ServiceIP:    svc.LocalIp,
 			AccessType:   svc.AccessType,
 			Status:       svc.Status,
 			// SecretKey 需要通过 ConnectService 获取
@@ -222,6 +230,7 @@ func (c *DesktopClient) ConnectService(instanceID int64, localPort int) error {
 		InstanceName: resp.InstanceName,
 		SecretKey:    resp.SecretKey,
 		LocalPort:    localPort,
+		ServerURL:    resp.ServerUrl, // 使用Server返回的隧道地址
 		Response:     make(chan error, 1),
 	}
 
