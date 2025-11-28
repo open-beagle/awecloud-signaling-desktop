@@ -46,9 +46,8 @@ func (c *DesktopClient) AuthWithSecret(clientID, clientSecret string, rememberMe
 	c.clientID = clientID
 
 	// 初始化审计日志客户端
-	// HTTP API和gRPC在同一个端口（HTTP/2统一端口）
-	webServerURL := fmt.Sprintf("http://%s", c.serverAddr)
-	c.auditClient = NewAuditClient(webServerURL, resp.SessionToken)
+	// 使用原始的服务器URL（包含协议）
+	c.auditClient = NewAuditClient(c.serverURL, resp.SessionToken)
 
 	// 保存配置
 	cfg, err := config.Load()
@@ -132,9 +131,8 @@ func (c *DesktopClient) AuthWithToken(deviceToken string) (*AuthResult, error) {
 	c.sessionToken = deviceToken
 
 	// 初始化审计日志客户端
-	// HTTP API和gRPC在同一个端口（HTTP/2统一端口）
-	webServerURL := fmt.Sprintf("http://%s", c.serverAddr)
-	c.auditClient = NewAuditClient(webServerURL, deviceToken)
+	// 使用原始的服务器URL（包含协议）
+	c.auditClient = NewAuditClient(c.serverURL, deviceToken)
 
 	// 从配置文件加载隧道配置
 	cfg, err := config.Load()

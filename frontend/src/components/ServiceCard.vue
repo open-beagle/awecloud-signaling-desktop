@@ -32,8 +32,8 @@
       </div>
 
       <div class="info-item">
-        <span class="label">远程端口:</span>
-        <span class="value">{{ service.service_port }}</span>
+        <span class="label">服务地址:</span>
+        <span class="value">{{ service.service_ip }}:{{ service.service_port }}</span>
       </div>
 
       <div class="info-item" v-if="service.description">

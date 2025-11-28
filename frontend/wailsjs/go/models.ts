@@ -112,6 +112,7 @@ export namespace models {
 	    agent_name: string;
 	    service_type: string;
 	    service_port: number;
+	    service_ip: string;
 	    preferred_port: number;
 	    description: string;
 	    secret_key: string;
@@ -129,6 +130,7 @@ export namespace models {
 	        this.agent_name = source["agent_name"];
 	        this.service_type = source["service_type"];
 	        this.service_port = source["service_port"];
+	        this.service_ip = source["service_ip"];
 	        this.preferred_port = source["preferred_port"];
 	        this.description = source["description"];
 	        this.secret_key = source["secret_key"];

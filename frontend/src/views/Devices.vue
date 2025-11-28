@@ -1,35 +1,41 @@
 <template>
-  <div class="devices-container">
-    <div class="header">
-      <div class="header-left">
-        <el-button :icon="ArrowLeft" @click="handleBack">
-          返回
-        </el-button>
-        <h2>设备管理</h2>
+  <Layout>
+    <div class="devices-page">
+      <!-- 页面头部 -->
+      <div class="page-header">
+        <div class="header-left">
+          <h2>设备管理</h2>
+          <el-tag v-if="devices.length > 0">
+            共 {{ devices.length }} 台设备
+          </el-tag>
+        </div>
+        <div class="header-right">
+          <el-button :icon="Refresh" @click="loadDevices" :loading="loading">
+            刷新
+          </el-button>
+        </div>
       </div>
-      <el-button type="primary" :icon="Refresh" @click="loadDevices">
-        刷新
-      </el-button>
-    </div>
 
-    <el-alert
-      type="info"
-      :closable="false"
-      show-icon
-      class="info-alert"
-    >
-      <template #title>
-        关于设备管理
-      </template>
-      <p>这里显示所有使用您的账号登录的设备。您可以让设备下线或删除设备记录。</p>
-    </el-alert>
+      <!-- 内容区域 -->
+      <div class="devices-content">
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          class="info-alert"
+        >
+          <template #title>
+            关于设备管理
+          </template>
+          <p>这里显示所有使用您的账号登录的设备。您可以让设备下线或删除设备记录。</p>
+        </el-alert>
 
-    <el-table
-      v-loading="loading"
-      :data="devices"
-      stripe
-      class="devices-table"
-    >
+        <el-table
+          v-loading="loading"
+          :data="devices"
+          stripe
+          class="devices-table"
+        >
       <el-table-column label="设备信息" min-width="200">
         <template #default="{ row }">
           <div class="device-info">
@@ -71,45 +77,47 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
-          <el-button
-            v-if="row.status === 'online' && !row.is_current"
-            size="small"
-            type="warning"
-            @click="handleOffline(row)"
-          >
-            下线
-          </el-button>
-          <el-button
-            v-if="!row.is_current"
-            size="small"
-            type="danger"
-            @click="handleDelete(row)"
-          >
-            删除
-          </el-button>
-          <el-tag v-if="row.is_current" type="success" size="small">
-            当前设备
-          </el-tag>
+          <div class="action-buttons">
+            <el-button
+              v-if="row.status === 'online' && !row.is_current"
+              size="small"
+              type="warning"
+              @click="handleOffline(row)"
+            >
+              下线
+            </el-button>
+            <el-button
+              v-if="!row.is_current"
+              size="small"
+              type="danger"
+              @click="handleDelete(row)"
+            >
+              删除
+            </el-button>
+            <el-tag v-if="row.is_current" type="success" size="small">
+              当前设备
+            </el-tag>
+          </div>
         </template>
       </el-table-column>
     </el-table>
 
-    <div v-if="devices.length === 0 && !loading" class="empty-state">
-      <el-empty description="暂无设备记录" />
+        <div v-if="devices.length === 0 && !loading" class="empty-state">
+          <el-empty description="暂无设备记录" />
+        </div>
+      </div>
     </div>
-  </div>
+  </Layout>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Check, ArrowLeft } from '@element-plus/icons-vue'
+import { Refresh, Check } from '@element-plus/icons-vue'
+import Layout from '../components/Layout.vue'
 import { GetDevices, OfflineDevice, DeleteDevice } from '../../wailsjs/go/main/App'
-
-const router = useRouter()
 
 interface Device {
   device_token: string
@@ -182,10 +190,6 @@ const handleDelete = async (device: Device) => {
   }
 }
 
-const handleBack = () => {
-  router.push('/services')
-}
-
 const formatTime = (timeStr: string) => {
   if (!timeStr) return '-'
   const date = new Date(timeStr)
@@ -208,35 +212,54 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.devices-container {
-  padding: 20px;
+.devices-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #f5f5f5;
 }
 
-.header {
+.page-header {
+  background: white;
+  padding: 20px 30px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 15px;
+  gap: 12px;
 }
 
-.header h2 {
+.header-left h2 {
   margin: 0;
-  font-size: 24px;
+  font-size: 20px;
+  font-weight: 500;
   color: #333;
 }
 
+.header-right {
+  display: flex;
+  gap: 10px;
+}
+
+.devices-content {
+  flex: 1;
+  padding: 24px;
+  overflow-y: auto;
+}
+
 .info-alert {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .devices-table {
-  margin-bottom: 20px;
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .device-info {
@@ -266,5 +289,12 @@ onMounted(() => {
 .empty-state {
   padding: 40px 0;
   text-align: center;
+}
+
+.action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
 }
 </style>

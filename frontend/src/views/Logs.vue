@@ -1,50 +1,51 @@
 <template>
-  <div class="logs-container">
-    <!-- 顶部栏 -->
-    <div class="header">
-      <div class="header-left">
-        <h2>系统日志</h2>
+  <Layout>
+    <div class="logs-page">
+      <!-- 页面头部 -->
+      <div class="page-header">
+        <div class="header-left">
+          <h2>查看日志</h2>
+          <el-tag v-if="logs.length > 0">
+            共 {{ logs.length }} 条
+          </el-tag>
+        </div>
+        <div class="header-right">
+          <el-button :icon="Refresh" @click="handleRefresh">
+            刷新
+          </el-button>
+          <el-button @click="handleClear">
+            清空
+          </el-button>
+        </div>
       </div>
-      <div class="header-right">
-        <el-button :icon="Refresh" @click="handleRefresh">
-          刷新
-        </el-button>
-        <el-button @click="handleClear">
-          清空
-        </el-button>
-        <el-button @click="handleBack">
-          返回
-        </el-button>
-      </div>
-    </div>
 
-    <!-- 日志内容 -->
-    <div class="logs-content">
-      <div v-if="logs.length === 0" class="empty">
-        暂无日志
-      </div>
-      <div v-else class="log-lines">
-        <div
-          v-for="(log, index) in logs"
-          :key="index"
-          class="log-line"
-          :class="getLogClass(log)"
-        >
-          {{ log }}
+      <!-- 日志内容 -->
+      <div class="logs-content">
+        <div v-if="logs.length === 0" class="empty">
+          暂无日志
+        </div>
+        <div v-else class="log-lines">
+          <div
+            v-for="(log, index) in logs"
+            :key="index"
+            class="log-line"
+            :class="getLogClass(log)"
+          >
+            {{ log }}
+          </div>
         </div>
       </div>
     </div>
-  </div>
+  </Layout>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
+import Layout from '../components/Layout.vue'
 import { GetLogs } from '../../wailsjs/go/main/App'
 
-const router = useRouter()
 const logs = ref<string[]>([])
 let refreshInterval: number | null = null
 
@@ -73,10 +74,6 @@ const handleRefresh = () => {
 const handleClear = () => {
   logs.value = []
   ElMessage.success('日志已清空')
-}
-
-const handleBack = () => {
-  router.back()
 }
 
 const getLogClass = (log: string) => {
@@ -109,27 +106,33 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.logs-container {
-  height: 100vh;
+.logs-page {
+  height: 100%;
   display: flex;
   flex-direction: column;
-  background: #1e1e1e;
-  color: #d4d4d4;
+  background: #f5f5f5;
 }
 
-.header {
-  background: #2d2d2d;
-  padding: 15px 20px;
+.page-header {
+  background: white;
+  padding: 20px 30px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid #3e3e3e;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .header-left h2 {
   margin: 0;
-  font-size: 18px;
-  color: #d4d4d4;
+  font-size: 20px;
+  font-weight: 500;
+  color: #333;
 }
 
 .header-right {
@@ -140,58 +143,78 @@ onUnmounted(() => {
 .logs-content {
   flex: 1;
   overflow-y: auto;
-  padding: 10px;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
-  line-height: 1.6;
+  padding: 24px;
 }
 
 .empty {
+  background: white;
+  border-radius: 8px;
   text-align: center;
-  padding: 40px;
-  color: #666;
+  padding: 60px 20px;
+  color: #909399;
+  font-size: 14px;
 }
 
 .log-lines {
-  display: flex;
-  flex-direction: column;
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.8;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
 }
 
 .log-line {
-  padding: 2px 5px;
+  padding: 4px 8px;
+  margin: 2px 0;
+  border-radius: 4px;
   white-space: pre-wrap;
   word-break: break-all;
+  color: #333;
+  transition: background 0.2s;
+}
+
+.log-line:hover {
+  background: #f5f7fa;
 }
 
 .log-line.error {
-  color: #f48771;
-  background: rgba(244, 135, 113, 0.1);
+  color: #f56c6c;
+  background: #fef0f0;
+  border-left: 3px solid #f56c6c;
+  padding-left: 12px;
 }
 
 .log-line.warning {
-  color: #dcdcaa;
-  background: rgba(220, 220, 170, 0.1);
+  color: #e6a23c;
+  background: #fdf6ec;
+  border-left: 3px solid #e6a23c;
+  padding-left: 12px;
 }
 
 .log-line.info {
-  color: #4ec9b0;
+  color: #409eff;
+  background: #ecf5ff;
+  border-left: 3px solid #409eff;
+  padding-left: 12px;
 }
 
 /* 滚动条样式 */
 .logs-content::-webkit-scrollbar {
-  width: 10px;
+  width: 8px;
 }
 
 .logs-content::-webkit-scrollbar-track {
-  background: #1e1e1e;
+  background: transparent;
 }
 
 .logs-content::-webkit-scrollbar-thumb {
-  background: #424242;
-  border-radius: 5px;
+  background: #dcdfe6;
+  border-radius: 4px;
 }
 
 .logs-content::-webkit-scrollbar-thumb:hover {
-  background: #4e4e4e;
+  background: #c0c4cc;
 }
 </style>
