@@ -39,9 +39,14 @@ jobs:
       - name: Install Wails
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      - name: Build Desktop Applications (All Platforms)
+      - name: Create webkit2gtk-4.0 symlink
         run: |
-          PLATFORMS=windows/amd64,linux/amd64,darwin/amd64 \
+          sudo ln -sf /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.1.pc \
+                      /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.0.pc
+
+      - name: Build Desktop Applications (Linux and Windows)
+        run: |
+          PLATFORMS=linux/amd64,windows/amd64 \
           BUILD_VERSION=${{ env.BUILD_VERSION }} \
           bash ./scripts/build.sh
 
