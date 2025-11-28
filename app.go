@@ -147,48 +147,70 @@ func (a *App) Login(serverAddr, clientID, clientSecret string, rememberMe bool) 
 
 	log.Printf("Authentication successful: %s", authResult.Message)
 
-	// 创建 Desktop-FRP 线程
-	// 使用从Server获取的隧道配置
+	// 保存隧道配置到内存，但不立即初始化 FRP
+	// FRP 将在用户实际连接服务时按需初始化
+	log.Printf("Login successful, FRP will be initialized when connecting to services")
+
+	return nil
+}
+
+// initializeFRP 初始化 FRP 客户端（按需初始化）
+func (a *App) initializeFRP() error {
+	if a.desktopFRP != nil {
+		log.Printf("[App] FRP client already initialized")
+		return nil
+	}
+
+	log.Printf("[App] Initializing FRP client...")
+
+	// 从配置加载隧道信息
+	cfg := a.config
 	var tunnelAddr string
+	var tunnelHost string
+	var token string
 
-	if authResult.TunnelServer != "" {
-		// Server 配置了公网 URL，直接使用
-		tunnelAddr = authResult.TunnelServer
-		log.Printf("使用 Server 提供的隧道地址: %s", tunnelAddr)
+	// 优先使用配置文件中的隧道配置
+	if cfg.TunnelServer != "" {
+		tunnelAddr = cfg.TunnelServer
+		tunnelHost = extractHost(tunnelAddr)
+		log.Printf("[App] Using saved tunnel server: %s", tunnelAddr)
+	} else if cfg.TunnelPort > 0 {
+		tunnelHost = extractHost(cfg.ServerAddress)
+		tunnelAddr = fmt.Sprintf("%s:%d", tunnelHost, cfg.TunnelPort)
+		log.Printf("[App] Using tunnel address from config: %s", tunnelAddr)
 	} else {
-		// Server 没有配置公网 URL，使用 Server 地址 + 端口
-		tunnelHost := extractHost(serverAddr)
-		tunnelPort := authResult.TunnelPort
-		if tunnelPort == 0 {
-			tunnelPort = 7000 // 默认端口
-		}
-		tunnelAddr = fmt.Sprintf("%s:%d", tunnelHost, tunnelPort)
-		log.Printf("使用推导的隧道地址: %s (从 Server 地址 %s)", tunnelAddr, serverAddr)
+		// 使用默认配置
+		tunnelHost = extractHost(cfg.ServerAddress)
+		tunnelAddr = fmt.Sprintf("%s:7000", tunnelHost)
+		log.Printf("[App] Using default tunnel address: %s", tunnelAddr)
 	}
 
-	token := authResult.TunnelToken
+	token = cfg.TunnelToken
 	if token == "" {
-		log.Printf("Warning: 隧道 token 为空，服务器可能未启用认证")
-	} else {
-		tokenPreview := token
-		if len(token) > 10 {
-			tokenPreview = token[:10] + "..."
-		}
-		log.Printf("隧道 token: %s", tokenPreview)
+		log.Printf("[App] Error: Tunnel token is empty!")
+		log.Printf("[App] This usually means:")
+		log.Printf("[App]   1. You logged in with an old version that didn't save tunnel config")
+		log.Printf("[App]   2. The server didn't return tunnel configuration")
+		log.Printf("[App] Solution: Please logout and login again with your password")
+		return fmt.Errorf("tunnel token is empty, please logout and login again with password to refresh configuration")
 	}
 
-	log.Printf("隧道配置: addr=%s", tunnelAddr)
+	tokenPreview := token
+	if len(token) > 10 {
+		tokenPreview = token[:10] + "..."
+	}
+	log.Printf("[App] Tunnel token: %s", tokenPreview)
 
-	// 从 tunnelAddr 中提取主机和端口（用于 FRP 客户端）
-	tunnelHost := extractHost(tunnelAddr)
+	log.Printf("[App] Final tunnel config: host=%s, token_length=%d", tunnelHost, len(token))
 
+	// 创建并启动 FRP 客户端
 	a.desktopFRP = frp.NewDesktopFRP(tunnelHost, token, a.commandChan, a.statusChan)
 	if err := a.desktopFRP.Start(); err != nil {
-		a.desktopClient.Stop()
-		a.desktopClient = nil
+		a.desktopFRP = nil
 		return fmt.Errorf("failed to start FRP client: %w", err)
 	}
 
+	log.Printf("[App] FRP client initialized successfully")
 	return nil
 }
 
@@ -265,6 +287,14 @@ func (a *App) GetServices() ([]*models.ServiceInfo, error) {
 func (a *App) ConnectService(instanceID int64, localPort int) error {
 	if a.desktopClient == nil {
 		return fmt.Errorf("not logged in")
+	}
+
+	// 如果 FRP 客户端还未初始化，先初始化
+	if a.desktopFRP == nil {
+		log.Printf("[App] Initializing FRP client for first connection")
+		if err := a.initializeFRP(); err != nil {
+			return fmt.Errorf("failed to initialize FRP client: %w", err)
+		}
 	}
 
 	// 连接服务

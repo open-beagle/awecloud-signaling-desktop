@@ -15,6 +15,9 @@ type Config struct {
 	DeviceToken     string        `json:"device_token"`     // Device Token（用于自动登录）
 	RememberMe      bool          `json:"remember_me"`      // 是否记住登录
 	TokenExpiresAt  int64         `json:"token_expires_at"` // Token 过期时间（Unix 时间戳）
+	TunnelToken     string        `json:"tunnel_token"`     // 隧道认证 Token
+	TunnelServer    string        `json:"tunnel_server"`    // 隧道服务器地址
+	TunnelPort      int           `json:"tunnel_port"`      // 隧道服务器端口
 	PortPreferences map[int64]int `json:"port_preferences"` // 服务 ID -> 本地端口映射
 }
 
@@ -90,6 +93,9 @@ func (c *Config) ClearToken() {
 	c.ClientSecret = ""
 	c.DeviceToken = ""
 	c.TokenExpiresAt = 0
+	c.TunnelToken = ""
+	c.TunnelServer = ""
+	c.TunnelPort = 0
 }
 
 // ShouldAutoFill 判断是否应该自动填充登录信息

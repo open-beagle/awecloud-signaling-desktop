@@ -2,11 +2,13 @@
   <div class="login-container">
     <div class="login-box">
       <div class="logo-container">
-        <img src="../assets/logo.png" alt="AWECloud Logo" class="logo" />
+        <div class="logo-wrapper" :class="{ 'is-loading': isAutoLogging }">
+          <img src="../assets/logo.png" alt="AWECloud Logo" class="logo" />
+        </div>
       </div>
       <h1 class="title">Signaling Desktop</h1>
       <p class="version">{{ appVersion }}</p>
-      <p class="subtitle">连接到您的远程服务</p>
+      <p class="subtitle">{{ isAutoLogging ? '正在自动登录' + loadingDots : '连接到您的远程服务' }}</p>
 
       <!-- 离线模式提示 -->
       <el-alert
@@ -28,7 +30,7 @@
 
       <!-- 登录提示 -->
       <el-alert
-        v-if="loginMode === 'full' && loginHint"
+        v-if="loginMode === 'full' && loginHint && !isAutoLogging"
         type="info"
         :closable="false"
         class="login-hint"
@@ -45,20 +47,20 @@
       >
         <!-- 模式1：离线模式 - 只读显示 -->
         <template v-if="loginMode === 'offline'">
-          <el-form-item>
+          <el-form-item label=" ">
             <el-button
               type="primary"
               :loading="reconnecting"
               @click="handleReconnect"
-              style="width: 100%"
+              class="full-width-button"
             >
               {{ reconnecting ? '重新连接中...' : '重新连接' }}
             </el-button>
           </el-form-item>
-          <el-form-item>
+          <el-form-item label=" ">
             <el-button
               @click="handleSwitchAccount"
-              style="width: 100%"
+              class="full-width-button"
             >
               切换账号
             </el-button>
@@ -93,27 +95,27 @@
             />
           </el-form-item>
 
-          <el-form-item>
+          <el-form-item label=" ">
             <el-checkbox v-model="form.rememberMe" :disabled="loading">
               记住登录
             </el-checkbox>
           </el-form-item>
 
-          <el-form-item>
+          <el-form-item label=" ">
             <el-button
               type="primary"
               :loading="loading"
               @click="handleLogin"
-              style="width: 100%"
+              class="full-width-button"
             >
               {{ loading ? '登录中...' : '登录' }}
             </el-button>
           </el-form-item>
 
-          <el-form-item v-if="autoFillMode">
+          <el-form-item v-if="autoFillMode" label=" ">
             <el-button
               @click="handleClearCredentials"
-              style="width: 100%"
+              class="full-width-button"
             >
               使用其他账号登录
             </el-button>
@@ -141,6 +143,8 @@ const reconnecting = ref(false)
 const loginMode = ref<'offline' | 'full'>('full')
 const autoFillMode = ref(false)
 const loginHint = ref('')
+const isAutoLogging = ref(false)
+const loadingDots = ref('')
 
 const form = reactive({
   serverAddress: authStore.serverAddress || 'localhost:8080',
@@ -192,6 +196,9 @@ const handleLogin = async () => {
 
 const handleReconnect = async () => {
   reconnecting.value = true
+  isAutoLogging.value = true
+  startLoadingDots()
+  
   try {
     // 尝试使用保存的Token重新连接
     await Login(
@@ -214,6 +221,8 @@ const handleReconnect = async () => {
     autoFillMode.value = true
   } finally {
     reconnecting.value = false
+    isAutoLogging.value = false
+    stopLoadingDots()
   }
 }
 
@@ -239,6 +248,25 @@ const handleClearCredentials = async () => {
   }
 }
 
+let dotsInterval: number | null = null
+
+const startLoadingDots = () => {
+  let count = 0
+  loadingDots.value = ''
+  dotsInterval = window.setInterval(() => {
+    count = (count + 1) % 4
+    loadingDots.value = '.'.repeat(count)
+  }, 500)
+}
+
+const stopLoadingDots = () => {
+  if (dotsInterval) {
+    clearInterval(dotsInterval)
+    dotsInterval = null
+  }
+  loadingDots.value = ''
+}
+
 const determineLoginMode = (savedCreds: any) => {
   if (!savedCreds) {
     loginMode.value = 'full'
@@ -261,7 +289,8 @@ const determineLoginMode = (savedCreds: any) => {
     // 有Token且在线，尝试自动登录
     loginMode.value = 'full'
     autoFillMode.value = true
-    loginHint.value = '正在自动登录...'
+    isAutoLogging.value = true
+    startLoadingDots()
     // 自动登录
     setTimeout(() => {
       handleReconnect()
@@ -315,10 +344,39 @@ onMounted(async () => {
   margin-bottom: 20px;
 }
 
+.logo-wrapper {
+  display: inline-block;
+  position: relative;
+  width: 80px;
+  height: 80px;
+}
+
+.logo-wrapper.is-loading::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  right: -8px;
+  bottom: -8px;
+  border: 3px solid transparent;
+  border-top-color: #409eff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
 .logo {
   width: 80px;
   height: 80px;
   object-fit: contain;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .title {
@@ -345,6 +403,10 @@ onMounted(async () => {
 
 .login-form {
   margin-top: 20px;
+}
+
+.full-width-button {
+  width: 100%;
 }
 
 .offline-alert {

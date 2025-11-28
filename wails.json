@@ -1,13 +1,13 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "awecloud-signaling",
-  "outputfilename": "awecloud-signaling",
+  "name": "Signaling Desktop",
+  "outputfilename": "awecloud-signaling-desktop",
   "frontend:install": "npm install",
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
   "author": {
-    "name": "shucheng",
-    "email": "shucheng@bd-apaas.com"
+    "name": "mengkzhaoyun",
+    "email": "mengkzhaoyun@gmail.com"
   }
 }
