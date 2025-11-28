@@ -2,8 +2,10 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	pb "github.com/open-beagle/awecloud-signaling-desktop/pkg/proto"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -60,11 +63,34 @@ func NewDesktopClient(serverAddr string, commandChan chan *models.VisitorCommand
 
 // Start 启动 Desktop-Web 线程
 func (c *DesktopClient) Start() error {
+	// 根据地址判断是否使用 TLS
+	var opts []grpc.DialOption
+
+	if strings.HasPrefix(c.serverAddr, "https://") {
+		// HTTPS：使用 TLS，跳过证书验证
+		tlsConfig := &tls.Config{
+			InsecureSkipVerify: true,
+		}
+		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
+		log.Printf("[Desktop-Web] Using TLS connection (skip verify)")
+
+		// 移除 https:// 前缀
+		c.serverAddr = strings.TrimPrefix(c.serverAddr, "https://")
+	} else if strings.HasPrefix(c.serverAddr, "http://") {
+		// HTTP：不使用 TLS
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		log.Printf("[Desktop-Web] Using plaintext connection")
+
+		// 移除 http:// 前缀
+		c.serverAddr = strings.TrimPrefix(c.serverAddr, "http://")
+	} else {
+		// 没有协议前缀，默认使用 plaintext
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		log.Printf("[Desktop-Web] Using plaintext connection (no protocol specified)")
+	}
+
 	// 连接 gRPC Server
-	conn, err := grpc.NewClient(
-		c.serverAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	conn, err := grpc.NewClient(c.serverAddr, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to connect to server: %w", err)
 	}
