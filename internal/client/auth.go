@@ -59,14 +59,27 @@ func (c *DesktopClient) AuthWithSecret(clientID, clientSecret string, rememberMe
 	cfg.ClientID = clientID
 	cfg.RememberMe = rememberMe
 
+	// 记录服务器返回的隧道配置
+	log.Printf("Server returned tunnel config: token_length=%d, server=%s, port=%d",
+		len(resp.Token), resp.Server, resp.Port)
+
 	if rememberMe {
 		cfg.ClientSecret = clientSecret
 		cfg.DeviceToken = resp.SessionToken
 		cfg.TokenExpiresAt = resp.ExpiresAt
+		// 保存隧道配置
+		cfg.TunnelToken = resp.Token
+		cfg.TunnelServer = resp.Server
+		cfg.TunnelPort = int(resp.Port)
+		log.Printf("Saved tunnel config to file: token_length=%d, server=%s, port=%d",
+			len(cfg.TunnelToken), cfg.TunnelServer, cfg.TunnelPort)
 	} else {
 		cfg.ClientSecret = ""
 		cfg.DeviceToken = ""
 		cfg.TokenExpiresAt = 0
+		cfg.TunnelToken = ""
+		cfg.TunnelServer = ""
+		cfg.TunnelPort = 0
 	}
 
 	if err := cfg.Save(); err != nil {
@@ -94,22 +107,22 @@ func (c *DesktopClient) AuthWithToken(deviceToken string) (*AuthResult, error) {
 
 	log.Printf("Authenticating with device token: device=%s", fingerprint.Hash)
 
-	// 调用Token认证API（使用GetServices来验证Token）
+	// 验证Token是否有效（使用GetServices）
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	req := &pb.GetServicesRequest{
+	servicesReq := &pb.GetServicesRequest{
 		SessionToken: deviceToken,
 	}
 
-	resp, err := c.grpcClient.GetServices(ctx, req)
+	servicesResp, err := c.grpcClient.GetServices(ctx, servicesReq)
 	if err != nil {
 		// Token无效或过期
 		log.Printf("Token authentication failed: %v", err)
 		return nil, fmt.Errorf("token authentication failed: %w", err)
 	}
 
-	if !resp.Success {
+	if !servicesResp.Success {
 		return nil, fmt.Errorf("token authentication failed")
 	}
 
@@ -123,12 +136,36 @@ func (c *DesktopClient) AuthWithToken(deviceToken string) (*AuthResult, error) {
 	webServerURL := fmt.Sprintf("http://%s", c.serverAddr)
 	c.auditClient = NewAuditClient(webServerURL, deviceToken)
 
-	return &AuthResult{
+	// 从配置文件加载隧道配置
+	cfg, err := config.Load()
+	if err != nil {
+		log.Printf("Warning: failed to load config: %v", err)
+	}
+
+	result := &AuthResult{
 		Success:      true,
 		SessionToken: deviceToken,
 		ExpiresAt:    0, // Token认证不返回新的过期时间
 		Message:      "Login successful with device token",
-	}, nil
+	}
+
+	// 使用配置文件中保存的隧道配置
+	if cfg != nil {
+		result.TunnelToken = cfg.TunnelToken
+		result.TunnelServer = cfg.TunnelServer
+		result.TunnelPort = cfg.TunnelPort
+		log.Printf("Using saved tunnel config: server=%s, port=%d, token_length=%d",
+			cfg.TunnelServer, cfg.TunnelPort, len(cfg.TunnelToken))
+
+		// 如果没有保存的隧道配置，尝试从服务器地址推导
+		if result.TunnelServer == "" && result.TunnelPort == 0 {
+			log.Printf("Warning: No saved tunnel config, will use server address for tunnel")
+		}
+	} else {
+		log.Printf("Warning: Failed to load config for tunnel info")
+	}
+
+	return result, nil
 }
 
 // HandleTokenExpired 处理Token过期

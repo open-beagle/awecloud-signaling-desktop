@@ -7,6 +7,9 @@ export namespace config {
 	    device_token: string;
 	    remember_me: boolean;
 	    token_expires_at: number;
+	    tunnel_token: string;
+	    tunnel_server: string;
+	    tunnel_port: number;
 	    port_preferences: Record<number, number>;
 	
 	    static createFrom(source: any = {}) {
@@ -21,6 +24,9 @@ export namespace config {
 	        this.device_token = source["device_token"];
 	        this.remember_me = source["remember_me"];
 	        this.token_expires_at = source["token_expires_at"];
+	        this.tunnel_token = source["tunnel_token"];
+	        this.tunnel_server = source["tunnel_server"];
+	        this.tunnel_port = source["tunnel_port"];
 	        this.port_preferences = source["port_preferences"];
 	    }
 	}
