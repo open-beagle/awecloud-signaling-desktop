@@ -5,10 +5,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 )
 
 // LoginMode 登录模式

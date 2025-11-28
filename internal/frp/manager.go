@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/open-beagle/awecloud-signaling-desktop/internal/models"
-
 	"github.com/fatedier/frp/client"
 	v1 "github.com/fatedier/frp/pkg/config/v1"
+
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/models"
 )
 
 // DesktopFRP 是 Desktop-FRP 线程，负责 FRP 客户端管理

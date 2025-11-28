@@ -10,12 +10,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/open-beagle/awecloud-signaling-desktop/internal/models"
-	pb "github.com/open-beagle/awecloud-signaling-desktop/pkg/proto"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/models"
+	pb "github.com/open-beagle/awecloud-signaling-desktop/pkg/proto"
 )
 
 // DesktopClient 是 Desktop-Web 线程，负责 gRPC 通信
@@ -25,6 +25,9 @@ type DesktopClient struct {
 	// gRPC 连接
 	grpcConn   *grpc.ClientConn
 	grpcClient pb.ClientServiceClient
+
+	// 审计日志客户端
+	auditClient *AuditClient
 
 	// 认证信息
 	sessionToken string
