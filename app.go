@@ -96,6 +96,8 @@ func (a *App) shutdown(ctx context.Context) {
 
 // Login 用户登录
 func (a *App) Login(serverAddr, clientID, clientSecret string, rememberMe bool) error {
+	log.Printf("[App] Login: serverAddr=%s, clientID=%s, rememberMe=%v", serverAddr, clientID, rememberMe)
+
 	// 更新并保存配置
 	a.config.ServerAddress = serverAddr
 	a.config.ClientID = clientID
@@ -107,10 +109,12 @@ func (a *App) Login(serverAddr, clientID, clientSecret string, rememberMe bool) 
 	}
 
 	// 创建 Desktop-Web 线程
+	log.Printf("[App] Creating Desktop-Web client for: %s", serverAddr)
 	a.desktopClient = client.NewDesktopClient(serverAddr, a.commandChan, a.statusChan)
 	if err := a.desktopClient.Start(); err != nil {
 		return fmt.Errorf("failed to start desktop client: %w", err)
 	}
+	log.Printf("[App] Desktop-Web client started successfully")
 
 	// 认证逻辑
 	var authResult *client.AuthResult
@@ -164,11 +168,16 @@ func (a *App) Login(serverAddr, clientID, clientSecret string, rememberMe bool) 
 
 	token := authResult.TunnelToken
 	if token == "" {
-		log.Printf("Warning: 隧道 token 未提供，使用默认值")
-		token = "awecloud-frp-secret-token-2024"
+		log.Printf("Warning: 隧道 token 为空，服务器可能未启用认证")
+	} else {
+		tokenPreview := token
+		if len(token) > 10 {
+			tokenPreview = token[:10] + "..."
+		}
+		log.Printf("隧道 token: %s", tokenPreview)
 	}
 
-	log.Printf("隧道配置: addr=%s, token=%s...", tunnelAddr, token[:10])
+	log.Printf("隧道配置: addr=%s", tunnelAddr)
 
 	// 从 tunnelAddr 中提取主机和端口（用于 FRP 客户端）
 	tunnelHost := extractHost(tunnelAddr)
@@ -185,12 +194,27 @@ func (a *App) Login(serverAddr, clientID, clientSecret string, rememberMe bool) 
 
 // extractHost 从地址中提取主机名
 func extractHost(serverAddr string) string {
-	for i := len(serverAddr) - 1; i >= 0; i-- {
-		if serverAddr[i] == ':' {
-			return serverAddr[:i]
+	// 移除协议前缀
+	addr := serverAddr
+	addr = strings.TrimPrefix(addr, "wss://")
+	addr = strings.TrimPrefix(addr, "ws://")
+	addr = strings.TrimPrefix(addr, "https://")
+	addr = strings.TrimPrefix(addr, "http://")
+
+	// 移除路径部分
+	if idx := strings.Index(addr, "/"); idx != -1 {
+		addr = addr[:idx]
+	}
+
+	// 移除端口（如果有）
+	if idx := strings.LastIndex(addr, ":"); idx != -1 {
+		// 确保不是 IPv6 地址
+		if !strings.Contains(addr, "[") {
+			addr = addr[:idx]
 		}
 	}
-	return serverAddr
+
+	return addr
 }
 
 // Logout 用户登出
