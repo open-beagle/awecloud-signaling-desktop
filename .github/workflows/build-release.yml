@@ -1,0 +1,121 @@
+name: Build and Release Desktop
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # 允许手动触发
+
+env:
+  BUILD_VERSION: v0.1.0
+
+jobs:
+  build-desktop:
+    name: Build Desktop
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform:
+          - os: windows
+            arch: amd64
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm install
+
+      - name: Build Desktop Application
+        run: |
+          PLATFORMS=${{ matrix.platform.os }}/${{ matrix.platform.arch }} \
+          BUILD_VERSION=${{ env.BUILD_VERSION }} \
+          bash ./scripts/build.sh
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p artifacts
+          if [ "${{ matrix.platform.os }}" = "darwin" ]; then
+            # macOS 构建产物是 zip
+            if [ -f "build/bin/awecloud-signaling-${{ env.BUILD_VERSION }}-${{ matrix.platform.os }}-${{ matrix.platform.arch }}.zip" ]; then
+              cp build/bin/awecloud-signaling-${{ env.BUILD_VERSION }}-${{ matrix.platform.os }}-${{ matrix.platform.arch }}.zip artifacts/
+            fi
+          else
+            # Linux/Windows 构建产物是可执行文件
+            if [ "${{ matrix.platform.os }}" = "windows" ]; then
+              if [ -f "build/bin/awecloud-signaling-${{ env.BUILD_VERSION }}-${{ matrix.platform.os }}-${{ matrix.platform.arch }}.exe" ]; then
+                cp build/bin/awecloud-signaling-${{ env.BUILD_VERSION }}-${{ matrix.platform.os }}-${{ matrix.platform.arch }}.exe artifacts/
+              fi
+            else
+              if [ -f "build/bin/awecloud-signaling-${{ env.BUILD_VERSION }}-${{ matrix.platform.os }}-${{ matrix.platform.arch }}" ]; then
+                cp build/bin/awecloud-signaling-${{ env.BUILD_VERSION }}-${{ matrix.platform.os }}-${{ matrix.platform.arch }} artifacts/
+              fi
+            fi
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.platform.os }}-${{ matrix.platform.arch }}
+          path: artifacts/*
+          retention-days: 1
+
+  upload-to-s3:
+    name: Upload to S3
+    runs-on: ubuntu-latest
+    needs: build-desktop
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Setup MinIO Client
+        run: |
+          wget https://dl.min.io/client/mc/release/linux-amd64/mc
+          chmod +x mc
+          sudo mv mc /usr/local/bin/
+
+      - name: Upload to S3
+        run: |
+          mc alias set aliyun --api=S3v4 https://cache.ali.wodcloud.com ${{ secrets.S3_ACCESS_KEY_ALIYUN }} ${{ secrets.S3_SECRET_KEY_ALIYUN }}
+          
+          # 上传所有平台的构建产物
+          for platform_dir in artifacts/desktop-*; do
+            if [ -d "$platform_dir" ]; then
+              for file in "$platform_dir"/*; do
+                if [ -f "$file" ]; then
+                  echo "Uploading $(basename $file)..."
+                  mc cp "$file" "aliyun/vscode/awecloud-signaling/"
+                fi
+              done
+            fi
+          done
+        env:
+          S3_ACCESS_KEY_ALIYUN: ${{ secrets.S3_ACCESS_KEY_ALIYUN }}
+          S3_SECRET_KEY_ALIYUN: ${{ secrets.S3_SECRET_KEY_ALIYUN }}

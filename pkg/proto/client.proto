@@ -28,9 +28,9 @@ message AuthResponse {
   string message = 2;
   string session_token = 3;
   int64 expires_at = 4;
-  string token = 5;  // 隧道认证 token
-  string server = 6; // 隧道服务器地址（完整 URL 或空）
-  int32 port = 7;    // 隧道服务器端口（使用 URL 时为 0）
+  string token = 5;   // FRP 认证 Token
+  string server = 6;  // FRP 服务器地址（完整 URL 或空）
+  int32 port = 7;     // FRP 服务器端口
 }
 
 // 获取服务列表请求
@@ -67,4 +67,5 @@ message ConnectResponse {
   string instance_name = 3;
   string secret_key = 4;
   int32 suggested_local_port = 5;  // 建议的本地端口
+  string server_url = 6;            // 隧道服务器地址（如 wss://signaling.example.com/ws）
 }

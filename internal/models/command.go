@@ -7,6 +7,7 @@ type VisitorCommand struct {
 	InstanceName string
 	SecretKey    string
 	LocalPort    int
+	ServerURL    string     // 隧道服务器地址（从 Server 获取）
 	Response     chan error // 用于同步等待操作结果
 }
 

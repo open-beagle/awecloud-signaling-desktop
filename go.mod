@@ -7,7 +7,11 @@ toolchain go1.24.10
 require (
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/fatedier/frp v0.65.0
+	github.com/fatedier/golib v0.5.1
+	github.com/hashicorp/yamux v0.1.1
+	github.com/samber/lo v1.49.1
 	github.com/wailsapp/wails/v2 v2.11.0
+	golang.org/x/net v0.46.1-0.20251013234738-63d1a5100f82
 	google.golang.org/grpc v1.77.0
 	google.golang.org/protobuf v1.36.10
 )
@@ -17,7 +21,6 @@ require (
 	github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/coreos/go-oidc/v3 v3.14.1 // indirect
-	github.com/fatedier/golib v0.5.1 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.3 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
@@ -25,7 +28,6 @@ require (
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
-	github.com/hashicorp/yamux v0.1.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jchv/go-winloader v0.0.0-20210711035445-715c2860da7e // indirect
 	github.com/klauspost/cpuid/v2 v2.2.6 // indirect
@@ -49,7 +51,6 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/quic-go/quic-go v0.53.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
-	github.com/samber/lo v1.49.1 // indirect
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8 // indirect
 	github.com/spf13/cobra v1.8.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
@@ -67,7 +68,6 @@ require (
 	go.uber.org/mock v0.5.0 // indirect
 	golang.org/x/crypto v0.43.0 // indirect
 	golang.org/x/mod v0.28.0 // indirect
-	golang.org/x/net v0.46.1-0.20251013234738-63d1a5100f82 // indirect
 	golang.org/x/oauth2 v0.32.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
 	golang.org/x/sys v0.37.0 // indirect

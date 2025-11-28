@@ -14,10 +14,10 @@ var assets embed.FS
 
 // 版本信息（通过 ldflags 注入）
 var (
-	version   = "dev"
-	gitCommit = "unknown"
-	buildDate = "unknown"
-	BUILD_URL = "" // 编译时注入的默认 Server 地址
+	version              = "dev"
+	gitCommit            = "unknown"
+	buildDate            = "unknown"
+	defaultServerAddress = "http://localhost:8080" // 默认 Server 地址（可选）
 )
 
 func main() {

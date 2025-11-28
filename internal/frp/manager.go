@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,8 +18,8 @@ import (
 
 // DesktopFRP 是 Desktop-FRP 线程，负责 FRP 客户端管理
 type DesktopFRP struct {
-	serverAddr string // Server 地址，例如 "localhost:7000"
-	token      string // 认证 Token
+	serverAddr string // FRP Server 地址，例如 "localhost:7000"
+	frpToken   string // FRP 认证 Token
 
 	// 每个 Visitor 对应一个独立的 FRP Service
 	services map[string]*client.Service
@@ -34,11 +37,11 @@ type DesktopFRP struct {
 }
 
 // NewDesktopFRP 创建 Desktop-FRP 线程
-func NewDesktopFRP(serverAddr string, token string, commandChan chan *models.VisitorCommand, statusChan chan *models.VisitorStatus) *DesktopFRP {
+func NewDesktopFRP(serverAddr string, frpToken string, commandChan chan *models.VisitorCommand, statusChan chan *models.VisitorStatus) *DesktopFRP {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &DesktopFRP{
 		serverAddr:  serverAddr,
-		token:       token,
+		frpToken:    frpToken,
 		services:    make(map[string]*client.Service),
 		commandChan: commandChan,
 		statusChan:  statusChan,
@@ -49,7 +52,7 @@ func NewDesktopFRP(serverAddr string, token string, commandChan chan *models.Vis
 
 // Start 启动 Desktop-FRP 线程
 func (f *DesktopFRP) Start() error {
-	log.Printf("[Desktop-FRP] Started, server: %s:7000, token: %s", f.serverAddr, f.token[:10]+"...")
+	log.Printf("[Desktop-FRP] Started, server: %s:7000, token: %s", f.serverAddr, f.frpToken[:10]+"...")
 
 	// 启动命令处理 goroutine
 	go f.commandHandler()
@@ -122,26 +125,58 @@ func (f *DesktopFRP) addVisitor(cmd *models.VisitorCommand) error {
 		},
 	}
 
+	// 解析隧道服务器地址
+	// 如果命令中指定了服务器地址，使用指定的地址
+	// 否则使用默认的 serverAddr:7000
+	serverAddr := f.serverAddr
+	serverPort := 7000
+	websocketPath := "/~!frp" // 默认路径
+	protocol := "websocket"
+
+	if cmd.ServerURL != "" {
+		// 解析 URL（如 wss://signaling.example.com/ws）
+		parsedURL, err := parseServerURL(cmd.ServerURL)
+		if err != nil {
+			return fmt.Errorf("failed to parse server URL: %w", err)
+		}
+		serverAddr = parsedURL.Host
+		serverPort = parsedURL.Port
+		websocketPath = parsedURL.Path
+		protocol = parsedURL.Protocol
+		log.Printf("[Desktop-FRP] Using server from command: %s (path: %s)", cmd.ServerURL, websocketPath)
+	}
+
 	// 创建基础 FRP 配置
 	cfg := &v1.ClientCommonConfig{
-		ServerAddr: f.serverAddr,
-		ServerPort: 7000,
+		ServerAddr: serverAddr,
+		ServerPort: serverPort,
 		Auth: v1.AuthClientConfig{
 			Method: "token",
-			Token:  f.token,
+			Token:  f.frpToken,
 		},
 		Transport: v1.ClientTransportConfig{
-			Protocol: "websocket",
+			Protocol: protocol,
 		},
 	}
 
 	// 创建 FRP Service（每个 Visitor 一个独立的 Service）
 	var visitorConfigurer v1.VisitorConfigurer = visitorCfg
+
+	// 使用自定义 Connector 支持自定义 WebSocket 路径
 	svr, err := client.NewService(client.ServiceOptions{
 		Common:         cfg,
 		ProxyCfgs:      nil,
 		VisitorCfgs:    []v1.VisitorConfigurer{visitorConfigurer},
 		ConfigFilePath: "",
+		ConnectorCreator: func(ctx context.Context, cfg *v1.ClientCommonConfig) client.Connector {
+			// 使用自定义 connector，支持自定义 WebSocket path
+			connector, err := NewCustomConnector(ctx, cfg, websocketPath)
+			if err != nil {
+				log.Printf("[Desktop-FRP] 创建自定义 Connector 失败: %v，使用默认 Connector", err)
+				return client.NewConnector(ctx, cfg)
+			}
+			return connector
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create FRP service: %w", err)
@@ -158,11 +193,11 @@ func (f *DesktopFRP) addVisitor(cmd *models.VisitorCommand) error {
 	f.services[visitorName] = svr
 
 	log.Printf("[Desktop-FRP] Added visitor: %s", visitorName)
-	log.Printf("  - Server: %s:7000", f.serverAddr)
+	log.Printf("  - Server: %s:%d", serverAddr, serverPort)
 	log.Printf("  - Local Port: %d", cmd.LocalPort)
 	log.Printf("  - Server Name: %s", cmd.InstanceName)
 	log.Printf("  - Secret Key: %s", cmd.SecretKey[:10]+"...")
-	log.Printf("  - Token: %s", f.token[:10]+"...")
+	log.Printf("  - Token: %s", f.frpToken[:10]+"...")
 
 	// 发送状态更新
 	f.sendStatus(&models.VisitorStatus{
@@ -225,4 +260,64 @@ func (f *DesktopFRP) GetVisitors() []string {
 		visitors = append(visitors, name)
 	}
 	return visitors
+}
+
+// parseServerURL 解析 FRP Server URL
+func parseServerURL(serverURL string) (*struct {
+	Host     string
+	Port     int
+	Path     string
+	Protocol string
+}, error) {
+	// 如果没有协议前缀，添加默认的 ws://
+	if !strings.Contains(serverURL, "://") {
+		serverURL = "ws://" + serverURL
+	}
+
+	parsedURL, err := url.Parse(serverURL)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &struct {
+		Host     string
+		Port     int
+		Path     string
+		Protocol string
+	}{
+		Host: parsedURL.Hostname(),
+		Path: parsedURL.Path,
+	}
+
+	// 如果路径为空，使用FRP原生路径
+	if result.Path == "" {
+		result.Path = "/~!frp"
+	}
+
+	// 提取端口
+	if parsedURL.Port() != "" {
+		port, err := strconv.Atoi(parsedURL.Port())
+		if err != nil {
+			return nil, fmt.Errorf("解析端口失败: %w", err)
+		}
+		result.Port = port
+	} else {
+		// 根据协议设置默认端口
+		if parsedURL.Scheme == "wss" || parsedURL.Scheme == "https" {
+			result.Port = 443
+		} else {
+			result.Port = 80
+		}
+	}
+
+	// 确定协议
+	if parsedURL.Scheme == "wss" || parsedURL.Scheme == "https" {
+		result.Protocol = "wss"
+	} else if parsedURL.Scheme == "ws" || parsedURL.Scheme == "http" {
+		result.Protocol = "websocket"
+	} else {
+		result.Protocol = "websocket" // 默认
+	}
+
+	return result, nil
 }

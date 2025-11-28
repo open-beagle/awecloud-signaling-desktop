@@ -2,16 +2,19 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
-	"awecloud-desktop/internal/device"
 	"awecloud-desktop/internal/models"
 	pb "awecloud-desktop/pkg/proto"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -23,12 +26,12 @@ type DesktopClient struct {
 	grpcConn   *grpc.ClientConn
 	grpcClient pb.ClientServiceClient
 
-	// 审计日志客户端
-	auditClient *AuditClient
-
 	// 认证信息
 	sessionToken string
 	clientID     string
+	frpToken     string // FRP 认证 Token
+	frpServer    string // FRP 服务器地址
+	frpPort      int32  // FRP 服务器端口
 
 	// 服务列表
 	services      map[int64]*models.ServiceInfo
@@ -60,11 +63,31 @@ func NewDesktopClient(serverAddr string, commandChan chan *models.VisitorCommand
 
 // Start 启动 Desktop-Web 线程
 func (c *DesktopClient) Start() error {
+	// 解析 Server 地址，支持 URL 格式
+	// 格式: https://signaling.example.com 或 http://localhost:8080
+	serverAddr, useTLS, err := parseServerAddress(c.serverAddr)
+	if err != nil {
+		return fmt.Errorf("failed to parse server address: %w", err)
+	}
+
+	// 根据协议选择传输凭证
+	var opts []grpc.DialOption
+	if useTLS {
+		// HTTPS：使用 TLS，跳过证书验证（支持自签名证书）
+		tlsConfig := &tls.Config{
+			InsecureSkipVerify: true,
+		}
+		creds := credentials.NewTLS(tlsConfig)
+		opts = append(opts, grpc.WithTransportCredentials(creds))
+		log.Printf("[Desktop-Web] Using TLS connection (skip verify)")
+	} else {
+		// HTTP：不使用 TLS
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		log.Printf("[Desktop-Web] Using plaintext connection")
+	}
+
 	// 连接 gRPC Server
-	conn, err := grpc.NewClient(
-		c.serverAddr,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	conn, err := grpc.NewClient(serverAddr, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to connect to server: %w", err)
 	}
@@ -72,7 +95,7 @@ func (c *DesktopClient) Start() error {
 	c.grpcConn = conn
 	c.grpcClient = pb.NewClientServiceClient(conn)
 
-	log.Printf("[Desktop-Web] Connected to server: %s", c.serverAddr)
+	log.Printf("[Desktop-Web] Connected to server: %s", serverAddr)
 
 	// 启动状态监听 goroutine
 	go c.statusListener()
@@ -103,6 +126,9 @@ func (c *DesktopClient) Authenticate(clientID, clientSecret string) error {
 
 	c.sessionToken = resp.SessionToken
 	c.clientID = clientID
+	c.frpToken = resp.Token
+	c.frpServer = resp.Server
+	c.frpPort = resp.Port
 
 	log.Printf("[Desktop-Web] Authenticated as: %s", clientID)
 	return nil
@@ -121,11 +147,8 @@ func (c *DesktopClient) GetServices() ([]*models.ServiceInfo, error) {
 		SessionToken: c.sessionToken,
 	})
 	if err != nil {
-		log.Printf("[Desktop-Web] GetServices error: %v", err)
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-
-	log.Printf("[Desktop-Web] GetServices response: success=%v, services_count=%d", resp.Success, len(resp.Services))
 
 	// 更新服务列表
 	c.servicesMutex.Lock()
@@ -196,6 +219,7 @@ func (c *DesktopClient) ConnectService(instanceID int64, localPort int) error {
 		InstanceName: resp.InstanceName,
 		SecretKey:    resp.SecretKey,
 		LocalPort:    localPort,
+		ServerURL:    resp.ServerUrl, // 使用 Server 返回的隧道地址
 		Response:     make(chan error, 1),
 	}
 
@@ -205,18 +229,12 @@ func (c *DesktopClient) ConnectService(instanceID int64, localPort int) error {
 		// 等待响应
 		select {
 		case err := <-cmd.Response:
-			// 记录审计日志
-			c.recordAuditLog(instanceID, "connect", localPort, err == nil, err)
 			return err
 		case <-time.After(30 * time.Second):
-			err := fmt.Errorf("connect timeout")
-			c.recordAuditLog(instanceID, "connect", localPort, false, err)
-			return err
+			return fmt.Errorf("connect timeout")
 		}
 	case <-time.After(5 * time.Second):
-		err := fmt.Errorf("command channel full")
-		c.recordAuditLog(instanceID, "connect", localPort, false, err)
-		return err
+		return fmt.Errorf("command channel full")
 	}
 }
 
@@ -245,13 +263,9 @@ func (c *DesktopClient) DisconnectService(instanceID int64) error {
 		// 等待响应
 		select {
 		case err := <-cmd.Response:
-			// 记录审计日志
-			c.recordAuditLog(instanceID, "disconnect", 0, err == nil, err)
 			return err
 		case <-time.After(10 * time.Second):
-			err := fmt.Errorf("disconnect timeout")
-			c.recordAuditLog(instanceID, "disconnect", 0, false, err)
-			return err
+			return fmt.Errorf("disconnect timeout")
 		}
 	case <-time.After(5 * time.Second):
 		return fmt.Errorf("command channel full")
@@ -276,103 +290,53 @@ func (c *DesktopClient) GetSessionToken() string {
 	return c.sessionToken
 }
 
+// GetFRPToken 返回 FRP 认证 Token
+func (c *DesktopClient) GetFRPToken() string {
+	return c.frpToken
+}
+
+// GetFRPServer 返回 FRP 服务器地址
+func (c *DesktopClient) GetFRPServer() string {
+	return c.frpServer
+}
+
+// GetFRPPort 返回 FRP 服务器端口
+func (c *DesktopClient) GetFRPPort() int32 {
+	return c.frpPort
+}
+
 // IsAuthenticated 检查是否已认证
 func (c *DesktopClient) IsAuthenticated() bool {
 	return c.sessionToken != ""
 }
 
-// recordAuditLog 记录审计日志（异步，不阻塞主流程）
-func (c *DesktopClient) recordAuditLog(instanceID int64, action string, localPort int, success bool, err error) {
-	// 异步记录，避免阻塞
-	go func() {
-		if c.auditClient == nil {
-			log.Printf("[Audit] Audit client not initialized, skipping log")
-			return
-		}
-
-		// 获取设备指纹和信息
-		fingerprint, fpErr := device.GetFingerprint()
-		if fpErr != nil {
-			log.Printf("[Audit] Failed to get device fingerprint: %v", fpErr)
-			return
-		}
-
-		// 构建错误消息
-		errorMessage := ""
-		if err != nil {
-			errorMessage = err.Error()
-		}
-
-		// 构建设备信息
-		deviceInfo := DeviceInfo{
-			OS:        fingerprint.OS,
-			OSVersion: device.GetOSInfo(),
-			Arch:      fingerprint.Arch,
-			CPUModel:  "",
-			MachineID: fingerprint.MachineID,
-			Hostname:  fingerprint.Hostname,
-		}
-
-		// 记录审计日志
-		req := &RecordConnectionRequest{
-			STCPInstanceID:    instanceID,
-			Action:            action,
-			LocalPort:         localPort,
-			DeviceFingerprint: fingerprint.Hash,
-			DeviceInfo:        deviceInfo,
-			Success:           success,
-			ErrorMessage:      errorMessage,
-			ServerAddress:     c.serverAddr, // Desktop连接的Server地址
-		}
-
-		if err := c.auditClient.RecordConnection(req); err != nil {
-			log.Printf("[Audit] Failed to record audit log: %v", err)
-		} else {
-			log.Printf("[Audit] Recorded %s action for instance %d (success=%v)", action, instanceID, success)
-		}
-	}()
-}
-
-// DeviceInfoResult 设备信息结果（用于返回给App层）
-type DeviceInfoResult struct {
-	DeviceToken string
-	DeviceName  string
-	OS          string
-	Arch        string
-	Hostname    string
-	Status      string
-	LastUsedAt  string
-	CreatedAt   string
-	IsCurrent   bool
-}
-
-// GetDevices 获取已登录的设备列表
-func (c *DesktopClient) GetDevices() ([]*DeviceInfoResult, error) {
-	if c.sessionToken == "" {
-		return nil, fmt.Errorf("not authenticated")
+// parseServerAddress 解析 Server 地址
+// 返回: (grpcAddr, useTLS, error)
+func parseServerAddress(serverAddr string) (string, bool, error) {
+	// 如果没有协议前缀，添加默认的 http://
+	if !strings.Contains(serverAddr, "://") {
+		serverAddr = "http://" + serverAddr
 	}
 
-	// 使用HTTP客户端调用Server API
-	// TODO: 实现HTTP API调用
-	// 暂时返回当前设备信息
-	fingerprint, err := device.GetFingerprint()
+	parsedURL, err := url.Parse(serverAddr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get device fingerprint: %w", err)
+		return "", false, err
 	}
 
-	devices := []*DeviceInfoResult{
-		{
-			DeviceToken: c.sessionToken,
-			DeviceName:  "当前设备",
-			OS:          fingerprint.OS,
-			Arch:        fingerprint.Arch,
-			Hostname:    fingerprint.Hostname,
-			Status:      "online",
-			LastUsedAt:  time.Now().Format(time.RFC3339),
-			CreatedAt:   time.Now().Format(time.RFC3339),
-			IsCurrent:   true,
-		},
+	// 构建 gRPC 连接地址（host:port）
+	var grpcAddr string
+	if parsedURL.Port() != "" {
+		// URL中指定了端口
+		grpcAddr = parsedURL.Host
+	} else {
+		// URL中没有端口，使用协议默认端口
+		port := 80
+		if parsedURL.Scheme == "https" {
+			port = 443
+		}
+		grpcAddr = fmt.Sprintf("%s:%d", parsedURL.Hostname(), port)
 	}
 
-	return devices, nil
+	useTLS := parsedURL.Scheme == "https"
+	return grpcAddr, useTLS, nil
 }
