@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"awecloud-desktop/internal/client"
-	"awecloud-desktop/internal/config"
-	"awecloud-desktop/internal/frp"
-	"awecloud-desktop/internal/models"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/client"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/frp"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/models"
 )
 
 // App struct

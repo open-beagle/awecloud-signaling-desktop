@@ -1,4 +1,4 @@
-module awecloud-desktop
+module github.com/open-beagle/awecloud-signaling-desktop
 
 go 1.24.0
 

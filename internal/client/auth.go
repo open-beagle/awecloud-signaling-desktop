@@ -6,9 +6,9 @@ import (
 	"log"
 	"time"
 
-	"awecloud-desktop/internal/config"
-	"awecloud-desktop/internal/device"
-	pb "awecloud-desktop/pkg/proto"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/device"
+	pb "github.com/open-beagle/awecloud-signaling-desktop/pkg/proto"
 )
 
 // AuthWithSecret 使用Client Secret登录并获取Device Token

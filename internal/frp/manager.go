@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"awecloud-desktop/internal/models"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/models"
 
 	"github.com/fatedier/frp/client"
 	v1 "github.com/fatedier/frp/pkg/config/v1"

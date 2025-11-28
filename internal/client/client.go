@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"awecloud-desktop/internal/models"
-	pb "awecloud-desktop/pkg/proto"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/models"
+	pb "github.com/open-beagle/awecloud-signaling-desktop/pkg/proto"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
