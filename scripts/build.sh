@@ -51,6 +51,57 @@ if ! command -v node &> /dev/null; then
     exit 1
 fi
 
+# installLinuxDeps 安装Linux构建依赖
+installLinuxDeps() {
+    echo -e "${YELLOW}Checking Linux build dependencies...${NC}"
+    
+    if ! pkg-config --exists gtk+-3.0; then
+        echo "GTK3 not found, skipping installation (run manually if needed)"
+        return
+    fi
+    
+    if ! pkg-config --exists webkit2gtk-4.1 && ! pkg-config --exists webkit2gtk-4.0; then
+        echo "WebKit2GTK not found, skipping installation (run manually if needed)"
+        return
+    fi
+    
+    # 创建webkit2gtk-4.0.pc软链接（如果需要）
+    if pkg-config --exists webkit2gtk-4.1 && ! pkg-config --exists webkit2gtk-4.0; then
+        echo -e "${YELLOW}Creating webkit2gtk-4.0.pc symlink...${NC}"
+        for dir in /usr/lib/x86_64-linux-gnu/pkgconfig /usr/lib/pkgconfig /usr/local/lib/pkgconfig; do
+            if [ -f "$dir/webkit2gtk-4.1.pc" ]; then
+                sudo ln -sf "$dir/webkit2gtk-4.1.pc" "$dir/webkit2gtk-4.0.pc" 2>/dev/null || true
+                break
+            fi
+        done
+    fi
+    
+    echo -e "${GREEN}✓ Linux build dependencies OK${NC}"
+}
+
+# installWindowsDeps 安装Windows交叉编译依赖
+installWindowsDeps() {
+    echo -e "${YELLOW}Checking Windows cross-compilation dependencies...${NC}"
+    
+    if ! command -v x86_64-w64-mingw32-gcc &> /dev/null; then
+        echo "MinGW-w64 not found, skipping installation (run manually if needed)"
+        return
+    fi
+    
+    echo -e "${GREEN}✓ Windows cross-compilation dependencies OK${NC}"
+}
+
+# checkMacOSDeps 检查macOS构建环境
+checkMacOSDeps() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo -e "${GREEN}✓ Building on macOS${NC}"
+    else
+        echo -e "${YELLOW}Note: macOS cross-compilation from Linux is not supported${NC}"
+        echo -e "${YELLOW}Skipping macOS build${NC}"
+        return 1
+    fi
+}
+
 # 安装前端依赖
 echo -e "${YELLOW}Installing frontend dependencies...${NC}"
 cd frontend
@@ -76,6 +127,22 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
     echo -e "${GREEN}========================================${NC}"
     echo -e "${GREEN}Building for ${OS}/${ARCH}${NC}"
     echo -e "${GREEN}========================================${NC}"
+    
+    # 根据平台检查依赖
+    case "$OS" in
+        linux)
+            installLinuxDeps
+            ;;
+        windows)
+            installWindowsDeps
+            ;;
+        darwin)
+            if ! checkMacOSDeps; then
+                echo -e "${YELLOW}Skipping macOS build${NC}"
+                continue
+            fi
+            ;;
+    esac
     
     # 设置输出文件名
     OUTPUT_NAME="awecloud-signaling-${BUILD_VERSION}-${OS}-${ARCH}"
@@ -103,24 +170,26 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
     # 检查构建结果
     if [ "$OS" = "darwin" ]; then
         # macOS 构建产物是 .app 包
-        BUILD_OUTPUT="build/bin/awecloud-signaling.app"
+        BUILD_OUTPUT="build/bin/awecloud-signaling-desktop.app"
         if [ -d "${BUILD_OUTPUT}" ]; then
             echo -e "${GREEN}✓ Build successful: ${BUILD_OUTPUT}${NC}"
             # 创建 zip 包
             cd build/bin
-            zip -r "awecloud-signaling-${BUILD_VERSION}-${OS}-${ARCH}.zip" "awecloud-signaling.app"
+            zip -r "awecloud-signaling-${BUILD_VERSION}-${OS}-${ARCH}.zip" "awecloud-signaling-desktop.app"
             cd ../..
             echo -e "${GREEN}✓ Created: ${OUTPUT_DIR}/awecloud-signaling-${BUILD_VERSION}-${OS}-${ARCH}.zip${NC}"
         else
             echo -e "${RED}✗ Build failed for ${OS}/${ARCH}${NC}"
+            echo -e "${RED}Expected output: ${BUILD_OUTPUT}${NC}"
+            ls -la build/bin/ || echo "build/bin directory not found"
             exit 1
         fi
     else
         # Linux/Windows 构建产物是可执行文件
         if [ "$OS" = "windows" ]; then
-            BUILD_OUTPUT="build/bin/awecloud-signaling.exe"
+            BUILD_OUTPUT="build/bin/awecloud-signaling-desktop.exe"
         else
-            BUILD_OUTPUT="build/bin/awecloud-signaling"
+            BUILD_OUTPUT="build/bin/awecloud-signaling-desktop"
         fi
         
         if [ -f "${BUILD_OUTPUT}" ]; then
@@ -133,6 +202,8 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
             echo "  File size: ${FILE_SIZE}"
         else
             echo -e "${RED}✗ Build failed for ${OS}/${ARCH}${NC}"
+            echo -e "${RED}Expected output: ${BUILD_OUTPUT}${NC}"
+            ls -la build/bin/ || echo "build/bin directory not found"
             exit 1
         fi
     fi
