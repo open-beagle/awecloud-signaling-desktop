@@ -71,6 +71,9 @@ func NewDesktopClient(serverAddr string, commandChan chan *models.VisitorCommand
 
 // Start 启动 Desktop-Web 线程
 func (c *DesktopClient) Start() error {
+	// 规范化服务器地址（移除末尾的斜杠）
+	c.serverAddr = strings.TrimSuffix(c.serverAddr, "/")
+
 	// 保存原始URL（包含协议）
 	c.serverURL = c.serverAddr
 
