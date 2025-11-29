@@ -5,21 +5,27 @@
       <div class="page-header">
         <div class="header-left">
           <h2>我的服务</h2>
-          <el-tag type="success" v-if="authStore.isAuthenticated">
-            {{ authStore.clientId }}
-          </el-tag>
           <el-tag v-if="!servicesStore.loading">
-            共 {{ servicesStore.services.length }} 个服务
+            共 {{ filteredServices.length }} 个服务
           </el-tag>
         </div>
         <div class="header-right">
-          <el-button 
-            :icon="Refresh" 
-            @click="handleRefresh" 
-            :loading="servicesStore.loading"
-          >
-            刷新
-          </el-button>
+          <el-input
+            v-model="searchQuery"
+            placeholder="搜索服务"
+            :prefix-icon="Search"
+            clearable
+            style="width: 200px;"
+          />
+          <el-checkbox v-model="showOnlineOnly" label="在线" />
+          <el-tooltip content="刷新" placement="bottom">
+            <el-button 
+              :icon="Refresh" 
+              @click="handleRefresh" 
+              :loading="servicesStore.loading"
+              circle
+            />
+          </el-tooltip>
         </div>
       </div>
 
@@ -30,9 +36,14 @@
           description="暂无可用服务" 
         />
         
+        <el-empty 
+          v-else-if="!servicesStore.loading && filteredServices.length === 0" 
+          description="没有找到匹配的服务" 
+        />
+        
         <div v-else class="services-grid">
           <ServiceCard
-            v-for="service in servicesStore.services"
+            v-for="service in filteredServices"
             :key="service.instance_id"
             :service="service"
             :connection="servicesStore.getConnectionStatus(service.instance_id)"
@@ -46,9 +57,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, Search } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
 import Layout from '../components/Layout.vue'
@@ -57,6 +68,32 @@ import { GetServices, ConnectService, DisconnectService } from '../../wailsjs/go
 
 const authStore = useAuthStore()
 const servicesStore = useServicesStore()
+
+// 搜索和过滤
+const searchQuery = ref('')
+const showOnlineOnly = ref(false)
+
+// 过滤后的服务列表
+const filteredServices = computed(() => {
+  let services = servicesStore.services
+
+  // 按搜索关键词过滤
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase()
+    services = services.filter(service => 
+      service.instance_name.toLowerCase().includes(query) ||
+      service.agent_name?.toLowerCase().includes(query) ||
+      service.description?.toLowerCase().includes(query)
+    )
+  }
+
+  // 按在线状态过滤（显示服务状态为online的）
+  if (showOnlineOnly.value) {
+    services = services.filter(service => service.status === 'online')
+  }
+
+  return services
+})
 
 onMounted(async () => {
   await loadServices()

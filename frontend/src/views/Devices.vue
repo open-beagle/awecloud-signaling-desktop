@@ -4,15 +4,20 @@
       <!-- 页面头部 -->
       <div class="page-header">
         <div class="header-left">
-          <h2>设备管理</h2>
+          <h2>我的设备</h2>
           <el-tag v-if="devices.length > 0">
             共 {{ devices.length }} 台设备
           </el-tag>
         </div>
         <div class="header-right">
-          <el-button :icon="Refresh" @click="loadDevices" :loading="loading">
-            刷新
-          </el-button>
+          <el-tooltip content="刷新" placement="bottom">
+            <el-button 
+              :icon="Refresh" 
+              @click="loadDevices" 
+              :loading="loading"
+              circle
+            />
+          </el-tooltip>
         </div>
       </div>
 
@@ -36,21 +41,10 @@
           stripe
           class="devices-table"
         >
-      <el-table-column label="设备信息" min-width="200">
+      <el-table-column label="设备信息" min-width="180">
         <template #default="{ row }">
           <div class="device-info">
-            <div class="device-name">
-              <el-icon v-if="row.is_current" color="#67C23A">
-                <Check />
-              </el-icon>
-              {{ row.device_name || '未命名设备' }}
-              <el-tag v-if="row.is_current" type="success" size="small">
-                当前设备
-              </el-tag>
-            </div>
-            <div class="device-details">
-              <span>{{ row.os }} {{ row.arch }}</span>
-            </div>
+            <span>{{ formatOSInfo(row.os) }} {{ formatArchInfo(row.arch) }}</span>
           </div>
         </template>
       </el-table-column>
@@ -77,25 +71,27 @@
         </template>
       </el-table-column>
 
-      <el-table-column label="操作" width="200" fixed="right">
+      <el-table-column label="操作" width="120" fixed="right">
         <template #default="{ row }">
           <div class="action-buttons">
-            <el-button
-              v-if="row.status === 'online' && !row.is_current"
-              size="small"
-              type="warning"
-              @click="handleOffline(row)"
-            >
-              下线
-            </el-button>
-            <el-button
-              v-if="!row.is_current"
-              size="small"
-              type="danger"
-              @click="handleDelete(row)"
-            >
-              删除
-            </el-button>
+            <el-tooltip v-if="row.status === 'online' && !row.is_current" content="下线" placement="top">
+              <el-button
+                size="small"
+                type="warning"
+                :icon="SwitchButton"
+                @click="handleOffline(row)"
+                circle
+              />
+            </el-tooltip>
+            <el-tooltip v-if="!row.is_current" content="删除" placement="top">
+              <el-button
+                size="small"
+                type="danger"
+                :icon="Delete"
+                @click="handleDelete(row)"
+                circle
+              />
+            </el-tooltip>
             <el-tag v-if="row.is_current" type="success" size="small">
               当前设备
             </el-tag>
@@ -115,7 +111,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Check } from '@element-plus/icons-vue'
+import { Refresh, Check, SwitchButton, Delete } from '@element-plus/icons-vue'
 import Layout from '../components/Layout.vue'
 import { GetDevices, OfflineDevice, DeleteDevice } from '../../wailsjs/go/main/App'
 
@@ -187,6 +183,59 @@ const handleDelete = async (device: Device) => {
     if (error !== 'cancel') {
       ElMessage.error('操作失败: ' + (error.message || '未知错误'))
     }
+  }
+}
+
+const formatDeviceName = (device: Device) => {
+  // 如果有device_name，使用它
+  if (device.device_name && device.device_name !== 'desktop desktop-client') {
+    return device.device_name
+  }
+  // 否则使用 OS + 主机名
+  const os = formatOSInfo(device.os)
+  const hostname = device.hostname !== 'desktop-client' ? device.hostname : '未知主机'
+  return `${os} ${hostname}`
+}
+
+const formatOSInfo = (os: string) => {
+  if (!os) return '未知系统'
+  // 如果已经是友好名称，直接返回
+  if (os.includes('Windows') || os === 'macOS' || os === 'Linux') {
+    return os
+  }
+  // 转换旧格式
+  switch (os.toLowerCase()) {
+    case 'windows':
+      return 'Windows 10'
+    case 'darwin':
+      return 'macOS'
+    case 'linux':
+      return 'Linux'
+    case 'desktop':
+      return 'Windows 10'
+    default:
+      return os
+  }
+}
+
+const formatArchInfo = (arch: string) => {
+  if (!arch) return ''
+  // 如果已经是友好名称，直接返回
+  if (arch === 'x86_64' || arch === 'ARM64' || arch === 'x86') {
+    return arch
+  }
+  // 转换旧格式
+  switch (arch.toLowerCase()) {
+    case 'amd64':
+      return 'x86_64'
+    case 'arm64':
+      return 'ARM64'
+    case '386':
+      return 'x86'
+    case 'unknown':
+      return 'x86_64'
+    default:
+      return arch
   }
 }
 

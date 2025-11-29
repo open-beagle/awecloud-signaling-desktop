@@ -47,7 +47,7 @@
       >
         <!-- 模式1：离线模式 - 只读显示 -->
         <template v-if="loginMode === 'offline'">
-          <el-form-item label=" ">
+          <el-form-item label=" " class="button-form-item">
             <el-button
               type="primary"
               :loading="reconnecting"
@@ -57,7 +57,7 @@
               {{ reconnecting ? '重新连接中...' : '重新连接' }}
             </el-button>
           </el-form-item>
-          <el-form-item label=" ">
+          <el-form-item label=" " class="button-form-item">
             <el-button
               @click="handleSwitchAccount"
               class="full-width-button"
@@ -101,7 +101,7 @@
             </el-checkbox>
           </el-form-item>
 
-          <el-form-item label=" ">
+          <el-form-item label=" " class="button-form-item">
             <el-button
               type="primary"
               :loading="loading"
@@ -112,7 +112,7 @@
             </el-button>
           </el-form-item>
 
-          <el-form-item v-if="autoFillMode" label=" ">
+          <el-form-item v-if="autoFillMode" label=" " class="button-form-item">
             <el-button
               @click="handleClearCredentials"
               class="full-width-button"
@@ -421,5 +421,19 @@ onMounted(async () => {
 
 .login-hint {
   margin-bottom: 20px;
+}
+
+/* 按钮表单项：移除label宽度，使按钮居中 */
+.button-form-item {
+  margin-bottom: 18px;
+}
+
+.button-form-item :deep(.el-form-item__label) {
+  width: 0 !important;
+  padding: 0 !important;
+}
+
+.button-form-item :deep(.el-form-item__content) {
+  margin-left: 0 !important;
 }
 </style>

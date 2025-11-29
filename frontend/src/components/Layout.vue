@@ -5,6 +5,7 @@
       <div class="navbar-left">
         <img src="../assets/logo.png" alt="Logo" class="logo" />
         <span class="app-name">信令桌面</span>
+        <span class="server-address" v-if="authStore.serverAddress">{{ authStore.serverAddress }}</span>
       </div>
       
       <div class="navbar-right">
@@ -18,14 +19,14 @@
           <span>我的服务</span>
         </div>
         
-        <!-- 设备管理 -->
+        <!-- 我的设备 -->
         <div 
           class="nav-item"
           :class="{ active: currentRoute === '/devices' }"
           @click="navigateTo('/devices')"
         >
           <el-icon><Monitor /></el-icon>
-          <span>设备管理</span>
+          <span>我的设备</span>
         </div>
         
         <!-- 查看日志 -->
@@ -139,6 +140,13 @@ const handleUserCommand = (command: string) => {
   font-size: 16px;
   font-weight: 500;
   color: #333;
+}
+
+.server-address {
+  font-size: 13px;
+  color: #909399;
+  padding-left: 12px;
+  border-left: 1px solid #e4e7ed;
 }
 
 .navbar-right {

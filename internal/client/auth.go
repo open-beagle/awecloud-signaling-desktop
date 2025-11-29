@@ -28,6 +28,11 @@ func (c *DesktopClient) AuthWithSecret(clientID, clientSecret string, rememberMe
 	req := &pb.AuthRequest{
 		ClientId:     clientID,
 		ClientSecret: clientSecret,
+		DeviceInfo: &pb.DeviceInfo{
+			Os:       fingerprint.OS,
+			Arch:     fingerprint.Arch,
+			Hostname: fingerprint.Hostname,
+		},
 	}
 
 	resp, err := c.grpcClient.Authenticate(ctx, req)
@@ -49,6 +54,12 @@ func (c *DesktopClient) AuthWithSecret(clientID, clientSecret string, rememberMe
 	// 使用原始的服务器URL（包含协议）
 	c.auditClient = NewAuditClient(c.serverURL, resp.SessionToken)
 
+	// 初始化设备管理客户端
+	c.deviceClient = NewDeviceClient(c.serverURL, resp.SessionToken)
+
+	// 初始化隧道配置客户端
+	c.tunnelConfigClient = NewTunnelConfigClient(c.serverURL, resp.SessionToken)
+
 	// 保存配置
 	cfg, err := config.Load()
 	if err != nil {
@@ -58,27 +69,16 @@ func (c *DesktopClient) AuthWithSecret(clientID, clientSecret string, rememberMe
 	cfg.ClientID = clientID
 	cfg.RememberMe = rememberMe
 
-	// 记录服务器返回的隧道配置
-	log.Printf("Server returned tunnel config: token_length=%d, server=%s, port=%d",
-		len(resp.Token), resp.Server, resp.Port)
-
 	if rememberMe {
 		cfg.ClientSecret = clientSecret
-		cfg.DeviceToken = resp.SessionToken
+		// 保存Device Token（不是JWT）
+		cfg.DeviceToken = resp.DeviceToken
 		cfg.TokenExpiresAt = resp.ExpiresAt
-		// 保存隧道配置
-		cfg.TunnelToken = resp.Token
-		cfg.TunnelServer = resp.Server
-		cfg.TunnelPort = int(resp.Port)
-		log.Printf("Saved tunnel config to file: token_length=%d, server=%s, port=%d",
-			len(cfg.TunnelToken), cfg.TunnelServer, cfg.TunnelPort)
+		log.Printf("Saved device token to config: %s", resp.DeviceToken[:16]+"...")
 	} else {
 		cfg.ClientSecret = ""
 		cfg.DeviceToken = ""
 		cfg.TokenExpiresAt = 0
-		cfg.TunnelToken = ""
-		cfg.TunnelServer = ""
-		cfg.TunnelPort = 0
 	}
 
 	if err := cfg.Save(); err != nil {
@@ -97,70 +97,53 @@ func (c *DesktopClient) AuthWithSecret(clientID, clientSecret string, rememberMe
 }
 
 // AuthWithToken 使用Device Token登录
-func (c *DesktopClient) AuthWithToken(deviceToken string) (*AuthResult, error) {
+func (c *DesktopClient) AuthWithToken(clientID, deviceToken string) (*AuthResult, error) {
 	// 获取设备指纹
 	fingerprint, err := device.GetFingerprint()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get device fingerprint: %w", err)
 	}
 
-	log.Printf("Authenticating with device token: device=%s", fingerprint.Hash)
+	log.Printf("Authenticating with device token: client_id=%s, device=%s", clientID, fingerprint.Hash)
 
-	// 验证Token是否有效（使用GetServices）
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	servicesReq := &pb.GetServicesRequest{
-		SessionToken: deviceToken,
-	}
-
-	servicesResp, err := c.grpcClient.GetServices(ctx, servicesReq)
+	// 使用Device Token换取JWT Token
+	jwtToken, err := c.exchangeDeviceTokenForJWT(clientID, deviceToken)
 	if err != nil {
-		// Token无效或过期
-		log.Printf("Token authentication failed: %v", err)
-		return nil, fmt.Errorf("token authentication failed: %w", err)
+		log.Printf("Failed to exchange device token for JWT: %v", err)
+		// 清除无效的Token
+		cfg, _ := config.Load()
+		if cfg != nil {
+			cfg.ClearToken()
+			cfg.Save()
+		}
+		// 返回更友好的错误信息
+		return nil, fmt.Errorf("登录凭据已过期，请重新输入密码")
 	}
 
-	if !servicesResp.Success {
-		return nil, fmt.Errorf("token authentication failed")
-	}
+	log.Printf("Token authentication successful, got JWT token")
 
-	log.Printf("Token authentication successful")
-
-	// 设置sessionToken到client
-	c.sessionToken = deviceToken
+	// 设置sessionToken到client（使用JWT）
+	c.sessionToken = jwtToken
 
 	// 初始化审计日志客户端
-	// 使用原始的服务器URL（包含协议）
-	c.auditClient = NewAuditClient(c.serverURL, deviceToken)
+	// 使用原始的服务器URL（包含协议）和JWT token
+	c.auditClient = NewAuditClient(c.serverURL, jwtToken)
 
-	// 从配置文件加载隧道配置
-	cfg, err := config.Load()
-	if err != nil {
-		log.Printf("Warning: failed to load config: %v", err)
-	}
+	// 初始化设备管理客户端
+	c.deviceClient = NewDeviceClient(c.serverURL, jwtToken)
+
+	// 初始化隧道配置客户端
+	c.tunnelConfigClient = NewTunnelConfigClient(c.serverURL, jwtToken)
+
+	// 不再从配置文件读取隧道配置
+	// 隧道配置将在连接服务时从Server动态获取
+	log.Printf("Token authentication successful, tunnel config will be fetched when connecting to services")
 
 	result := &AuthResult{
 		Success:      true,
-		SessionToken: deviceToken,
+		SessionToken: jwtToken,
 		ExpiresAt:    0, // Token认证不返回新的过期时间
 		Message:      "Login successful with device token",
-	}
-
-	// 使用配置文件中保存的隧道配置
-	if cfg != nil {
-		result.TunnelToken = cfg.TunnelToken
-		result.TunnelServer = cfg.TunnelServer
-		result.TunnelPort = cfg.TunnelPort
-		log.Printf("Using saved tunnel config: server=%s, port=%d, token_length=%d",
-			cfg.TunnelServer, cfg.TunnelPort, len(cfg.TunnelToken))
-
-		// 如果没有保存的隧道配置，尝试从服务器地址推导
-		if result.TunnelServer == "" && result.TunnelPort == 0 {
-			log.Printf("Warning: No saved tunnel config, will use server address for tunnel")
-		}
-	} else {
-		log.Printf("Warning: Failed to load config for tunnel info")
 	}
 
 	return result, nil
@@ -188,4 +171,32 @@ type AuthResult struct {
 	TunnelServer string
 	TunnelPort   int
 	Message      string
+}
+
+// exchangeDeviceTokenForJWT 使用Device Token换取JWT Token
+func (c *DesktopClient) exchangeDeviceTokenForJWT(clientID, deviceToken string) (string, error) {
+	// 调用Server API: POST /api/v1/client/auth/login/token
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req := &pb.LoginWithTokenRequest{
+		ClientId:    clientID,
+		DeviceToken: deviceToken,
+	}
+
+	resp, err := c.grpcClient.LoginWithToken(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("failed to call LoginWithToken API: %w", err)
+	}
+
+	if !resp.Success {
+		return "", fmt.Errorf("login with token failed: %s", resp.Message)
+	}
+
+	if resp.JwtToken == "" {
+		return "", fmt.Errorf("server did not return JWT token")
+	}
+
+	log.Printf("Successfully exchanged device token for JWT")
+	return resp.JwtToken, nil
 }
