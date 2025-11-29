@@ -123,7 +123,7 @@ func (a *App) Login(serverAddr, clientID, clientSecret string, rememberMe bool) 
 	// 如果没有提供Secret，尝试使用Token登录
 	if clientSecret == "" && a.config.HasValidToken() {
 		log.Printf("Attempting token authentication...")
-		authResult, err = a.desktopClient.AuthWithToken(a.config.DeviceToken)
+		authResult, err = a.desktopClient.AuthWithToken(a.config.ClientID, a.config.DeviceToken)
 	} else {
 		log.Printf("Attempting secret authentication...")
 		authResult, err = a.desktopClient.AuthWithSecret(clientID, clientSecret, rememberMe)
@@ -163,36 +163,42 @@ func (a *App) initializeFRP() error {
 
 	log.Printf("[App] Initializing FRP client...")
 
-	// 从配置加载隧道信息
-	cfg := a.config
+	// 从Server获取隧道配置（不使用本地缓存）
+	log.Printf("[App] Fetching tunnel config from server...")
+	tunnelConfig, err := a.desktopClient.GetTunnelConfig()
+	if err != nil {
+		log.Printf("[App] Failed to get tunnel config: %v", err)
+		return fmt.Errorf("获取隧道配置失败: %w", err)
+	}
+
+	log.Printf("[App] Tunnel config received: server=%s, port=%d, token_length=%d",
+		tunnelConfig.TunnelServer, tunnelConfig.TunnelPort, len(tunnelConfig.TunnelToken))
+
+	// 构建隧道地址
 	var tunnelAddr string
 	var tunnelHost string
-	var token string
 
-	// 优先使用配置文件中的隧道配置
-	if cfg.TunnelServer != "" {
-		tunnelAddr = cfg.TunnelServer
+	if tunnelConfig.TunnelServer != "" {
+		// 使用完整URL
+		tunnelAddr = tunnelConfig.TunnelServer
 		tunnelHost = extractHost(tunnelAddr)
-		log.Printf("[App] Using saved tunnel server: %s", tunnelAddr)
-	} else if cfg.TunnelPort > 0 {
-		tunnelHost = extractHost(cfg.ServerAddress)
-		tunnelAddr = fmt.Sprintf("%s:%d", tunnelHost, cfg.TunnelPort)
-		log.Printf("[App] Using tunnel address from config: %s", tunnelAddr)
+		log.Printf("[App] Using tunnel server URL: %s", tunnelAddr)
+	} else if tunnelConfig.TunnelPort > 0 {
+		// 使用端口
+		tunnelHost = extractHost(a.config.ServerAddress)
+		tunnelAddr = fmt.Sprintf("%s:%d", tunnelHost, tunnelConfig.TunnelPort)
+		log.Printf("[App] Using tunnel address: %s", tunnelAddr)
 	} else {
-		// 使用默认配置
-		tunnelHost = extractHost(cfg.ServerAddress)
+		// 使用默认端口
+		tunnelHost = extractHost(a.config.ServerAddress)
 		tunnelAddr = fmt.Sprintf("%s:7000", tunnelHost)
 		log.Printf("[App] Using default tunnel address: %s", tunnelAddr)
 	}
 
-	token = cfg.TunnelToken
+	token := tunnelConfig.TunnelToken
 	if token == "" {
 		log.Printf("[App] Error: Tunnel token is empty!")
-		log.Printf("[App] This usually means:")
-		log.Printf("[App]   1. You logged in with an old version that didn't save tunnel config")
-		log.Printf("[App]   2. The server didn't return tunnel configuration")
-		log.Printf("[App] Solution: Please logout and login again with your password")
-		return fmt.Errorf("tunnel token is empty, please logout and login again with password to refresh configuration")
+		return fmt.Errorf("服务器返回的隧道Token为空")
 	}
 
 	tokenPreview := token
@@ -241,6 +247,9 @@ func extractHost(serverAddr string) string {
 
 // Logout 用户登出
 func (a *App) Logout() {
+	log.Printf("[App] Logout called")
+
+	// 停止客户端连接
 	if a.desktopClient != nil {
 		a.desktopClient.Stop()
 		a.desktopClient = nil
@@ -248,6 +257,16 @@ func (a *App) Logout() {
 	if a.desktopFRP != nil {
 		a.desktopFRP.Stop()
 		a.desktopFRP = nil
+	}
+
+	// 清除Token，但保留服务器地址和ClientID（方便下次登录）
+	if a.config != nil {
+		a.config.ClearToken()
+		if err := a.config.Save(); err != nil {
+			log.Printf("[App] Failed to save config after logout: %v", err)
+		} else {
+			log.Printf("[App] Token cleared, config saved")
+		}
 	}
 }
 
@@ -468,9 +487,8 @@ func (a *App) OfflineDevice(deviceToken string) error {
 		return fmt.Errorf("not logged in")
 	}
 
-	// TODO: 调用Server API让设备下线
 	log.Printf("Offline device: %s", deviceToken)
-	return nil
+	return a.desktopClient.OfflineDevice(deviceToken)
 }
 
 // DeleteDevice 删除设备记录
@@ -479,16 +497,15 @@ func (a *App) DeleteDevice(deviceToken string) error {
 		return fmt.Errorf("not logged in")
 	}
 
-	// TODO: 调用Server API删除设备
 	log.Printf("Delete device: %s", deviceToken)
-	return nil
+	return a.desktopClient.DeleteDevice(deviceToken)
 }
 
 // 日志缓冲区
 var (
 	logBuffer   []string
 	logMutex    sync.Mutex
-	maxLogLines = 1000
+	maxLogLines = 5000 // 增加到5000行
 )
 
 // LogToBuffer 添加日志到缓冲区

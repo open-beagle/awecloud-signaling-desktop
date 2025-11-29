@@ -10,12 +10,27 @@
           </el-tag>
         </div>
         <div class="header-right">
-          <el-button :icon="Refresh" @click="handleRefresh">
-            刷新
-          </el-button>
-          <el-button @click="handleClear">
-            清空
-          </el-button>
+          <el-tooltip content="刷新" placement="bottom">
+            <el-button 
+              :icon="Refresh" 
+              @click="handleRefresh"
+              circle
+            />
+          </el-tooltip>
+          <el-tooltip content="清空" placement="bottom">
+            <el-button 
+              :icon="Delete" 
+              @click="handleClear"
+              circle
+            />
+          </el-tooltip>
+          <el-tooltip content="下载" placement="bottom">
+            <el-button 
+              :icon="Download" 
+              @click="handleDownload"
+              circle
+            />
+          </el-tooltip>
         </div>
       </div>
 
@@ -42,7 +57,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
+import { Refresh, Delete, Download } from '@element-plus/icons-vue'
 import Layout from '../components/Layout.vue'
 import { GetLogs } from '../../wailsjs/go/main/App'
 
@@ -74,6 +89,34 @@ const handleRefresh = () => {
 const handleClear = () => {
   logs.value = []
   ElMessage.success('日志已清空')
+}
+
+const handleDownload = () => {
+  if (logs.value.length === 0) {
+    ElMessage.warning('暂无日志可下载')
+    return
+  }
+
+  // 生成日志内容
+  const content = logs.value.join('\n')
+  
+  // 生成文件名
+  const now = new Date()
+  const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, -5)
+  const filename = `log_${timestamp}.txt`
+  
+  // 创建 Blob 并下载
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+  
+  ElMessage.success('日志已下载')
 }
 
 const getLogClass = (log: string) => {

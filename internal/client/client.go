@@ -30,6 +30,12 @@ type DesktopClient struct {
 	// 审计日志客户端
 	auditClient *AuditClient
 
+	// 设备管理客户端
+	deviceClient *DeviceClient
+
+	// 隧道配置客户端
+	tunnelConfigClient *TunnelConfigClient
+
 	// 认证信息
 	sessionToken string
 	clientID     string
@@ -223,6 +229,26 @@ func (c *DesktopClient) ConnectService(instanceID int64, localPort int) error {
 		localPort = int(resp.SuggestedLocalPort)
 	}
 
+	// 处理ServerURL
+	serverURL := resp.ServerUrl
+	if serverURL == "" {
+		// 如果Server没有返回URL，使用连接的Server地址 + 默认端口7000
+		// 从serverURL中提取主机名（移除协议和端口）
+		host := c.serverURL
+		host = strings.TrimPrefix(host, "https://")
+		host = strings.TrimPrefix(host, "http://")
+		host = strings.TrimPrefix(host, "wss://")
+		host = strings.TrimPrefix(host, "ws://")
+		if idx := strings.Index(host, ":"); idx != -1 {
+			host = host[:idx]
+		}
+		if idx := strings.Index(host, "/"); idx != -1 {
+			host = host[:idx]
+		}
+		serverURL = fmt.Sprintf("ws://%s:7000", host)
+		log.Printf("[Desktop-Web] Server returned empty URL, using: %s", serverURL)
+	}
+
 	// 创建命令
 	cmd := &models.VisitorCommand{
 		Action:       "connect",
@@ -230,7 +256,7 @@ func (c *DesktopClient) ConnectService(instanceID int64, localPort int) error {
 		InstanceName: resp.InstanceName,
 		SecretKey:    resp.SecretKey,
 		LocalPort:    localPort,
-		ServerURL:    resp.ServerUrl, // 使用Server返回的隧道地址
+		ServerURL:    serverURL, // 使用处理后的隧道地址
 		Response:     make(chan error, 1),
 	}
 
@@ -387,27 +413,83 @@ func (c *DesktopClient) GetDevices() ([]*DeviceInfoResult, error) {
 		return nil, fmt.Errorf("not authenticated")
 	}
 
-	// 使用HTTP客户端调用Server API
-	// TODO: 实现HTTP API调用
-	// 暂时返回当前设备信息
-	fingerprint, err := device.GetFingerprint()
+	if c.deviceClient == nil {
+		return nil, fmt.Errorf("device client not initialized")
+	}
+
+	// 调用Server API获取设备列表
+	devices, err := c.deviceClient.ListDevices()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get device fingerprint: %w", err)
+		return nil, fmt.Errorf("failed to list devices: %w", err)
 	}
 
-	devices := []*DeviceInfoResult{
-		{
-			DeviceToken: c.sessionToken,
-			DeviceName:  "当前设备",
-			OS:          fingerprint.OS,
-			Arch:        fingerprint.Arch,
-			Hostname:    fingerprint.Hostname,
-			Status:      "online",
-			LastUsedAt:  time.Now().Format(time.RFC3339),
-			CreatedAt:   time.Now().Format(time.RFC3339),
-			IsCurrent:   true,
-		},
+	// 转换为DeviceInfoResult
+	results := make([]*DeviceInfoResult, 0, len(devices))
+	for _, d := range devices {
+		// 构建设备名称
+		deviceName := fmt.Sprintf("%s %s", d.DeviceInfo.OS, d.DeviceInfo.Hostname)
+
+		// 确定状态
+		status := "offline"
+		if !d.Revoked {
+			// 检查是否过期
+			expiresAt, err := time.Parse(time.RFC3339, d.ExpiresAt)
+			if err == nil && time.Now().Before(expiresAt) {
+				status = "online"
+			}
+		}
+
+		results = append(results, &DeviceInfoResult{
+			DeviceToken: d.DeviceToken,
+			DeviceName:  deviceName,
+			OS:          d.DeviceInfo.OS,
+			Arch:        d.DeviceInfo.Arch,
+			Hostname:    d.DeviceInfo.Hostname,
+			Status:      status,
+			LastUsedAt:  d.LastUsedAt,
+			CreatedAt:   d.CreatedAt,
+			IsCurrent:   d.IsCurrent,
+		})
 	}
 
-	return devices, nil
+	return results, nil
+}
+
+// OfflineDevice 让设备下线
+func (c *DesktopClient) OfflineDevice(deviceToken string) error {
+	if c.sessionToken == "" {
+		return fmt.Errorf("not authenticated")
+	}
+
+	if c.deviceClient == nil {
+		return fmt.Errorf("device client not initialized")
+	}
+
+	return c.deviceClient.OfflineDevice(deviceToken)
+}
+
+// DeleteDevice 删除设备记录
+func (c *DesktopClient) DeleteDevice(deviceToken string) error {
+	if c.sessionToken == "" {
+		return fmt.Errorf("not authenticated")
+	}
+
+	if c.deviceClient == nil {
+		return fmt.Errorf("device client not initialized")
+	}
+
+	return c.deviceClient.DeleteDevice(deviceToken)
+}
+
+// GetTunnelConfig 获取隧道配置
+func (c *DesktopClient) GetTunnelConfig() (*TunnelConfigResponse, error) {
+	if c.sessionToken == "" {
+		return nil, fmt.Errorf("not authenticated")
+	}
+
+	if c.tunnelConfigClient == nil {
+		return nil, fmt.Errorf("tunnel config client not initialized")
+	}
+
+	return c.tunnelConfigClient.GetTunnelConfig()
 }
