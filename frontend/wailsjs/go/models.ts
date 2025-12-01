@@ -89,6 +89,7 @@ export namespace main {
 	    version: string;
 	    gitCommit: string;
 	    buildDate: string;
+	    buildNumber: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new VersionInfo(source);
@@ -99,6 +100,7 @@ export namespace main {
 	        this.version = source["version"];
 	        this.gitCommit = source["gitCommit"];
 	        this.buildDate = source["buildDate"];
+	        this.buildNumber = source["buildNumber"];
 	    }
 	}
 

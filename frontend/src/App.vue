@@ -3,7 +3,19 @@
 </template>
 
 <script setup lang="ts">
-// 主应用组件
+import { onMounted } from 'vue'
+import { GetWindowTitle } from '../wailsjs/go/main/App'
+import { WindowSetTitle } from '../wailsjs/runtime/runtime'
+
+// 设置窗口标题
+onMounted(async () => {
+  try {
+    const title = await GetWindowTitle()
+    WindowSetTitle(title)
+  } catch (error) {
+    console.error('Failed to set window title:', error)
+  }
+})
 </script>
 
 <style>

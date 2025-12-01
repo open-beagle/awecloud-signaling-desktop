@@ -14,6 +14,7 @@ NC='\033[0m' # No Color
 BUILD_VERSION="${BUILD_VERSION:-dev}"
 BUILD_ADDRESS="${BUILD_ADDRESS:-}"  # 默认 Server 地址（可选）
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo "0")
 BUILD_DATE=$(date -u '+%Y-%m-%d_%H:%M:%S')
 
 # 目标平台
@@ -26,11 +27,12 @@ echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}AWECloud Signaling Desktop Builder${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
-echo "Version:    ${BUILD_VERSION}"
-echo "Address:    ${BUILD_ADDRESS:-<not set>}"
-echo "Git Commit: ${GIT_COMMIT}"
-echo "Build Date: ${BUILD_DATE}"
-echo "Platforms:  ${PLATFORMS}"
+echo "Version:      ${BUILD_VERSION}"
+echo "Build Number: ${BUILD_NUMBER}"
+echo "Address:      ${BUILD_ADDRESS:-<not set>}"
+echo "Git Commit:   ${GIT_COMMIT}"
+echo "Build Date:   ${BUILD_DATE}"
+echo "Platforms:    ${PLATFORMS}"
 echo ""
 
 # 检查 wails 是否安装
@@ -158,8 +160,9 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
     LDFLAGS="${LDFLAGS} -X 'main.version=${BUILD_VERSION}'"
     LDFLAGS="${LDFLAGS} -X 'main.gitCommit=${GIT_COMMIT}'"
     LDFLAGS="${LDFLAGS} -X 'main.buildDate=${BUILD_DATE}'"
+    LDFLAGS="${LDFLAGS} -X 'main.buildNumber=${BUILD_NUMBER}'"
     if [ -n "${BUILD_ADDRESS}" ]; then
-        LDFLAGS="${LDFLAGS} -X 'main.defaultServerAddress=${BUILD_ADDRESS}'"
+        LDFLAGS="${LDFLAGS} -X 'main.BUILD_URL=${BUILD_ADDRESS}'"
     fi
     BUILD_FLAGS="${BUILD_FLAGS} -ldflags \"${LDFLAGS}\""
     

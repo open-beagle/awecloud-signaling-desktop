@@ -24,6 +24,8 @@ export function GetServices():Promise<Array<models.ServiceInfo>>;
 
 export function GetVersion():Promise<main.VersionInfo>;
 
+export function GetWindowTitle():Promise<string>;
+
 export function IsAuthenticated():Promise<boolean>;
 
 export function Login(arg1:string,arg2:string,arg3:string,arg4:boolean):Promise<void>;

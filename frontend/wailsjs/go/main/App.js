@@ -42,6 +42,10 @@ export function GetVersion() {
   return window['go']['main']['App']['GetVersion']();
 }
 
+export function GetWindowTitle() {
+  return window['go']['main']['App']['GetWindowTitle']();
+}
+
 export function IsAuthenticated() {
   return window['go']['main']['App']['IsAuthenticated']();
 }

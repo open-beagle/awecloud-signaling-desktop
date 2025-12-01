@@ -17,6 +17,9 @@ import (
 // BUILD_URL 编译时注入的默认服务器地址
 var BUILD_URL = ""
 
+// buildNumber 构建次数（编译时注入）
+var buildNumber = "0"
+
 // App struct
 type App struct {
 	ctx context.Context
@@ -62,15 +65,20 @@ func (a *App) startup(ctx context.Context) {
 		}
 	}
 
-	// 如果配置中没有 Server 地址，使用默认值
+	// 服务器地址逻辑：
+	// 1. 如果配置文件中有地址且不为空，使用配置文件中的地址（用户已登录过）
+	// 2. 如果配置文件中没有地址，使用 BUILD_URL（初次登录）
 	if cfg.ServerAddress == "" {
 		cfg.ServerAddress = getDefaultServerAddress()
+		log.Printf("Using default server address (first time): %s", cfg.ServerAddress)
+	} else {
+		log.Printf("Using saved server address: %s", cfg.ServerAddress)
 	}
 
 	a.config = cfg
 
 	log.Printf("Desktop app started")
-	log.Printf("Server address: %s", a.config.ServerAddress)
+	log.Printf("Version: %s, Build: %s, Commit: %s", version, buildNumber, gitCommit)
 }
 
 // getDefaultServerAddress 获取默认的 Server 地址
@@ -355,18 +363,28 @@ func (a *App) GetConfig() *config.Config {
 
 // VersionInfo 版本信息结构
 type VersionInfo struct {
-	Version   string `json:"version"`
-	GitCommit string `json:"gitCommit"`
-	BuildDate string `json:"buildDate"`
+	Version     string `json:"version"`
+	GitCommit   string `json:"gitCommit"`
+	BuildDate   string `json:"buildDate"`
+	BuildNumber string `json:"buildNumber"`
 }
 
 // GetVersion 获取版本信息
 func (a *App) GetVersion() *VersionInfo {
 	return &VersionInfo{
-		Version:   version,
-		GitCommit: gitCommit,
-		BuildDate: buildDate,
+		Version:     version,
+		GitCommit:   gitCommit,
+		BuildDate:   buildDate,
+		BuildNumber: buildNumber,
 	}
+}
+
+// GetWindowTitle 获取窗口标题
+func (a *App) GetWindowTitle() string {
+	if buildNumber != "0" && buildNumber != "" {
+		return fmt.Sprintf("awecloud-signaling  %s (Build %s)", version, buildNumber)
+	}
+	return fmt.Sprintf("awecloud-signaling  %s", version)
 }
 
 // CheckSavedCredentials 检查是否有保存的凭据

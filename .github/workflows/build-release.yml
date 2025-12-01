@@ -48,6 +48,7 @@ jobs:
         run: |
           PLATFORMS=linux/amd64,windows/amd64 \
           BUILD_VERSION=${{ env.BUILD_VERSION }} \
+          BUILD_ADDRESS=${{ secrets.SIGNALING_ADDRESS }}
           bash ./scripts/build.sh
 
       - name: Upload artifacts

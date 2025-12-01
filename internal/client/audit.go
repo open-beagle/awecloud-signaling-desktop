@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,11 +19,17 @@ type AuditClient struct {
 
 // NewAuditClient 创建审计日志客户端
 func NewAuditClient(serverURL, token string) *AuditClient {
+	// 创建跳过TLS验证的HTTP客户端
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
 	return &AuditClient{
 		serverURL: serverURL,
 		token:     token,
 		client: &http.Client{
-			Timeout: 10 * time.Second,
+			Timeout:   10 * time.Second,
+			Transport: transport,
 		},
 	}
 }
