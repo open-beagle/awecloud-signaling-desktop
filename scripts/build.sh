@@ -162,7 +162,7 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
     LDFLAGS="${LDFLAGS} -X 'main.buildDate=${BUILD_DATE}'"
     LDFLAGS="${LDFLAGS} -X 'main.buildNumber=${BUILD_NUMBER}'"
     if [ -n "${BUILD_ADDRESS}" ]; then
-        LDFLAGS="${LDFLAGS} -X 'main.buildAddress=${BUILD_ADDRESS}'"
+        LDFLAGS="${LDFLAGS} -X 'github.com/open-beagle/awecloud-signaling-desktop/internal/config.buildAddress=${BUILD_ADDRESS}'"
     fi
     BUILD_FLAGS="${BUILD_FLAGS} -ldflags \"${LDFLAGS}\""
     

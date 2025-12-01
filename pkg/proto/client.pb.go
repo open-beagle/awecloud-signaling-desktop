@@ -7,11 +7,12 @@
 package proto
 
 import (
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
+
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -151,9 +152,9 @@ type AuthResponse struct {
 	SessionToken  string                 `protobuf:"bytes,3,opt,name=session_token,json=sessionToken,proto3" json:"session_token,omitempty"`
 	ExpiresAt     int64                  `protobuf:"varint,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	DeviceToken   string                 `protobuf:"bytes,5,opt,name=device_token,json=deviceToken,proto3" json:"device_token,omitempty"` // Device Token（用于记住登录）
-	Token         string                 `protobuf:"bytes,6,opt,name=token,proto3" json:"token,omitempty"`                                // FRP 认证 Token
-	Server        string                 `protobuf:"bytes,7,opt,name=server,proto3" json:"server,omitempty"`                              // FRP 服务器地址（完整 URL 或空）
-	Port          int32                  `protobuf:"varint,8,opt,name=port,proto3" json:"port,omitempty"`                                 // FRP 服务器端口
+	Token         string                 `protobuf:"bytes,6,opt,name=token,proto3" json:"token,omitempty"`                                // 隧道认证 Token
+	Server        string                 `protobuf:"bytes,7,opt,name=server,proto3" json:"server,omitempty"`                              // 隧道服务器地址（完整 URL 或空）
+	Port          int32                  `protobuf:"varint,8,opt,name=port,proto3" json:"port,omitempty"`                                 // 隧道服务器端口
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }

@@ -44,10 +44,10 @@ type DesktopClient struct {
 	services      map[int64]*models.ServiceInfo
 	servicesMutex sync.RWMutex
 
-	// 命令通道（发送给 Desktop-FRP）
+	// 命令通道（发送给 Desktop-Tunnel）
 	commandChan chan *models.VisitorCommand
 
-	// 状态通道（接收自 Desktop-FRP）
+	// 状态通道（接收自 Desktop-Tunnel）
 	statusChan chan *models.VisitorStatus
 
 	// 上下文
@@ -263,7 +263,7 @@ func (c *DesktopClient) ConnectService(instanceID int64, localPort int) error {
 		Response:     make(chan error, 1),
 	}
 
-	// 发送命令到 Desktop-FRP
+	// 发送命令到 Desktop-Tunnel
 	select {
 	case c.commandChan <- cmd:
 		// 等待响应
@@ -303,7 +303,7 @@ func (c *DesktopClient) DisconnectService(instanceID int64) error {
 		Response:     make(chan error, 1),
 	}
 
-	// 发送命令到 Desktop-FRP
+	// 发送命令到 Desktop-Tunnel
 	select {
 	case c.commandChan <- cmd:
 		// 等待响应
@@ -322,7 +322,7 @@ func (c *DesktopClient) DisconnectService(instanceID int64) error {
 	}
 }
 
-// statusListener 监听来自 Desktop-FRP 的状态更新
+// statusListener 监听来自 Desktop-Tunnel 的状态更新
 func (c *DesktopClient) statusListener() {
 	for {
 		select {

@@ -23,8 +23,8 @@
         </template>
         <p>无法连接到服务器，您可以查看缓存的服务但无法连接新服务。</p>
         <p class="offline-info">
-          <strong>服务器：</strong>{{ form.serverAddress }}<br />
-          <strong>用户：</strong>{{ form.clientId }}
+          <strong>服务器：</strong>{{ form.server }}<br />
+          <strong>用户：</strong>{{ form.client }}
         </p>
       </el-alert>
 
@@ -69,17 +69,17 @@
 
         <!-- 模式2：完整登录表单 -->
         <template v-else>
-          <el-form-item label="服务器地址" prop="serverAddress">
+          <el-form-item label="服务器地址" prop="server">
             <el-input
-              v-model="form.serverAddress"
+              v-model="form.server"
               placeholder="例如: localhost:8080"
               :disabled="loading || autoFillMode"
             />
           </el-form-item>
 
-          <el-form-item label="Client ID" prop="clientId">
+          <el-form-item label="Client ID" prop="client">
             <el-input
-              v-model="form.clientId"
+              v-model="form.client"
               placeholder="用户名或邮箱"
               :disabled="loading || autoFillMode"
             />
@@ -147,17 +147,17 @@ const isAutoLogging = ref(false)
 const loadingDots = ref('')
 
 const form = reactive({
-  serverAddress: authStore.serverAddress || 'localhost:8080',
-  clientId: '',
+  server: authStore.serverAddress || 'localhost:8080',
+  client: '',
   clientSecret: '',
   rememberMe: true
 })
 
 const rules: FormRules = {
-  serverAddress: [
+  server: [
     { required: true, message: '请输入服务器地址', trigger: 'blur' }
   ],
-  clientId: [
+  client: [
     { required: true, message: '请输入 Client ID', trigger: 'blur' }
   ],
   clientSecret: [
@@ -174,15 +174,15 @@ const handleLogin = async () => {
     loading.value = true
     try {
       await Login(
-        form.serverAddress,
-        form.clientId,
+        form.server,
+        form.client,
         form.clientSecret,
         form.rememberMe
       )
 
       authStore.setAuthenticated(true)
-      authStore.setServerAddress(form.serverAddress)
-      authStore.setClientId(form.clientId)
+      authStore.setServerAddress(form.server)
+      authStore.setClientId(form.client)
 
       ElMessage.success('登录成功')
       router.push('/services')
@@ -202,15 +202,15 @@ const handleReconnect = async () => {
   try {
     // 尝试使用保存的Token重新连接
     await Login(
-      form.serverAddress,
-      form.clientId,
+      form.server,
+      form.client,
       '', // 使用Token登录不需要Secret
       true
     )
 
     authStore.setAuthenticated(true)
-    authStore.setServerAddress(form.serverAddress)
-    authStore.setClientId(form.clientId)
+    authStore.setServerAddress(form.server)
+    authStore.setClientId(form.client)
 
     ElMessage.success('重新连接成功')
     router.push('/services')
@@ -236,8 +236,8 @@ const handleSwitchAccount = () => {
 const handleClearCredentials = async () => {
   try {
     await ClearCredentials()
-    form.serverAddress = 'localhost:8080'
-    form.clientId = ''
+    form.server = 'localhost:8080'
+    form.client = ''
     form.clientSecret = ''
     form.rememberMe = true
     autoFillMode.value = false
@@ -275,9 +275,19 @@ const determineLoginMode = (savedCreds: any) => {
     return
   }
 
+  // 设置服务器地址（始终从后端获取，包括默认地址）
+  form.server = savedCreds.server_address || 'localhost:8080'
+  
+  // 如果没有保存的用户信息，显示完整登录表单
+  if (!savedCreds.client_id) {
+    loginMode.value = 'full'
+    autoFillMode.value = false
+    loginHint.value = '请输入您的凭据以登录'
+    return
+  }
+
   // 有保存的凭据
-  form.serverAddress = savedCreds.server_address
-  form.clientId = savedCreds.client_id
+  form.client = savedCreds.client_id
   form.rememberMe = savedCreds.remember_me
 
   // 检查是否有有效Token
@@ -336,7 +346,8 @@ onMounted(async () => {
   padding: 40px;
   border-radius: 10px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-  width: 400px;
+  width: 480px;
+  max-width: 90vw;
 }
 
 .logo-container {

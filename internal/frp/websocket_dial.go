@@ -27,7 +27,7 @@ func CustomDialHookWebsocket(protocol string, host string, path string, tlsConfi
 			host = addr
 		}
 
-		// 确定路径（默认使用 FRP 的路径）
+		// 确定路径（默认使用隧道的路径）
 		if path == "" {
 			path = "/~!frp"
 		}

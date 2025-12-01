@@ -60,29 +60,28 @@ func (c *DesktopClient) AuthWithSecret(clientID, clientSecret string, rememberMe
 	// 初始化隧道配置客户端
 	c.tunnelConfigClient = NewTunnelConfigClient(c.serverURL, resp.SessionToken)
 
-	// 保存配置
-	cfg, err := config.Load()
-	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
-	}
-
-	cfg.ClientID = clientID
-	cfg.RememberMe = rememberMe
+	// 根据 rememberMe 决定是否保存配置
+	config.GlobalConfig.ClientID = clientID
+	config.GlobalConfig.RememberMe = rememberMe
 
 	if rememberMe {
-		cfg.ClientSecret = clientSecret
-		// 保存Device Token（不是JWT）
-		cfg.DeviceToken = resp.DeviceToken
-		cfg.TokenExpiresAt = resp.ExpiresAt
-		log.Printf("Saved device token to config: %s", resp.DeviceToken[:16]+"...")
+		// 保存配置到文件（包括 Token）
+		config.GlobalConfig.ClientSecret = clientSecret
+		config.GlobalConfig.DeviceToken = resp.DeviceToken
+		config.GlobalConfig.TokenExpiresAt = resp.ExpiresAt
+		log.Printf("Saving config with device token: %s", resp.DeviceToken[:16]+"...")
+		if err := config.GlobalConfig.Save(); err != nil {
+			log.Printf("Warning: failed to save config: %v", err)
+		}
 	} else {
-		cfg.ClientSecret = ""
-		cfg.DeviceToken = ""
-		cfg.TokenExpiresAt = 0
-	}
-
-	if err := cfg.Save(); err != nil {
-		log.Printf("Warning: failed to save config: %v", err)
+		// 不保存配置，删除配置文件
+		config.GlobalConfig.ClientSecret = ""
+		config.GlobalConfig.DeviceToken = ""
+		config.GlobalConfig.TokenExpiresAt = 0
+		log.Printf("RememberMe=false, deleting config file")
+		if err := config.Delete(); err != nil {
+			log.Printf("Warning: failed to delete config: %v", err)
+		}
 	}
 
 	return &AuthResult{
@@ -111,10 +110,9 @@ func (c *DesktopClient) AuthWithToken(clientID, deviceToken string) (*AuthResult
 	if err != nil {
 		log.Printf("Failed to exchange device token for JWT: %v", err)
 		// 清除无效的Token
-		cfg, _ := config.Load()
-		if cfg != nil {
-			cfg.ClearToken()
-			cfg.Save()
+		if config.GlobalConfig != nil {
+			config.GlobalConfig.ClearToken()
+			config.GlobalConfig.Save()
 		}
 		// 返回更友好的错误信息
 		return nil, fmt.Errorf("登录凭据已过期，请重新输入密码")
@@ -153,13 +151,12 @@ func (c *DesktopClient) AuthWithToken(clientID, deviceToken string) (*AuthResult
 func (c *DesktopClient) HandleTokenExpired() error {
 	log.Printf("Token expired, clearing credentials")
 
-	cfg, err := config.Load()
-	if err != nil {
-		return err
+	if config.GlobalConfig == nil {
+		return fmt.Errorf("global config not initialized")
 	}
 
-	cfg.ClearToken()
-	return cfg.Save()
+	config.GlobalConfig.ClearToken()
+	return config.GlobalConfig.Save()
 }
 
 // AuthResult 认证结果

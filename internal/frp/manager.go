@@ -16,12 +16,12 @@ import (
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/models"
 )
 
-// DesktopFRP 是 Desktop-FRP 线程，负责 FRP 客户端管理
-type DesktopFRP struct {
-	serverAddr string // FRP Server 地址，例如 "localhost:7000"
-	frpToken   string // FRP 认证 Token
+// DesktopTunnel 是 Desktop-Tunnel 线程，负责隧道客户端管理
+type DesktopTunnel struct {
+	serverAddr string // 隧道服务器地址，例如 "localhost:7000"
+	token      string // 隧道认证 Token
 
-	// 每个 Visitor 对应一个独立的 FRP Service
+	// 每个 Visitor 对应一个独立的隧道服务
 	services map[string]*client.Service
 	mutex    sync.RWMutex
 
@@ -36,12 +36,12 @@ type DesktopFRP struct {
 	cancel context.CancelFunc
 }
 
-// NewDesktopFRP 创建 Desktop-FRP 线程
-func NewDesktopFRP(serverAddr string, frpToken string, commandChan chan *models.VisitorCommand, statusChan chan *models.VisitorStatus) *DesktopFRP {
+// NewDesktopTunnel 创建 Desktop-Tunnel 线程
+func NewDesktopTunnel(serverAddr string, token string, commandChan chan *models.VisitorCommand, statusChan chan *models.VisitorStatus) *DesktopTunnel {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &DesktopFRP{
+	return &DesktopTunnel{
 		serverAddr:  serverAddr,
-		frpToken:    frpToken,
+		token:       token,
 		services:    make(map[string]*client.Service),
 		commandChan: commandChan,
 		statusChan:  statusChan,
@@ -50,9 +50,9 @@ func NewDesktopFRP(serverAddr string, frpToken string, commandChan chan *models.
 	}
 }
 
-// Start 启动 Desktop-FRP 线程
-func (f *DesktopFRP) Start() error {
-	log.Printf("[Desktop-FRP] Started, server: %s, token: %s", f.serverAddr, f.frpToken[:10]+"...")
+// Start 启动 Desktop-Tunnel 线程
+func (f *DesktopTunnel) Start() error {
+	log.Printf("[Desktop-Tunnel] Started, server: %s, token: %s", f.serverAddr, f.token[:10]+"...")
 
 	// 启动命令处理 goroutine
 	go f.commandHandler()
@@ -60,23 +60,23 @@ func (f *DesktopFRP) Start() error {
 	return nil
 }
 
-// Stop 停止 Desktop-FRP 线程
-func (f *DesktopFRP) Stop() {
+// Stop 停止 Desktop-Tunnel 线程
+func (f *DesktopTunnel) Stop() {
 	f.cancel()
 
-	// 关闭所有 FRP Service
+	// 关闭所有隧道服务
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 
 	for name, service := range f.services {
-		log.Printf("[Desktop-FRP] Closing service: %s", name)
+		log.Printf("[Desktop-Tunnel] Closing service: %s", name)
 		service.Close()
 	}
 	f.services = make(map[string]*client.Service)
 }
 
 // commandHandler 处理来自 Desktop-Web 的命令
-func (f *DesktopFRP) commandHandler() {
+func (f *DesktopTunnel) commandHandler() {
 	for {
 		select {
 		case cmd := <-f.commandChan:
@@ -102,7 +102,7 @@ func (f *DesktopFRP) commandHandler() {
 }
 
 // addVisitor 添加 STCP Visitor
-func (f *DesktopFRP) addVisitor(cmd *models.VisitorCommand) error {
+func (f *DesktopTunnel) addVisitor(cmd *models.VisitorCommand) error {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 
@@ -143,23 +143,23 @@ func (f *DesktopFRP) addVisitor(cmd *models.VisitorCommand) error {
 		serverPort = parsedURL.Port
 		websocketPath = parsedURL.Path
 		protocol = parsedURL.Protocol
-		log.Printf("[Desktop-FRP] Using server from command: %s (path: %s)", cmd.ServerURL, websocketPath)
+		log.Printf("[Desktop-Tunnel] Using server from command: %s (path: %s)", cmd.ServerURL, websocketPath)
 	}
 
-	// 创建基础 FRP 配置
+	// 创建基础隧道配置
 	cfg := &v1.ClientCommonConfig{
 		ServerAddr: serverAddr,
 		ServerPort: serverPort,
 		Auth: v1.AuthClientConfig{
 			Method: "token",
-			Token:  f.frpToken,
+			Token:  f.token,
 		},
 		Transport: v1.ClientTransportConfig{
 			Protocol: protocol,
 		},
 	}
 
-	// 创建 FRP Service（每个 Visitor 一个独立的 Service）
+	// 创建隧道服务（每个 Visitor 一个独立的服务）
 	var visitorConfigurer v1.VisitorConfigurer = visitorCfg
 
 	// 使用自定义 Connector 支持自定义 WebSocket 路径
@@ -172,32 +172,32 @@ func (f *DesktopFRP) addVisitor(cmd *models.VisitorCommand) error {
 			// 使用自定义 connector，支持自定义 WebSocket path
 			connector, err := NewCustomConnector(ctx, cfg, websocketPath)
 			if err != nil {
-				log.Printf("[Desktop-FRP] 创建自定义 Connector 失败: %v，使用默认 Connector", err)
+				log.Printf("[Desktop-Tunnel] 创建自定义 Connector 失败: %v，使用默认 Connector", err)
 				return client.NewConnector(ctx, cfg)
 			}
 			return connector
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create FRP service: %w", err)
+		return fmt.Errorf("failed to create tunnel service: %w", err)
 	}
 
-	// 启动 FRP Service
+	// 启动隧道服务
 	go func() {
 		if err := svr.Run(f.ctx); err != nil {
-			log.Printf("[Desktop-FRP] FRP service error for %s: %v", visitorName, err)
+			log.Printf("[Desktop-Tunnel] Tunnel service error for %s: %v", visitorName, err)
 		}
 	}()
 
-	// 保存 Service
+	// 保存服务
 	f.services[visitorName] = svr
 
-	log.Printf("[Desktop-FRP] Added visitor: %s", visitorName)
+	log.Printf("[Desktop-Tunnel] Added visitor: %s", visitorName)
 	log.Printf("  - Server: %s:%d", serverAddr, serverPort)
 	log.Printf("  - Local Port: %d", cmd.LocalPort)
 	log.Printf("  - Server Name: %s", cmd.InstanceName)
 	log.Printf("  - Secret Key: %s", cmd.SecretKey[:10]+"...")
-	log.Printf("  - Token: %s", f.frpToken[:10]+"...")
+	log.Printf("  - Token: %s", f.token[:10]+"...")
 
 	// 发送状态更新
 	f.sendStatus(&models.VisitorStatus{
@@ -211,7 +211,7 @@ func (f *DesktopFRP) addVisitor(cmd *models.VisitorCommand) error {
 }
 
 // removeVisitor 移除 STCP Visitor
-func (f *DesktopFRP) removeVisitor(cmd *models.VisitorCommand) error {
+func (f *DesktopTunnel) removeVisitor(cmd *models.VisitorCommand) error {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
 
@@ -223,13 +223,13 @@ func (f *DesktopFRP) removeVisitor(cmd *models.VisitorCommand) error {
 		return fmt.Errorf("visitor not found: %s", visitorName)
 	}
 
-	// 关闭 FRP Service
+	// 关闭隧道服务
 	service.Close()
 
-	// 删除 Service
+	// 删除服务
 	delete(f.services, visitorName)
 
-	log.Printf("[Desktop-FRP] Removed visitor: %s", visitorName)
+	log.Printf("[Desktop-Tunnel] Removed visitor: %s", visitorName)
 
 	// 发送状态更新
 	f.sendStatus(&models.VisitorStatus{
@@ -242,16 +242,16 @@ func (f *DesktopFRP) removeVisitor(cmd *models.VisitorCommand) error {
 }
 
 // sendStatus 发送状态更新到 Desktop-Web
-func (f *DesktopFRP) sendStatus(status *models.VisitorStatus) {
+func (f *DesktopTunnel) sendStatus(status *models.VisitorStatus) {
 	select {
 	case f.statusChan <- status:
 	case <-time.After(1 * time.Second):
-		log.Printf("[Desktop-FRP] Failed to send status: channel full")
+		log.Printf("[Desktop-Tunnel] Failed to send status: channel full")
 	}
 }
 
 // GetVisitors 返回当前的 Visitor 列表
-func (f *DesktopFRP) GetVisitors() []string {
+func (f *DesktopTunnel) GetVisitors() []string {
 	f.mutex.RLock()
 	defer f.mutex.RUnlock()
 
@@ -262,7 +262,7 @@ func (f *DesktopFRP) GetVisitors() []string {
 	return visitors
 }
 
-// parseServerURL 解析 FRP Server URL
+// parseServerURL 解析隧道服务器 URL
 func parseServerURL(serverURL string) (*struct {
 	Host     string
 	Port     int
@@ -289,7 +289,7 @@ func parseServerURL(serverURL string) (*struct {
 		Path: parsedURL.Path,
 	}
 
-	// 如果路径为空，使用FRP原生路径
+	// 如果路径为空，使用默认路径
 	if result.Path == "" {
 		result.Path = "/~!frp"
 	}
