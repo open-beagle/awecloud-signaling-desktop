@@ -14,11 +14,7 @@ import (
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/models"
 )
 
-// BUILD_URL 编译时注入的默认服务器地址
-var BUILD_URL = ""
-
-// buildNumber 构建次数（编译时注入）
-var buildNumber = "0"
+// 注意：buildAddress 和 buildNumber 现在在 main.go 中定义
 
 // App struct
 type App struct {
@@ -67,7 +63,7 @@ func (a *App) startup(ctx context.Context) {
 
 	// 服务器地址逻辑：
 	// 1. 如果配置文件中有地址且不为空，使用配置文件中的地址（用户已登录过）
-	// 2. 如果配置文件中没有地址，使用 BUILD_URL（初次登录）
+	// 2. 如果配置文件中没有地址，使用 buildAddress（初次登录）
 	if cfg.ServerAddress == "" {
 		cfg.ServerAddress = getDefaultServerAddress()
 		log.Printf("Using default server address (first time): %s", cfg.ServerAddress)
@@ -82,11 +78,11 @@ func (a *App) startup(ctx context.Context) {
 }
 
 // getDefaultServerAddress 获取默认的 Server 地址
-// 优先级：BUILD_URL > 硬编码默认值
+// 优先级：buildAddress > 硬编码默认值
 func getDefaultServerAddress() string {
-	if BUILD_URL != "" {
-		log.Printf("使用编译时注入的 BUILD_URL: %s", BUILD_URL)
-		return BUILD_URL
+	if buildAddress != "" {
+		log.Printf("使用编译时注入的 buildAddress: %s", buildAddress)
+		return buildAddress
 	}
 	return "localhost:8080"
 }

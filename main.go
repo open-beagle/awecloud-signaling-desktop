@@ -12,12 +12,13 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
-// 版本信息（通过 ldflags 注入）
+// 版本信息和构建配置（通过 ldflags 注入）
 var (
-	version              = "dev"
-	gitCommit            = "unknown"
-	buildDate            = "unknown"
-	defaultServerAddress = "http://localhost:8080" // 默认 Server 地址（可选）
+	version      = "dev"
+	gitCommit    = "unknown"
+	buildDate    = "unknown"
+	buildNumber  = "0"
+	buildAddress = "localhost:8080" // 默认服务器地址
 )
 
 func main() {

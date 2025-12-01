@@ -48,3 +48,5 @@ wails_build.log
 *.tmp
 *.temp
 .cache/
+
+/awecloud-signaling-desktop
