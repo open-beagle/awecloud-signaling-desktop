@@ -5,7 +5,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/denisbrodbeck/machineid"
@@ -83,14 +85,59 @@ func GetOSInfo() string {
 
 // getWindowsVersion 获取Windows版本号
 func getWindowsVersion() string {
-	// 使用环境变量或简单的方法检测
-	// 在Windows上，可以通过多种方式检测版本
-	// 这里使用一个简化的实现
+	// 使用 wmic 命令获取 Windows 版本和 Build 号
+	// Windows 11 的 Build 号 >= 22000
 
-	// 尝试读取环境变量
-	if osVer := os.Getenv("OS"); osVer != "" {
-		// 默认返回Windows 10（大多数现代系统）
+	cmd := exec.Command("wmic", "os", "get", "Caption,BuildNumber", "/value")
+	output, err := cmd.Output()
+	if err != nil {
+		// 如果命令失败，返回通用的 Windows
+		return "Windows"
+	}
+
+	outputStr := string(output)
+	lines := strings.Split(outputStr, "\n")
+
+	var caption string
+	var buildNumber int
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "BuildNumber=") {
+			buildStr := strings.TrimPrefix(line, "BuildNumber=")
+			buildNumber, _ = strconv.Atoi(strings.TrimSpace(buildStr))
+		}
+		if strings.HasPrefix(line, "Caption=") {
+			caption = strings.TrimPrefix(line, "Caption=")
+			caption = strings.TrimSpace(caption)
+		}
+	}
+
+	// Windows 11 的判断：Build 号 >= 22000
+	if buildNumber >= 22000 {
+		return "Windows 11"
+	}
+
+	// Windows 10 的判断：Build 号 >= 10240
+	if buildNumber >= 10240 {
 		return "Windows 10"
+	}
+
+	// 如果能从 Caption 中提取版本信息
+	if caption != "" {
+		// Caption 通常是 "Microsoft Windows 11 Pro" 或 "Microsoft Windows 10 Pro"
+		if strings.Contains(caption, "Windows 11") {
+			return "Windows 11"
+		}
+		if strings.Contains(caption, "Windows 10") {
+			return "Windows 10"
+		}
+		if strings.Contains(caption, "Windows 8") {
+			return "Windows 8"
+		}
+		if strings.Contains(caption, "Windows 7") {
+			return "Windows 7"
+		}
 	}
 
 	return "Windows"
