@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整的 git 历史，确保 BUILD_NUMBER 正确
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -48,7 +50,7 @@ jobs:
         run: |
           PLATFORMS=linux/amd64,windows/amd64 \
           BUILD_VERSION=${{ env.BUILD_VERSION }} \
-          BUILD_ADDRESS=${{ secrets.SIGNALING_ADDRESS }}
+          BUILD_ADDRESS=${{ secrets.SIGNALING_ADDRESS }} \
           bash ./scripts/build.sh
 
       - name: Upload artifacts
