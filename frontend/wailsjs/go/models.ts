@@ -120,6 +120,7 @@ export namespace models {
 	    secret_key: string;
 	    access_type: string;
 	    status: string;
+	    is_favorite: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ServiceInfo(source);
@@ -138,6 +139,7 @@ export namespace models {
 	        this.secret_key = source["secret_key"];
 	        this.access_type = source["access_type"];
 	        this.status = source["status"];
+	        this.is_favorite = source["is_favorite"];
 	    }
 	}
 

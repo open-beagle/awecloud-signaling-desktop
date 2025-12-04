@@ -36,6 +36,9 @@ type DesktopClient struct {
 	// 隧道配置客户端
 	tunnelConfigClient *TunnelConfigClient
 
+	// 服务收藏客户端
+	favoriteClient *FavoriteClient
+
 	// 认证信息
 	sessionToken string
 	clientID     string
@@ -495,4 +498,43 @@ func (c *DesktopClient) GetTunnelConfig() (*TunnelConfigResponse, error) {
 	}
 
 	return c.tunnelConfigClient.GetTunnelConfig()
+}
+
+// GetFavorites 获取用户的服务收藏列表（包含端口信息）
+func (c *DesktopClient) GetFavorites() ([]FavoriteInfo, error) {
+	if c.sessionToken == "" {
+		return nil, fmt.Errorf("not authenticated")
+	}
+
+	if c.favoriteClient == nil {
+		return nil, fmt.Errorf("favorite client not initialized")
+	}
+
+	return c.favoriteClient.GetFavorites()
+}
+
+// ToggleFavorite 切换服务收藏状态
+func (c *DesktopClient) ToggleFavorite(instanceID int64, localPort int) (bool, error) {
+	if c.sessionToken == "" {
+		return false, fmt.Errorf("not authenticated")
+	}
+
+	if c.favoriteClient == nil {
+		return false, fmt.Errorf("favorite client not initialized")
+	}
+
+	return c.favoriteClient.ToggleFavorite(instanceID, localPort)
+}
+
+// UpdateFavoritePort 更新收藏服务的端口
+func (c *DesktopClient) UpdateFavoritePort(instanceID int64, localPort int) error {
+	if c.sessionToken == "" {
+		return fmt.Errorf("not authenticated")
+	}
+
+	if c.favoriteClient == nil {
+		return fmt.Errorf("favorite client not initialized")
+	}
+
+	return c.favoriteClient.UpdateFavoritePort(instanceID, localPort)
 }

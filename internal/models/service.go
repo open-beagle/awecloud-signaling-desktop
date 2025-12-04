@@ -13,4 +13,5 @@ type ServiceInfo struct {
 	SecretKey     string `json:"secret_key"`
 	AccessType    string `json:"access_type"` // 'public', 'private', 'group'
 	Status        string `json:"status"`      // 'online', 'offline'
+	IsFavorite    bool   `json:"is_favorite"` // 是否收藏
 }

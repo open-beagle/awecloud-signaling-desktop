@@ -13,7 +13,17 @@
             {{ getAccessTypeLabel(service.access_type) }}
           </el-tag>
         </div>
-        <StatusBadge :status="connection.status" />
+        <div class="header-right">
+          <el-icon 
+            class="favorite-icon" 
+            :class="{ 'is-favorite': service.is_favorite }"
+            @click="handleToggleFavorite"
+          >
+            <StarFilled v-if="service.is_favorite" />
+            <Star v-else />
+          </el-icon>
+          <StatusBadge :status="connection.status" />
+        </div>
       </div>
     </template>
 
@@ -93,8 +103,11 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { Star, StarFilled } from '@element-plus/icons-vue'
 import type { ServiceInfo, ConnectionStatus } from '../stores/services'
+import { useServicesStore } from '../stores/services'
 import StatusBadge from './StatusBadge.vue'
+import { ToggleFavorite } from '../../wailsjs/go/main/App'
 
 interface Props {
   service: ServiceInfo
@@ -106,6 +119,8 @@ const emit = defineEmits<{
   connect: [instanceId: number, localPort: number]
   disconnect: [instanceId: number]
 }>()
+
+const servicesStore = useServicesStore()
 
 // 使用偏好端口，如果没有则使用服务端口
 const localPort = ref(props.service.preferred_port || props.service.service_port)
@@ -139,6 +154,20 @@ const handleConnect = () => {
 const handleDisconnect = () => {
   emit('disconnect', props.service.instance_id)
 }
+
+const handleToggleFavorite = async () => {
+  // 先乐观更新UI
+  servicesStore.toggleFavorite(props.service.instance_id)
+  
+  // 调用后端API，传递当前端口
+  try {
+    await ToggleFavorite(props.service.instance_id, localPort.value)
+  } catch (error: any) {
+    // 如果失败，回滚UI状态
+    servicesStore.toggleFavorite(props.service.instance_id)
+    console.error('Failed to toggle favorite:', error)
+  }
+}
 </script>
 
 <style scoped>
@@ -164,6 +193,28 @@ const handleDisconnect = () => {
   display: flex;
   align-items: center;
   flex: 1;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.favorite-icon {
+  font-size: 20px;
+  cursor: pointer;
+  color: #dcdfe6;
+  transition: all 0.3s;
+}
+
+.favorite-icon:hover {
+  color: #ffd700;
+  transform: scale(1.2);
+}
+
+.favorite-icon.is-favorite {
+  color: #ffd700;
 }
 
 .service-name {

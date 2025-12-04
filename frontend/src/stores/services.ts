@@ -11,6 +11,7 @@ export interface ServiceInfo {
   preferred_port?: number   // 用户偏好的本地端口
   access_type?: string      // 'public', 'private', 'group'
   status?: string           // 'online', 'offline'
+  is_favorite?: boolean     // 是否收藏
 }
 
 export interface ConnectionStatus {
@@ -27,6 +28,7 @@ export const useServicesStore = defineStore('services', () => {
 
   function setServices(newServices: ServiceInfo[]) {
     services.value = newServices
+    // 服务的收藏状态由服务器返回，不需要本地处理
   }
 
   function setLoading(value: boolean) {
@@ -49,6 +51,19 @@ export const useServicesStore = defineStore('services', () => {
     connections.value.clear()
   }
 
+  function toggleFavorite(instanceId: number) {
+    // 更新对应服务的收藏状态（乐观更新）
+    const service = services.value.find(s => s.instance_id === instanceId)
+    if (service) {
+      service.is_favorite = !service.is_favorite
+    }
+  }
+
+  function isFavorite(instanceId: number): boolean {
+    const service = services.value.find(s => s.instance_id === instanceId)
+    return service?.is_favorite || false
+  }
+
   return {
     services,
     connections,
@@ -57,6 +72,8 @@ export const useServicesStore = defineStore('services', () => {
     setLoading,
     updateConnectionStatus,
     getConnectionStatus,
-    clearConnections
+    clearConnections,
+    toggleFavorite,
+    isFavorite
   }
 })

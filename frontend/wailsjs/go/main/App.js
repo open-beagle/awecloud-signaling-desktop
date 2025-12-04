@@ -61,3 +61,11 @@ export function Logout() {
 export function OfflineDevice(arg1) {
   return window['go']['main']['App']['OfflineDevice'](arg1);
 }
+
+export function ToggleFavorite(arg1, arg2) {
+  return window['go']['main']['App']['ToggleFavorite'](arg1, arg2);
+}
+
+export function UpdateFavoritePort(arg1, arg2) {
+  return window['go']['main']['App']['UpdateFavoritePort'](arg1, arg2);
+}

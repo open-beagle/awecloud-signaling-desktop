@@ -33,3 +33,7 @@ export function Login(arg1:string,arg2:string,arg3:string,arg4:boolean):Promise<
 export function Logout():Promise<void>;
 
 export function OfflineDevice(arg1:string):Promise<void>;
+
+export function ToggleFavorite(arg1:number,arg2:number):Promise<boolean>;
+
+export function UpdateFavoritePort(arg1:number,arg2:number):Promise<void>;

@@ -60,6 +60,9 @@ func (c *DesktopClient) AuthWithSecret(clientID, clientSecret string, rememberMe
 	// 初始化隧道配置客户端
 	c.tunnelConfigClient = NewTunnelConfigClient(c.serverURL, resp.SessionToken)
 
+	// 初始化服务收藏客户端
+	c.favoriteClient = NewFavoriteClient(c.serverURL, resp.SessionToken)
+
 	// 根据 rememberMe 决定是否保存配置
 	config.GlobalConfig.ClientID = clientID
 	config.GlobalConfig.RememberMe = rememberMe
@@ -132,6 +135,9 @@ func (c *DesktopClient) AuthWithToken(clientID, deviceToken string) (*AuthResult
 
 	// 初始化隧道配置客户端
 	c.tunnelConfigClient = NewTunnelConfigClient(c.serverURL, jwtToken)
+
+	// 初始化服务收藏客户端
+	c.favoriteClient = NewFavoriteClient(c.serverURL, jwtToken)
 
 	// 不再从配置文件读取隧道配置
 	// 隧道配置将在连接服务时从Server动态获取

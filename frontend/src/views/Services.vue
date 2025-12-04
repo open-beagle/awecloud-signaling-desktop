@@ -7,11 +7,12 @@
           <h2>我的服务</h2>
           <div class="filter-tags">
             <el-tag 
-              :class="{ 'filter-tag': true, 'active': filterStatus.connected }"
-              @click="toggleFilter('connected')"
+              :class="{ 'filter-tag': true, 'active': filterStatus.favorite }"
+              @click="toggleFilter('favorite')"
+              type="warning"
               effect="plain"
             >
-              共 {{ connectedCount }} 个已连接
+              共 {{ favoriteCount }} 个收藏
             </el-tag>
             <el-tag 
               :class="{ 'filter-tag': true, 'active': filterStatus.online }"
@@ -33,27 +34,37 @@
         </div>
         <div class="header-right">
           <!-- 搜索框（可展开/收起） -->
-          <div class="search-wrapper">
-            <transition name="search-expand">
-              <el-input
-                v-if="searchExpanded"
-                ref="searchInputRef"
-                v-model="searchQuery"
-                placeholder="搜索服务"
-                :prefix-icon="Search"
-                clearable
-                class="search-input"
-                @blur="handleSearchBlur"
-              />
-            </transition>
-            <el-tooltip :content="searchExpanded ? '关闭搜索' : '搜索'" placement="bottom">
-              <el-button 
-                :icon="Search" 
-                @click="toggleSearch"
-                circle
-              />
-            </el-tooltip>
-          </div>
+          <transition name="search-expand">
+            <el-input
+              v-if="searchExpanded"
+              ref="searchInputRef"
+              v-model="searchQuery"
+              placeholder="搜索服务"
+              :prefix-icon="Search"
+              clearable
+              class="search-input"
+              @blur="handleSearchBlur"
+            />
+          </transition>
+          
+          <el-tooltip :content="searchExpanded ? '关闭搜索' : '搜索'" placement="bottom">
+            <el-button 
+              :icon="Search" 
+              @click="toggleSearch"
+              circle
+            />
+          </el-tooltip>
+          
+          <el-tooltip :content="allFavoritesConnected ? '一键断开收藏' : '一键连接收藏'" placement="bottom">
+            <el-button 
+              :icon="Connection" 
+              @click="handleToggleAllFavorites"
+              :disabled="favoriteCount === 0 || connectingAll"
+              :loading="connectingAll"
+              :type="allFavoritesConnected ? 'danger' : 'warning'"
+              circle
+            />
+          </el-tooltip>
           
           <el-tooltip content="刷新" placement="bottom">
             <el-button 
@@ -95,8 +106,8 @@
 
 <script setup lang="ts">
 import { onMounted, ref, computed, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Refresh, Search } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Refresh, Search, Connection } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
 import Layout from '../components/Layout.vue'
@@ -110,11 +121,28 @@ const servicesStore = useServicesStore()
 const searchQuery = ref('')
 const searchExpanded = ref(false)
 const searchInputRef = ref()
-const filterStatus = ref({
-  connected: true,  // 默认选中
-  online: true,     // 默认选中
-  offline: true     // 默认选中
-})
+
+// 智能默认筛选：优先收藏 > 在线 > 离线
+const getDefaultFilterStatus = () => {
+  const hasFavorites = servicesStore.services.some(s => s.is_favorite)
+  const hasOnline = servicesStore.services.some(s => s.status === 'online' && !s.is_favorite)
+  
+  if (hasFavorites) {
+    // 有收藏：只显示收藏
+    return { favorite: true, online: false, offline: false }
+  } else if (hasOnline) {
+    // 无收藏但有在线：显示在线
+    return { favorite: false, online: true, offline: false }
+  } else {
+    // 无收藏且无在线：显示离线
+    return { favorite: false, online: false, offline: true }
+  }
+}
+
+const filterStatus = ref(getDefaultFilterStatus())
+
+// 一键连接状态
+const connectingAll = ref(false)
 
 // 切换搜索框展开/收起
 const toggleSearch = async () => {
@@ -140,11 +168,8 @@ const handleSearchBlur = () => {
 }
 
 // 统计数量
-const connectedCount = computed(() => {
-  return servicesStore.services.filter(service => {
-    const connection = servicesStore.getConnectionStatus(service.instance_id)
-    return connection?.status === 'connected'
-  }).length
+const favoriteCount = computed(() => {
+  return servicesStore.services.filter(service => service.is_favorite).length
 })
 
 const onlineCount = computed(() => {
@@ -156,7 +181,7 @@ const offlineCount = computed(() => {
 })
 
 // 切换筛选状态
-const toggleFilter = (type: 'connected' | 'online' | 'offline') => {
+const toggleFilter = (type: 'favorite' | 'online' | 'offline') => {
   filterStatus.value[type] = !filterStatus.value[type]
 }
 
@@ -176,19 +201,18 @@ const filteredServices = computed(() => {
 
   // 按状态过滤
   services = services.filter(service => {
-    const connection = servicesStore.getConnectionStatus(service.instance_id)
-    const isConnected = connection?.status === 'connected'
+    const isFavorite = service.is_favorite
     const isOnline = service.status === 'online'
     const isOffline = service.status !== 'online'
 
-    // 如果已连接筛选开启，且服务已连接，则显示
-    if (filterStatus.value.connected && isConnected) return true
+    // 如果收藏筛选开启，且服务已收藏，则显示
+    if (filterStatus.value.favorite && isFavorite) return true
     
-    // 如果在线筛选开启，且服务在线（但未连接），则显示
-    if (filterStatus.value.online && isOnline && !isConnected) return true
+    // 如果在线筛选开启，且服务在线（但未收藏），则显示
+    if (filterStatus.value.online && isOnline && !isFavorite) return true
     
-    // 如果离线筛选开启，且服务离线（且未连接），则显示
-    if (filterStatus.value.offline && isOffline && !isConnected) return true
+    // 如果离线筛选开启，且服务离线（且未收藏），则显示
+    if (filterStatus.value.offline && isOffline && !isFavorite) return true
 
     return false
   })
@@ -205,6 +229,9 @@ const loadServices = async () => {
   try {
     const services = await GetServices()
     servicesStore.setServices(services || [])
+    
+    // 服务列表加载后，重新计算默认筛选状态
+    filterStatus.value = getDefaultFilterStatus()
   } catch (error: any) {
     ElMessage.error(error.message || '获取服务列表失败')
   } finally {
@@ -263,6 +290,191 @@ const handleDisconnect = async (instanceId: number) => {
     ElMessage.success('已断开连接')
   } catch (error: any) {
     ElMessage.error(error.message || '断开连接失败')
+  }
+}
+
+// 检查是否所有收藏服务都已连接
+const allFavoritesConnected = computed(() => {
+  const favoriteServices = servicesStore.services.filter(
+    service => service.is_favorite && service.status === 'online'
+  )
+  
+  if (favoriteServices.length === 0) {
+    return false
+  }
+  
+  return favoriteServices.every(service => {
+    const connection = servicesStore.getConnectionStatus(service.instance_id)
+    return connection.status === 'connected'
+  })
+})
+
+// 一键连接/断开所有收藏的服务
+const handleToggleAllFavorites = async () => {
+  if (allFavoritesConnected.value) {
+    // 当前所有收藏都已连接，执行断开操作
+    await handleDisconnectAllFavorites()
+  } else {
+    // 有未连接的收藏，执行连接操作
+    await handleConnectAllFavorites()
+  }
+}
+
+// 一键连接所有收藏的服务
+const handleConnectAllFavorites = async () => {
+  // 获取所有收藏且在线的服务
+  const favoriteServices = servicesStore.services.filter(
+    service => service.is_favorite && service.status === 'online'
+  )
+
+  if (favoriteServices.length === 0) {
+    ElMessage.warning('没有在线的收藏服务')
+    return
+  }
+
+  // 过滤掉已经连接的服务
+  const disconnectedFavorites = favoriteServices.filter(service => {
+    const connection = servicesStore.getConnectionStatus(service.instance_id)
+    return connection.status !== 'connected' && connection.status !== 'connecting'
+  })
+
+  if (disconnectedFavorites.length === 0) {
+    ElMessage.info('所有收藏的服务都已连接')
+    return
+  }
+
+  // 确认对话框
+  try {
+    await ElMessageBox.confirm(
+      `将连接 ${disconnectedFavorites.length} 个收藏的服务，是否继续？`,
+      '一键连接',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+  } catch {
+    return // 用户取消
+  }
+
+  connectingAll.value = true
+  let successCount = 0
+  let failCount = 0
+
+  // 依次连接所有服务
+  for (const service of disconnectedFavorites) {
+    const localPort = service.preferred_port || service.service_port
+
+    // 更新状态为连接中
+    servicesStore.updateConnectionStatus(service.instance_id, {
+      instance_id: service.instance_id,
+      status: 'connecting',
+      local_port: localPort
+    })
+
+    try {
+      await ConnectService(service.instance_id, localPort)
+      
+      // 更新状态为已连接
+      servicesStore.updateConnectionStatus(service.instance_id, {
+        instance_id: service.instance_id,
+        status: 'connected',
+        local_port: localPort
+      })
+      
+      successCount++
+    } catch (error: any) {
+      // 更新状态为错误
+      servicesStore.updateConnectionStatus(service.instance_id, {
+        instance_id: service.instance_id,
+        status: 'error',
+        local_port: localPort,
+        error: error.message
+      })
+      
+      failCount++
+    }
+
+    // 添加短暂延迟，避免同时发起太多连接
+    await new Promise(resolve => setTimeout(resolve, 300))
+  }
+
+  connectingAll.value = false
+
+  // 显示结果
+  if (failCount === 0) {
+    ElMessage.success(`成功连接 ${successCount} 个服务`)
+  } else if (successCount === 0) {
+    ElMessage.error(`连接失败，${failCount} 个服务连接失败`)
+  } else {
+    ElMessage.warning(`连接完成：${successCount} 个成功，${failCount} 个失败`)
+  }
+}
+
+// 一键断开所有收藏的服务
+const handleDisconnectAllFavorites = async () => {
+  // 获取所有已连接的收藏服务
+  const connectedFavorites = servicesStore.services.filter(service => {
+    if (!service.is_favorite) return false
+    const connection = servicesStore.getConnectionStatus(service.instance_id)
+    return connection.status === 'connected'
+  })
+
+  if (connectedFavorites.length === 0) {
+    ElMessage.info('没有已连接的收藏服务')
+    return
+  }
+
+  // 确认对话框
+  try {
+    await ElMessageBox.confirm(
+      `将断开 ${connectedFavorites.length} 个收藏的服务，是否继续？`,
+      '一键断开',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+  } catch {
+    return // 用户取消
+  }
+
+  connectingAll.value = true
+  let successCount = 0
+  let failCount = 0
+
+  // 依次断开所有服务
+  for (const service of connectedFavorites) {
+    try {
+      await DisconnectService(service.instance_id)
+      
+      // 更新状态为已断开
+      servicesStore.updateConnectionStatus(service.instance_id, {
+        instance_id: service.instance_id,
+        status: 'disconnected',
+        local_port: 0
+      })
+      
+      successCount++
+    } catch (error: any) {
+      failCount++
+    }
+
+    // 添加短暂延迟
+    await new Promise(resolve => setTimeout(resolve, 200))
+  }
+
+  connectingAll.value = false
+
+  // 显示结果
+  if (failCount === 0) {
+    ElMessage.success(`成功断开 ${successCount} 个服务`)
+  } else if (successCount === 0) {
+    ElMessage.error(`断开失败，${failCount} 个服务断开失败`)
+  } else {
+    ElMessage.warning(`断开完成：${successCount} 个成功，${failCount} 个失败`)
   }
 }
 
@@ -327,13 +539,6 @@ const handleDisconnect = async (instanceId: number) => {
   display: flex;
   gap: 10px;
   align-items: center;
-}
-
-.search-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  position: relative;
 }
 
 .search-input {
