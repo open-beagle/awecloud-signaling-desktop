@@ -66,15 +66,15 @@
       <div class="card-footer">
         <template v-if="!isConnected && connection.status !== 'connecting'">
           <el-input
-            v-model.number="localPort"
+            v-model="localPortInput"
             placeholder="本地端口"
-            type="number"
             style="width: 120px; margin-right: 10px"
+            @input="handlePortInput"
           />
           <el-button
             type="primary"
             @click="handleConnect"
-            :disabled="!localPort || localPort < 1 || localPort > 65535 || service.status !== 'online'"
+            :disabled="!isValidPort || service.status !== 'online'"
           >
             {{ service.status === 'online' ? '连接' : '服务离线' }}
           </el-button>
@@ -124,8 +124,27 @@ const servicesStore = useServicesStore()
 
 // 使用偏好端口，如果没有则使用服务端口
 const localPort = ref(props.service.preferred_port || props.service.service_port)
+const localPortInput = ref(String(localPort.value))
 
 const isConnected = computed(() => props.connection.status === 'connected')
+
+// 验证端口是否有效
+const isValidPort = computed(() => {
+  const port = parseInt(localPortInput.value)
+  return !isNaN(port) && port >= 1 && port <= 65535
+})
+
+// 处理端口输入，只允许纯数字
+const handlePortInput = (value: string) => {
+  // 移除所有非数字字符
+  const cleaned = value.replace(/\D/g, '')
+  localPortInput.value = cleaned
+  
+  // 更新数字值
+  if (cleaned) {
+    localPort.value = parseInt(cleaned)
+  }
+}
 
 const getAccessTypeLabel = (type: string) => {
   const labels: Record<string, string> = {

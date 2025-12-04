@@ -267,10 +267,12 @@ func (a *App) GetServices() ([]*models.ServiceInfo, error) {
 		log.Printf("[App] Failed to get favorites: %v", err)
 		// 不影响服务列表的返回，继续执行
 	} else {
+		log.Printf("[App] Got %d favorites from server", len(favorites))
 		// 将收藏状态和端口偏好标记到服务列表
 		favoriteMap := make(map[int64]bool)
 		favoritePortMap := make(map[int64]int)
 		for _, fav := range favorites {
+			log.Printf("[App] Favorite: instance_id=%d, local_port=%d", fav.STCPInstanceID, fav.LocalPort)
 			favoriteMap[fav.STCPInstanceID] = true
 			if fav.LocalPort > 0 {
 				favoritePortMap[fav.STCPInstanceID] = fav.LocalPort
@@ -281,6 +283,9 @@ func (a *App) GetServices() ([]*models.ServiceInfo, error) {
 			// 如果收藏中有端口配置，使用收藏的端口
 			if port, ok := favoritePortMap[service.InstanceID]; ok {
 				service.PreferredPort = port
+			}
+			if service.IsFavorite {
+				log.Printf("[App] Service %d marked as favorite with port %d", service.InstanceID, service.PreferredPort)
 			}
 		}
 		log.Printf("[App] Marked %d services as favorites with port preferences", len(favorites))
@@ -345,25 +350,45 @@ func (a *App) ConnectService(instanceID int64, localPort int) error {
 	log.Printf("[App] Connected to service %d on port %d", instanceID, localPort)
 
 	// 如果服务已收藏，检查端口是否变更，变更则更新到服务器
-	services, _ := a.desktopClient.GetServices()
+	services, err := a.GetServices()
+	if err != nil {
+		log.Printf("[App] Failed to get services for port update check: %v", err)
+		return nil
+	}
+
+	log.Printf("[App] Checking port update for instance %d among %d services", instanceID, len(services))
+
+	found := false
 	for _, service := range services {
-		if service.InstanceID == instanceID && service.IsFavorite {
-			// 检查端口是否变更
-			if service.PreferredPort != localPort {
-				log.Printf("[App] Port changed for service %d: %d -> %d", instanceID, service.PreferredPort, localPort)
-				// 异步更新端口，不阻塞连接流程
-				go func() {
-					if err := a.UpdateFavoritePort(instanceID, localPort); err != nil {
-						log.Printf("[App] Failed to update favorite port: %v", err)
-					} else {
-						log.Printf("[App] Updated favorite port for service %d to %d", instanceID, localPort)
-					}
-				}()
+		if service.InstanceID == instanceID {
+			found = true
+			log.Printf("[App] Found service %d: IsFavorite=%v, PreferredPort=%d, localPort=%d",
+				instanceID, service.IsFavorite, service.PreferredPort, localPort)
+
+			if service.IsFavorite {
+				// 检查端口是否变更
+				if service.PreferredPort != localPort {
+					log.Printf("[App] Port changed for service %d: %d -> %d", instanceID, service.PreferredPort, localPort)
+					// 异步更新端口，不阻塞连接流程
+					go func() {
+						if err := a.UpdateFavoritePort(instanceID, localPort); err != nil {
+							log.Printf("[App] Failed to update favorite port: %v", err)
+						} else {
+							log.Printf("[App] Updated favorite port for service %d to %d", instanceID, localPort)
+						}
+					}()
+				} else {
+					log.Printf("[App] Port unchanged for service %d: %d", instanceID, localPort)
+				}
 			} else {
-				log.Printf("[App] Port unchanged for service %d: %d", instanceID, localPort)
+				log.Printf("[App] Service %d is not favorited, skipping port update", instanceID)
 			}
 			break
 		}
+	}
+
+	if !found {
+		log.Printf("[App] Service %d not found in services list", instanceID)
 	}
 
 	return nil

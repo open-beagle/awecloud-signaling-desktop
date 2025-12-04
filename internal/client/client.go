@@ -502,6 +502,9 @@ func (c *DesktopClient) GetTunnelConfig() (*TunnelConfigResponse, error) {
 
 // GetFavorites 获取用户的服务收藏列表（包含端口信息）
 func (c *DesktopClient) GetFavorites() ([]FavoriteInfo, error) {
+	log.Printf("[DesktopClient] GetFavorites called: hasToken=%v, hasFavoriteClient=%v",
+		c.sessionToken != "", c.favoriteClient != nil)
+
 	if c.sessionToken == "" {
 		return nil, fmt.Errorf("not authenticated")
 	}

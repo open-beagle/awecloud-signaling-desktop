@@ -78,6 +78,8 @@ func (f *FavoriteClient) GetFavorites() ([]FavoriteInfo, error) {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
+	fmt.Printf("[FavoriteClient] GetFavorites response: status=%d, body=%s\n", resp.StatusCode, string(respBody))
+
 	// 检查状态码
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("server returned error: %s (status: %d)", string(respBody), resp.StatusCode)
