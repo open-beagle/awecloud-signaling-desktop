@@ -55,7 +55,7 @@
             />
           </el-tooltip>
           
-          <el-tooltip :content="allFavoritesConnected ? '一键断开收藏' : '一键连接收藏'" placement="bottom">
+          <el-tooltip :content="allFavoritesConnected ? '断开' : '连接'" placement="bottom">
             <el-button 
               :icon="Connection" 
               @click="handleToggleAllFavorites"
@@ -106,7 +106,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref, computed, nextTick } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Refresh, Search, Connection } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
@@ -343,21 +343,6 @@ const handleConnectAllFavorites = async () => {
     return
   }
 
-  // 确认对话框
-  try {
-    await ElMessageBox.confirm(
-      `将连接 ${disconnectedFavorites.length} 个收藏的服务，是否继续？`,
-      '一键连接',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning',
-      }
-    )
-  } catch {
-    return // 用户取消
-  }
-
   connectingAll.value = true
   let successCount = 0
   let failCount = 0
@@ -424,21 +409,6 @@ const handleDisconnectAllFavorites = async () => {
   if (connectedFavorites.length === 0) {
     ElMessage.info('没有已连接的收藏服务')
     return
-  }
-
-  // 确认对话框
-  try {
-    await ElMessageBox.confirm(
-      `将断开 ${connectedFavorites.length} 个收藏的服务，是否继续？`,
-      '一键断开',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning',
-      }
-    )
-  } catch {
-    return // 用户取消
   }
 
   connectingAll.value = true
@@ -537,7 +507,7 @@ const handleDisconnectAllFavorites = async () => {
 
 .header-right {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
 }
 
