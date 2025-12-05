@@ -60,15 +60,57 @@ jobs:
           path: build/bin/*
           retention-days: 1
 
+  build-desktop-mac:
+    name: Build Desktop (macOS)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整的 git 历史，确保 BUILD_NUMBER 正确
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Build Desktop Application (macOS)
+        run: |
+          PLATFORMS=darwin/universal \
+          BUILD_VERSION=${{ env.BUILD_VERSION }} \
+          BUILD_ADDRESS=${{ secrets.SIGNALING_ADDRESS }} \
+          bash ./scripts/build.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-macos
+          path: build/bin/*.zip
+          retention-days: 1
+
   upload-to-s3:
     name: Upload to S3
     runs-on: ubuntu-latest
-    needs: build-desktop
+    needs: [build-desktop, build-desktop-mac]
     steps:
-      - name: Download artifacts
+      - name: Download Linux/Windows artifacts
         uses: actions/download-artifact@v4
         with:
           name: desktop-all-platforms
+          path: artifacts
+
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-macos
           path: artifacts
 
       - name: Setup MinIO Client
@@ -81,13 +123,32 @@ jobs:
         run: |
           mc alias set aliyun --api=S3v4 https://cache.ali.wodcloud.com ${{ secrets.S3_ACCESS_KEY_ALIYUN }} ${{ secrets.S3_SECRET_KEY_ALIYUN }}
           
-          # 上传所有构建产物
+          VERSION="${{ env.BUILD_VERSION }}"
+          
+          # 上传所有构建产物（带版本号的文件名）
           for file in artifacts/*; do
             if [ -f "$file" ]; then
-              echo "Uploading $(basename $file)..."
-              mc cp "$file" "aliyun/vscode/awecloud-signaling/"
+              filename=$(basename "$file")
+              echo "Uploading $filename..."
+              mc cp "$file" "aliyun/vscode/awecloud-signaling/$filename"
             fi
           done
+          
+          # 同时上传 latest 版本（覆盖旧的 latest 文件）
+          echo "Updating latest version..."
+          for file in artifacts/*; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              # 将版本号替换为 latest
+              latest_filename=$(echo "$filename" | sed "s/$VERSION/latest/g")
+              echo "Uploading $latest_filename..."
+              mc cp "$file" "aliyun/vscode/awecloud-signaling/$latest_filename"
+            fi
+          done
+          
+          # 创建版本信息文件
+          echo "{\"version\":\"$VERSION\",\"build_date\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > version.json
+          mc cp version.json "aliyun/vscode/awecloud-signaling/version.json"
         env:
           S3_ACCESS_KEY_ALIYUN: ${{ secrets.S3_ACCESS_KEY_ALIYUN }}
           S3_SECRET_KEY_ALIYUN: ${{ secrets.S3_SECRET_KEY_ALIYUN }}

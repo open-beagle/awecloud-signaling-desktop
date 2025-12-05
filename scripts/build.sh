@@ -153,10 +153,19 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
     fi
     
     # 构建参数
-    BUILD_FLAGS="-clean -platform ${OS}/${ARCH}"
+    # macOS universal 需要特殊处理
+    if [ "$OS" = "darwin" ] && [ "$ARCH" = "universal" ]; then
+        BUILD_FLAGS="-clean -platform darwin/universal"
+    else
+        BUILD_FLAGS="-clean -platform ${OS}/${ARCH}"
+    fi
     
     # 添加 ldflags
     LDFLAGS="-w -s"
+    # Windows: 添加 -H windowsgui 隐藏控制台窗口
+    if [ "$OS" = "windows" ]; then
+        LDFLAGS="${LDFLAGS} -H windowsgui"
+    fi
     LDFLAGS="${LDFLAGS} -X 'main.version=${BUILD_VERSION}'"
     LDFLAGS="${LDFLAGS} -X 'main.gitCommit=${GIT_COMMIT}'"
     LDFLAGS="${LDFLAGS} -X 'main.buildDate=${BUILD_DATE}'"
@@ -176,11 +185,21 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
         BUILD_OUTPUT="build/bin/awecloud-signaling-desktop.app"
         if [ -d "${BUILD_OUTPUT}" ]; then
             echo -e "${GREEN}✓ Build successful: ${BUILD_OUTPUT}${NC}"
-            # 创建 zip 包
+            
+            # 显示 .app 包大小
+            APP_SIZE=$(du -sh "${BUILD_OUTPUT}" | awk '{print $1}')
+            echo "  App size: ${APP_SIZE}"
+            
+            # 创建 zip 包（标准分发方式）
+            ZIP_NAME="awecloud-signaling-${BUILD_VERSION}-${OS}-${ARCH}.zip"
+            echo "Creating zip archive: ${ZIP_NAME}"
             cd build/bin
-            zip -r "awecloud-signaling-${BUILD_VERSION}-${OS}-${ARCH}.zip" "awecloud-signaling-desktop.app"
+            zip -r -q "${ZIP_NAME}" "awecloud-signaling-desktop.app"
             cd ../..
-            echo -e "${GREEN}✓ Created: ${OUTPUT_DIR}/awecloud-signaling-${BUILD_VERSION}-${OS}-${ARCH}.zip${NC}"
+            
+            # 显示 zip 包大小
+            ZIP_SIZE=$(ls -lh "build/bin/${ZIP_NAME}" | awk '{print $5}')
+            echo -e "${GREEN}✓ Created: build/bin/${ZIP_NAME} (${ZIP_SIZE})${NC}"
         else
             echo -e "${RED}✗ Build failed for ${OS}/${ARCH}${NC}"
             echo -e "${RED}Expected output: ${BUILD_OUTPUT}${NC}"
