@@ -182,19 +182,22 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
     # 检查构建结果
     if [ "$OS" = "darwin" ]; then
         # macOS 构建产物是 .app 包
-        BUILD_OUTPUT="build/bin/awecloud-signaling-desktop.app"
-        if [ -d "${BUILD_OUTPUT}" ]; then
-            echo -e "${GREEN}✓ Build successful: ${BUILD_OUTPUT}${NC}"
+        # Wails 可能生成不同的 .app 名称，自动检测
+        APP_FILE=$(find build/bin -maxdepth 1 -name "*.app" -type d | head -n 1)
+        
+        if [ -n "$APP_FILE" ] && [ -d "$APP_FILE" ]; then
+            APP_NAME=$(basename "$APP_FILE")
+            echo -e "${GREEN}✓ Build successful: ${APP_FILE}${NC}"
             
             # 显示 .app 包大小
-            APP_SIZE=$(du -sh "${BUILD_OUTPUT}" | awk '{print $1}')
+            APP_SIZE=$(du -sh "$APP_FILE" | awk '{print $1}')
             echo "  App size: ${APP_SIZE}"
             
             # 创建 zip 包（标准分发方式）
             ZIP_NAME="awecloud-signaling-${BUILD_VERSION}-${OS}-${ARCH}.zip"
             echo "Creating zip archive: ${ZIP_NAME}"
             cd build/bin
-            zip -r -q "${ZIP_NAME}" "awecloud-signaling-desktop.app"
+            zip -r -q "${ZIP_NAME}" "$APP_NAME"
             cd ../..
             
             # 显示 zip 包大小
@@ -202,7 +205,8 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
             echo -e "${GREEN}✓ Created: build/bin/${ZIP_NAME} (${ZIP_SIZE})${NC}"
         else
             echo -e "${RED}✗ Build failed for ${OS}/${ARCH}${NC}"
-            echo -e "${RED}Expected output: ${BUILD_OUTPUT}${NC}"
+            echo -e "${RED}No .app file found in build/bin/${NC}"
+            echo "Contents of build/bin:"
             ls -la build/bin/ || echo "build/bin directory not found"
             exit 1
         fi
