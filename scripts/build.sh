@@ -166,10 +166,11 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
     if [ "$OS" = "windows" ]; then
         LDFLAGS="${LDFLAGS} -H windowsgui"
     fi
-    LDFLAGS="${LDFLAGS} -X 'main.version=${BUILD_VERSION}'"
-    LDFLAGS="${LDFLAGS} -X 'main.gitCommit=${GIT_COMMIT}'"
-    LDFLAGS="${LDFLAGS} -X 'main.buildDate=${BUILD_DATE}'"
-    LDFLAGS="${LDFLAGS} -X 'main.buildNumber=${BUILD_NUMBER}'"
+    # 注入版本信息到 version 包
+    LDFLAGS="${LDFLAGS} -X 'github.com/open-beagle/awecloud-signaling-desktop/internal/version.Version=${BUILD_VERSION}'"
+    LDFLAGS="${LDFLAGS} -X 'github.com/open-beagle/awecloud-signaling-desktop/internal/version.GitCommit=${GIT_COMMIT}'"
+    LDFLAGS="${LDFLAGS} -X 'github.com/open-beagle/awecloud-signaling-desktop/internal/version.BuildTime=${BUILD_DATE}'"
+    LDFLAGS="${LDFLAGS} -X 'github.com/open-beagle/awecloud-signaling-desktop/internal/version.BuildNumber=${BUILD_NUMBER}'"
     if [ -n "${BUILD_ADDRESS}" ]; then
         LDFLAGS="${LDFLAGS} -X 'github.com/open-beagle/awecloud-signaling-desktop/internal/config.buildAddress=${BUILD_ADDRESS}'"
     fi

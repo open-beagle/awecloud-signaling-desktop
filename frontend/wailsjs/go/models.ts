@@ -1,3 +1,28 @@
+export namespace client {
+	
+	export class VersionCheckResponse {
+	    success: boolean;
+	    version_valid: boolean;
+	    min_version: string;
+	    download_url: string;
+	    message: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new VersionCheckResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.success = source["success"];
+	        this.version_valid = source["version_valid"];
+	        this.min_version = source["min_version"];
+	        this.download_url = source["download_url"];
+	        this.message = source["message"];
+	    }
+	}
+
+}
+
 export namespace config {
 	
 	export class Config {

@@ -1,5 +1,6 @@
 <template>
   <div class="login-container">
+    <UpgradeDialog ref="upgradeDialogRef" />
     <div class="login-box">
       <div class="logo-container">
         <div class="logo-wrapper" :class="{ 'is-loading': isAutoLogging }">
@@ -131,7 +132,8 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
-import { Login, GetVersion, CheckSavedCredentials, ClearCredentials } from '../../wailsjs/go/main/App'
+import { Login, GetVersion, CheckSavedCredentials, ClearCredentials, CheckVersion } from '../../wailsjs/go/main/App'
+import UpgradeDialog from '../components/UpgradeDialog.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -145,6 +147,7 @@ const autoFillMode = ref(false)
 const loginHint = ref('')
 const isAutoLogging = ref(false)
 const loadingDots = ref('')
+const upgradeDialogRef = ref<InstanceType<typeof UpgradeDialog>>()
 
 const form = reactive({
   server: authStore.serverAddress || 'localhost:8080',
@@ -173,6 +176,13 @@ const handleLogin = async () => {
 
     loading.value = true
     try {
+      // 先检查版本
+      const versionCheck = await checkVersionBeforeLogin(form.server)
+      if (!versionCheck) {
+        loading.value = false
+        return
+      }
+
       await Login(
         form.server,
         form.client,
@@ -194,12 +204,52 @@ const handleLogin = async () => {
   })
 }
 
+const checkVersionBeforeLogin = async (serverAddr: string): Promise<boolean> => {
+  try {
+    // 构建完整的服务器地址（添加协议）
+    let fullServerAddr = serverAddr
+    if (!fullServerAddr.startsWith('http://') && !fullServerAddr.startsWith('https://')) {
+      fullServerAddr = 'http://' + fullServerAddr
+    }
+
+    const versionInfo = await GetVersion()
+    const versionCheckResult = await CheckVersion(fullServerAddr)
+    
+    if (!versionCheckResult.version_valid) {
+      // 版本过低，显示升级对话框
+      // 使用服务器地址 + /download 而不是 API 返回的 download_url
+      const downloadPageUrl = fullServerAddr + '/download'
+      upgradeDialogRef.value?.show(
+        versionInfo.version,
+        versionCheckResult.min_version,
+        downloadPageUrl
+      )
+      return false
+    }
+    
+    return true
+  } catch (error: any) {
+    console.error('Version check failed:', error)
+    // 版本检查失败不阻止登录（可能是网络问题）
+    return true
+  }
+}
+
 const handleReconnect = async () => {
   reconnecting.value = true
   isAutoLogging.value = true
   startLoadingDots()
   
   try {
+    // 先检查版本
+    const versionCheck = await checkVersionBeforeLogin(form.server)
+    if (!versionCheck) {
+      reconnecting.value = false
+      isAutoLogging.value = false
+      stopLoadingDots()
+      return
+    }
+
     // 尝试使用保存的Token重新连接
     await Login(
       form.server,

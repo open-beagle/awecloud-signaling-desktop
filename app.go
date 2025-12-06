@@ -12,9 +12,8 @@ import (
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/frp"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/models"
+	appVersion "github.com/open-beagle/awecloud-signaling-desktop/internal/version"
 )
-
-// 注意：buildNumber 在 main.go 中定义，buildAddress 在 config 包中定义
 
 // App struct
 type App struct {
@@ -57,7 +56,7 @@ func (a *App) startup(ctx context.Context) {
 	config.GlobalConfig = cfg // 设置全局配置
 	log.Printf("Using server address: %s", config.GlobalConfig.ServerAddress)
 	log.Printf("Desktop app started")
-	log.Printf("Version: %s, Build: %s, Commit: %s", version, buildNumber, gitCommit)
+	log.Printf("Version: %s, Build: %s, Commit: %s", appVersion.Version, appVersion.BuildNumber, appVersion.GitCommit)
 }
 
 // shutdown is called when the app is closing
@@ -423,19 +422,25 @@ type VersionInfo struct {
 // GetVersion 获取版本信息
 func (a *App) GetVersion() *VersionInfo {
 	return &VersionInfo{
-		Version:     version,
-		GitCommit:   gitCommit,
-		BuildDate:   buildDate,
-		BuildNumber: buildNumber,
+		Version:     appVersion.Version,
+		GitCommit:   appVersion.GitCommit,
+		BuildDate:   appVersion.BuildTime,
+		BuildNumber: appVersion.BuildNumber,
 	}
+}
+
+// CheckVersion 检查客户端版本
+func (a *App) CheckVersion(serverAddr string) (*client.VersionCheckResponse, error) {
+	log.Printf("[App] CheckVersion called for server: %s", serverAddr)
+	return client.CheckVersion(serverAddr)
 }
 
 // GetWindowTitle 获取窗口标题
 func (a *App) GetWindowTitle() string {
-	if buildNumber != "0" && buildNumber != "" {
-		return fmt.Sprintf("awecloud-signaling  %s (Build %s)", version, buildNumber)
+	if appVersion.BuildNumber != "0" && appVersion.BuildNumber != "" {
+		return fmt.Sprintf("awecloud-signaling  %s (Build %s)", appVersion.Version, appVersion.BuildNumber)
 	}
-	return fmt.Sprintf("awecloud-signaling  %s", version)
+	return fmt.Sprintf("awecloud-signaling  %s", appVersion.Version)
 }
 
 // CheckSavedCredentials 检查是否有保存的凭据

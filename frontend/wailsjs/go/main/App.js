@@ -6,6 +6,10 @@ export function CheckSavedCredentials() {
   return window['go']['main']['App']['CheckSavedCredentials']();
 }
 
+export function CheckVersion(arg1) {
+  return window['go']['main']['App']['CheckVersion'](arg1);
+}
+
 export function ClearCredentials() {
   return window['go']['main']['App']['ClearCredentials']();
 }
