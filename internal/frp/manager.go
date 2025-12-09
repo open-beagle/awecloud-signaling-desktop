@@ -120,7 +120,7 @@ func (f *DesktopTunnel) addVisitor(cmd *models.VisitorCommand) error {
 			Type:       "stcp",
 			ServerName: cmd.InstanceName, // 对应 Agent 端的 STCP Proxy 名称
 			SecretKey:  cmd.SecretKey,
-			BindAddr:   "127.0.0.1",
+			BindAddr:   "0.0.0.0",
 			BindPort:   cmd.LocalPort,
 		},
 	}
