@@ -6,6 +6,7 @@ toolchain go1.24.10
 
 require (
 	github.com/denisbrodbeck/machineid v1.0.1
+	github.com/energye/systray v1.0.2
 	github.com/fatedier/frp v0.65.0
 	github.com/fatedier/golib v0.5.1
 	github.com/hashicorp/yamux v0.1.1
@@ -57,6 +58,7 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/templexxx/cpu v0.1.1 // indirect
 	github.com/templexxx/xorsimd v0.4.3 // indirect
+	github.com/tevino/abool v0.0.0-20220530134649-2bfc934cb23c // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect

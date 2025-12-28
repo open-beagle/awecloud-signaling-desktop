@@ -29,6 +29,8 @@ export function GetVersion():Promise<main.VersionInfo>;
 
 export function GetWindowTitle():Promise<string>;
 
+export function HideToTray():Promise<void>;
+
 export function IsAuthenticated():Promise<boolean>;
 
 export function Login(arg1:string,arg2:string,arg3:string,arg4:boolean):Promise<void>;
@@ -36,6 +38,10 @@ export function Login(arg1:string,arg2:string,arg3:string,arg4:boolean):Promise<
 export function Logout():Promise<void>;
 
 export function OfflineDevice(arg1:string):Promise<void>;
+
+export function QuitApp():Promise<void>;
+
+export function ShowFromTray():Promise<void>;
 
 export function ToggleFavorite(arg1:number,arg2:number):Promise<boolean>;
 

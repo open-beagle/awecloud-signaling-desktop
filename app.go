@@ -12,7 +12,9 @@ import (
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/frp"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/models"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/tray"
 	appVersion "github.com/open-beagle/awecloud-signaling-desktop/internal/version"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct
@@ -28,6 +30,9 @@ type App struct {
 	// 进程内通信通道
 	commandChan chan *models.VisitorCommand
 	statusChan  chan *models.VisitorStatus
+
+	// 系统托盘管理器
+	trayManager *tray.Manager
 }
 
 // NewApp creates a new App application struct
@@ -57,6 +62,13 @@ func (a *App) startup(ctx context.Context) {
 	log.Printf("Using server address: %s", config.GlobalConfig.ServerAddress)
 	log.Printf("Desktop app started")
 	log.Printf("Version: %s, Build: %s, Commit: %s", appVersion.Version, appVersion.BuildNumber, appVersion.GitCommit)
+
+	// 启动系统托盘
+	a.trayManager = tray.NewManager(ctx, func() {
+		runtime.Quit(ctx)
+	})
+	a.trayManager.Start()
+	log.Printf("System tray started")
 }
 
 // shutdown is called when the app is closing
@@ -68,6 +80,17 @@ func (a *App) shutdown(ctx context.Context) {
 		a.desktopTunnel.Stop()
 	}
 	log.Printf("Desktop app shutdown")
+}
+
+// beforeClose is called when the user tries to close the window
+// Return true to prevent the window from closing
+func (a *App) beforeClose(ctx context.Context) (prevent bool) {
+	// 隐藏窗口到托盘，而不是关闭
+	log.Printf("[App] beforeClose: hiding to tray")
+	if a.trayManager != nil {
+		a.trayManager.HideWindow()
+	}
+	return true // 阻止窗口关闭
 }
 
 // Login 用户登录
@@ -631,4 +654,32 @@ func (w *logWriter) Write(p []byte) (n int, err error) {
 	fmt.Println(logLine)
 
 	return len(p), nil
+}
+
+// ==================== 系统托盘相关方法 ====================
+
+// HideToTray 隐藏窗口到系统托盘
+func (a *App) HideToTray() {
+	log.Printf("[App] HideToTray called")
+	if a.trayManager != nil {
+		a.trayManager.HideWindow()
+	}
+}
+
+// ShowFromTray 从系统托盘恢复窗口
+func (a *App) ShowFromTray() {
+	log.Printf("[App] ShowFromTray called")
+	if a.trayManager != nil {
+		a.trayManager.ShowWindow()
+	}
+}
+
+// QuitApp 完全退出应用
+func (a *App) QuitApp() {
+	log.Printf("[App] QuitApp called")
+	if a.trayManager != nil {
+		a.trayManager.Quit()
+	} else {
+		runtime.Quit(a.ctx)
+	}
 }
