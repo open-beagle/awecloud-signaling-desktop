@@ -5,11 +5,13 @@
 项目中的 Beagle logo 已应用到以下位置：
 
 ### Desktop 应用
+
 - `build/appicon.png` - 主应用图标（源文件）
 - `build/windows/icon.png` - Windows 图标
 - `frontend/src/assets/logo.png` - 前端资源
 
 ### Web 应用
+
 - `../web/public/logo.png` - Web 公共资源
 - `../web/src/assets/logo.png` - Web 前端资源
 
@@ -63,6 +65,7 @@ npm run build
 ## 当前 Logo
 
 当前使用的是 Beagle（比格犬）logo：
+
 - 蓝白配色
 - 简洁的图形设计
 - 符合项目名称（open-beagle）

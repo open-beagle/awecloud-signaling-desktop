@@ -17,6 +17,7 @@ Desktop 客户端应用 - 基于 Wails 的跨平台桌面应用
 - Wails CLI v2.11.0+
 
 安装 Wails CLI:
+
 ```bash
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
 ```

@@ -18,15 +18,18 @@ Desktop MVP 的后端和前端核心功能已完成，可以进行集成测试�
 ### 2. 后端实现（Go）
 
 #### 数据模型 (`internal/models/`)
+
 - [x] `command.go` - 进程内通信命令
 - [x] `service.go` - 服务信息模型
 - [x] `connection.go` - 连接状态模型
 
 #### 配置管理 (`internal/config/`)
+
 - [x] `config.go` - 配置结构和存储
 - [x] 跨平台配置文件路径支持
 
 #### Desktop-Web 线程 (`internal/client/`)
+
 - [x] `client.go` - gRPC 客户端实现
 - [x] 连接 Server-Web 线程
 - [x] Client 认证（Authenticate）
@@ -36,6 +39,7 @@ Desktop MVP 的后端和前端核心功能已完成，可以进行集成测试�
 - [x] 状态监听
 
 #### Desktop-FRP 线程 (`internal/frp/`)
+
 - [x] `manager.go` - FRP 客户端管理器
 - [x] 连接 Server-FRP 线程
 - [x] STCP Visitor 管理
@@ -43,6 +47,7 @@ Desktop MVP 的后端和前端核心功能已完成，可以进行集成测试�
 - [x] 命令处理
 
 #### 应用集成
+
 - [x] `app.go` - Wails 应用主结构
 - [x] `main.go` - 应用入口
 - [x] 进程内通信（Go channel）
@@ -51,10 +56,12 @@ Desktop MVP 的后端和前端核心功能已完成，可以进行集成测试�
 ### 3. 前端实现（Vue 3 + TypeScript）
 
 #### 状态管理 (`stores/`)
+
 - [x] `auth.ts` - 认证状态
 - [x] `services.ts` - 服务列表和连接状态
 
 #### 页面组件 (`views/`)
+
 - [x] `Login.vue` - 登录页面
   - Server 地址配置
   - Client ID/Secret 输入
@@ -66,6 +73,7 @@ Desktop MVP 的后端和前端核心功能已完成，可以进行集成测试�
   - 退出登录
 
 #### 通用组件 (`components/`)
+
 - [x] `ServiceCard.vue` - 服务卡片
   - 服务信息展示
   - 本地端口配置
@@ -74,6 +82,7 @@ Desktop MVP 的后端和前端核心功能已完成，可以进行集成测试�
 - [x] `StatusBadge.vue` - 状态徽章
 
 #### 路由和配置
+
 - [x] `router/index.ts` - Vue Router 配置
 - [x] 路由守卫（认证检查）
 - [x] Element Plus 集成
@@ -140,6 +149,7 @@ Desktop MVP 的后端和前端核心功能已完成，可以进行集成测试�
 ## 技术栈
 
 ### 后端
+
 - **语言**: Go 1.23
 - **框架**: Wails v2.11.0
 - **依赖**:
@@ -148,6 +158,7 @@ Desktop MVP 的后端和前端核心功能已完成，可以进行集成测试�
   - Protobuf v1.36.10
 
 ### 前端
+
 - **框架**: Vue 3.2.37
 - **语言**: TypeScript 4.6.4
 - **UI 库**: Element Plus 2.4.4
@@ -158,11 +169,13 @@ Desktop MVP 的后端和前端核心功能已完成，可以进行集成测试�
 ## 已知限制
 
 1. **FRP 动态 Visitor 管理**
+
    - 当前 FRP 不支持运行时动态添加 Visitor
    - 需要重启 FRP Service 或为每个 Visitor 创建独立客户端
    - 这是 FRP 库的限制，不是实现问题
 
 2. **平台支持**
+
    - MVP 阶段只支持 Windows
    - macOS 和 Linux 支持将在后续版本添加
 
@@ -173,16 +186,19 @@ Desktop MVP 的后端和前端核心功能已完成，可以进行集成测试�
 ## 下一步计划
 
 ### 短期（本周）
+
 1. 进行集成测试
 2. 修复发现的 bug
 3. 完善错误处理
 
 ### 中期（Week 7）
+
 1. 实现自动重连
 2. 添加配置管理功能
 3. Windows 打包
 
 ### 长期（后续版本）
+
 1. macOS/Linux 支持
 2. 系统托盘集成
 3. 自动更新功能
