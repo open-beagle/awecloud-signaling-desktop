@@ -50,6 +50,10 @@ export function GetWindowTitle() {
   return window['go']['main']['App']['GetWindowTitle']();
 }
 
+export function HideToTray() {
+  return window['go']['main']['App']['HideToTray']();
+}
+
 export function IsAuthenticated() {
   return window['go']['main']['App']['IsAuthenticated']();
 }
@@ -64,6 +68,14 @@ export function Logout() {
 
 export function OfflineDevice(arg1) {
   return window['go']['main']['App']['OfflineDevice'](arg1);
+}
+
+export function QuitApp() {
+  return window['go']['main']['App']['QuitApp']();
+}
+
+export function ShowFromTray() {
+  return window['go']['main']['App']['ShowFromTray']();
 }
 
 export function ToggleFavorite(arg1, arg2) {
