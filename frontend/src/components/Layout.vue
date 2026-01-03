@@ -79,7 +79,7 @@ import { ElMessage } from 'element-plus'
 import { Grid, Document, Monitor, User, SwitchButton } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
-import { Logout } from '../../wailsjs/go/main/App'
+import { Logout } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 const router = useRouter()
 const route = useRoute()

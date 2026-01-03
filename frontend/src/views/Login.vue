@@ -132,7 +132,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
-import { Login, GetVersion, CheckSavedCredentials, ClearCredentials, CheckVersion } from '../../wailsjs/go/main/App'
+import { Login, GetVersion, CheckSavedCredentials, ClearCredentials, CheckVersion } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 import UpgradeDialog from '../components/UpgradeDialog.vue'
 
 const router = useRouter()
@@ -215,12 +215,12 @@ const checkVersionBeforeLogin = async (serverAddr: string): Promise<boolean> => 
     const versionInfo = await GetVersion()
     const versionCheckResult = await CheckVersion(fullServerAddr)
     
-    if (!versionCheckResult.version_valid) {
+    if (versionCheckResult && !versionCheckResult.version_valid) {
       // 版本过低，显示升级对话框
       // 使用服务器地址 + /download 而不是 API 返回的 download_url
       const downloadPageUrl = fullServerAddr + '/download'
       upgradeDialogRef.value?.show(
-        versionInfo.version,
+        versionInfo?.version || 'unknown',
         versionCheckResult.min_version,
         downloadPageUrl
       )
@@ -366,7 +366,7 @@ const determineLoginMode = (savedCreds: any) => {
 onMounted(async () => {
   try {
     const versionInfo = await GetVersion()
-    appVersion.value = versionInfo.version
+    appVersion.value = versionInfo?.version || 'dev'
   } catch (error) {
     console.error('Failed to get version:', error)
   }

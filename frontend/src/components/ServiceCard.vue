@@ -107,7 +107,7 @@ import { Star, StarFilled } from '@element-plus/icons-vue'
 import type { ServiceInfo, ConnectionStatus } from '../stores/services'
 import { useServicesStore } from '../stores/services'
 import StatusBadge from './StatusBadge.vue'
-import { ToggleFavorite } from '../../wailsjs/go/main/App'
+import { ToggleFavorite } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 interface Props {
   service: ServiceInfo

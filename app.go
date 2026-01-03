@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -12,15 +11,12 @@ import (
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/frp"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/models"
-	"github.com/open-beagle/awecloud-signaling-desktop/internal/tray"
 	appVersion "github.com/open-beagle/awecloud-signaling-desktop/internal/version"
-	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // App struct
 type App struct {
-	ctx context.Context
-
 	// Desktop-Web 线程（gRPC 客户端）
 	desktopClient *client.DesktopClient
 
@@ -30,9 +26,6 @@ type App struct {
 	// 进程内通信通道
 	commandChan chan *models.VisitorCommand
 	statusChan  chan *models.VisitorStatus
-
-	// 系统托盘管理器
-	trayManager *tray.Manager
 }
 
 // NewApp creates a new App application struct
@@ -44,9 +37,7 @@ func NewApp() *App {
 }
 
 // startup is called when the app starts
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
-
+func (a *App) startup() {
 	// 设置日志输出到缓冲区
 	log.SetOutput(&logWriter{})
 	log.SetFlags(log.Ltime)
@@ -63,16 +54,55 @@ func (a *App) startup(ctx context.Context) {
 	log.Printf("Desktop app started")
 	log.Printf("Version: %s, Build: %s, Commit: %s", appVersion.Version, appVersion.BuildNumber, appVersion.GitCommit)
 
-	// 启动系统托盘
-	a.trayManager = tray.NewManager(ctx, func() {
-		runtime.Quit(ctx)
-	})
-	a.trayManager.Start()
+	// 启动系统托盘（使用 Wails v3 原生支持）
+	a.setupSystemTray()
 	log.Printf("System tray started")
 }
 
+// setupSystemTray 设置系统托盘（Wails v3 原生支持）
+func (a *App) setupSystemTray() {
+	if mainApp == nil {
+		log.Printf("[App] mainApp is nil, cannot setup system tray")
+		return
+	}
+
+	// 创建系统托盘
+	systray := mainApp.SystemTray.New()
+
+	// 设置托盘图标
+	systray.SetIcon(appIcon)
+
+	// 创建托盘菜单
+	menu := mainApp.NewMenu()
+	menu.Add("显示窗口").OnClick(func(ctx *application.Context) {
+		if mainWindow != nil {
+			mainWindow.Show()
+			mainWindow.Focus()
+		}
+	})
+	menu.AddSeparator()
+	menu.Add("退出").OnClick(func(ctx *application.Context) {
+		a.shutdown()
+		mainApp.Quit()
+	})
+	systray.SetMenu(menu)
+
+	// 单击托盘图标显示窗口
+	systray.OnClick(func() {
+		if mainWindow != nil {
+			mainWindow.Show()
+			mainWindow.Focus()
+		}
+	})
+
+	// 右键显示菜单
+	systray.OnRightClick(func() {
+		systray.OpenMenu()
+	})
+}
+
 // shutdown is called when the app is closing
-func (a *App) shutdown(ctx context.Context) {
+func (a *App) shutdown() {
 	if a.desktopClient != nil {
 		a.desktopClient.Stop()
 	}
@@ -80,17 +110,6 @@ func (a *App) shutdown(ctx context.Context) {
 		a.desktopTunnel.Stop()
 	}
 	log.Printf("Desktop app shutdown")
-}
-
-// beforeClose is called when the user tries to close the window
-// Return true to prevent the window from closing
-func (a *App) beforeClose(ctx context.Context) (prevent bool) {
-	// 隐藏窗口到托盘，而不是关闭
-	log.Printf("[App] beforeClose: hiding to tray")
-	if a.trayManager != nil {
-		a.trayManager.HideWindow()
-	}
-	return true // 阻止窗口关闭
 }
 
 // Login 用户登录
@@ -661,25 +680,25 @@ func (w *logWriter) Write(p []byte) (n int, err error) {
 // HideToTray 隐藏窗口到系统托盘
 func (a *App) HideToTray() {
 	log.Printf("[App] HideToTray called")
-	if a.trayManager != nil {
-		a.trayManager.HideWindow()
+	if mainWindow != nil {
+		mainWindow.Hide()
 	}
 }
 
 // ShowFromTray 从系统托盘恢复窗口
 func (a *App) ShowFromTray() {
 	log.Printf("[App] ShowFromTray called")
-	if a.trayManager != nil {
-		a.trayManager.ShowWindow()
+	if mainWindow != nil {
+		mainWindow.Show()
+		mainWindow.Focus()
 	}
 }
 
 // QuitApp 完全退出应用
 func (a *App) QuitApp() {
 	log.Printf("[App] QuitApp called")
-	if a.trayManager != nil {
-		a.trayManager.Quit()
-	} else {
-		runtime.Quit(a.ctx)
+	a.shutdown()
+	if mainApp != nil {
+		mainApp.Quit()
 	}
 }

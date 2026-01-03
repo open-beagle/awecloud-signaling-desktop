@@ -4,14 +4,14 @@
 
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { GetWindowTitle } from '../wailsjs/go/main/App'
-import { WindowSetTitle } from '../wailsjs/runtime/runtime'
+import { GetWindowTitle } from '../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import { Window } from '@wailsio/runtime'
 
 // 设置窗口标题
 onMounted(async () => {
   try {
     const title = await GetWindowTitle()
-    WindowSetTitle(title)
+    Window.SetTitle(title)
   } catch (error) {
     console.error('Failed to set window title:', error)
   }

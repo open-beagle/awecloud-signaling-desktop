@@ -41,7 +41,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { WarningFilled } from '@element-plus/icons-vue'
-import { BrowserOpenURL } from '../../wailsjs/runtime/runtime'
+import { Browser } from '@wailsio/runtime'
 
 const visible = ref(false)
 const currentVersion = ref('')
@@ -62,7 +62,7 @@ const handleDownload = () => {
   
   // 直接打开下载页面 URL
   // URL 已经在 Login.vue 中构建为 服务器地址 + /download
-  BrowserOpenURL(downloadURL.value)
+  Browser.OpenURL(downloadURL.value)
 }
 
 defineExpose({

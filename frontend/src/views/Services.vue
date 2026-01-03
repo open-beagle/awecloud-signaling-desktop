@@ -112,7 +112,7 @@ import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
 import Layout from '../components/Layout.vue'
 import ServiceCard from '../components/ServiceCard.vue'
-import { GetServices, ConnectService, DisconnectService } from '../../wailsjs/go/main/App'
+import { GetServices, ConnectService, DisconnectService } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 const authStore = useAuthStore()
 const servicesStore = useServicesStore()
@@ -228,7 +228,9 @@ const loadServices = async () => {
   servicesStore.setLoading(true)
   try {
     const services = await GetServices()
-    servicesStore.setServices(services || [])
+    // 过滤掉 null 值
+    const validServices = (services || []).filter((s): s is NonNullable<typeof s> => s !== null)
+    servicesStore.setServices(validServices)
     
     // 服务列表加载后，重新计算默认筛选状态
     filterStatus.value = getDefaultFilterStatus()

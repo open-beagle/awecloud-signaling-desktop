@@ -113,7 +113,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, Check, SwitchButton, Delete } from '@element-plus/icons-vue'
 import Layout from '../components/Layout.vue'
-import { GetDevices, OfflineDevice, DeleteDevice } from '../../wailsjs/go/main/App'
+import { GetDevices, OfflineDevice, DeleteDevice } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 interface Device {
   device_token: string
@@ -134,7 +134,8 @@ const loadDevices = async () => {
   loading.value = true
   try {
     const result = await GetDevices()
-    devices.value = result || []
+    // 过滤掉 null 值
+    devices.value = (result || []).filter((d): d is Device => d !== null) as Device[]
   } catch (error: any) {
     ElMessage.error('加载设备列表失败: ' + (error.message || '未知错误'))
   } finally {

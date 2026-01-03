@@ -59,7 +59,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Delete, Download } from '@element-plus/icons-vue'
 import Layout from '../components/Layout.vue'
-import { GetLogs } from '../../wailsjs/go/main/App'
+import { GetLogs } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 const logs = ref<string[]>([])
 let refreshInterval: number | null = null

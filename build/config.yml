@@ -1,0 +1,7 @@
+# Wails v3 Development Configuration
+frontend:
+  dir: frontend
+  install: npm install
+  build: npm run build
+  dev: npm run dev
+  devServerUrl: auto
