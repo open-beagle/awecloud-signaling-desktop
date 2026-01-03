@@ -11,18 +11,18 @@ env:
 
 jobs:
   build-desktop:
-    name: Build Desktop
+    name: Build Desktop (Linux/Windows)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 获取完整的 git 历史，确保 BUILD_NUMBER 正确
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -35,16 +35,10 @@ jobs:
           sudo apt-get install -y \
             libgtk-3-dev \
             libwebkit2gtk-4.1-dev \
-            gcc-mingw-w64-x86-64 \
             nsis
 
-      - name: Install Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
-
-      - name: Create webkit2gtk-4.0 symlink
-        run: |
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.1.pc \
-                      /usr/lib/x86_64-linux-gnu/pkgconfig/webkit2gtk-4.0.pc
+      - name: Install Wails v3
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.55
 
       - name: Build Desktop Applications (Linux and Windows)
         run: |
@@ -67,24 +61,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # 获取完整的 git 历史，确保 BUILD_NUMBER 正确
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          go-version: '1.25'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+      - name: Install Wails v3
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.55
 
       - name: Build Desktop Application (macOS)
         run: |
-          PLATFORMS=darwin/universal \
+          PLATFORMS=darwin/arm64,darwin/amd64 \
           BUILD_VERSION=${{ env.BUILD_VERSION }} \
           BUILD_ADDRESS=${{ secrets.SIGNALING_ADDRESS }} \
           bash ./scripts/build.sh
@@ -93,7 +87,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: desktop-macos
-          path: build/bin/*.zip
+          path: build/bin/*
           retention-days: 1
 
   upload-to-s3:
@@ -121,11 +115,12 @@ jobs:
 
       - name: Upload to S3
         run: |
-          mc alias set aliyun --api=S3v4 https://cache.ali.wodcloud.com ${{ secrets.S3_ACCESS_KEY_ALIYUN }} ${{ secrets.S3_SECRET_KEY_ALIYUN }}
+          mc alias set aliyun --api=S3v4 https://cache.ali.wodcloud.com \
+            ${{ secrets.S3_ACCESS_KEY_ALIYUN }} ${{ secrets.S3_SECRET_KEY_ALIYUN }}
           
           VERSION="${{ env.BUILD_VERSION }}"
           
-          # 上传所有构建产物（带版本号的文件名）
+          # 上传所有构建产物
           for file in artifacts/*; do
             if [ -f "$file" ]; then
               filename=$(basename "$file")
@@ -134,12 +129,11 @@ jobs:
             fi
           done
           
-          # 同时上传 latest 版本（覆盖旧的 latest 文件）
+          # 上传 latest 版本
           echo "Updating latest version..."
           for file in artifacts/*; do
             if [ -f "$file" ]; then
               filename=$(basename "$file")
-              # 将版本号替换为 latest
               latest_filename=$(echo "$filename" | sed "s/$VERSION/latest/g")
               echo "Uploading $latest_filename..."
               mc cp "$file" "aliyun/vscode/awecloud-signaling/$latest_filename"
