@@ -349,6 +349,10 @@ EOF
             echo -n "APPL????" > "${OUTPUT_DIR}/${APP_BUNDLE_NAME}/Contents/PkgInfo"
             
             # 创建 zip 压缩包
+            # 临时签名（Ad-hoc signing）以修复 Apple Silicon 上的应用损坏问题
+            echo -e "${YELLOW}Applying ad-hoc signature...${NC}"
+            codesign --force --deep --sign - "${OUTPUT_DIR}/${APP_BUNDLE_NAME}"
+
             cd "${OUTPUT_DIR}"
             zip -r "${ZIP_NAME}" "${APP_BUNDLE_NAME}"
             cd - > /dev/null
