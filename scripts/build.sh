@@ -35,15 +35,10 @@ echo "Build Date:   ${BUILD_DATE}"
 echo "Platforms:    ${PLATFORMS}"
 echo ""
 
-# 检查 wails3 是否安装
-if ! command -v wails3 &> /dev/null; then
-    echo -e "${RED}Error: wails3 command not found${NC}"
-    echo ""
-    echo "Please install Wails v3 first:"
-    echo "  go install github.com/wailsapp/wails/v3/cmd/wails3@latest"
-    echo ""
-    echo "Or visit: https://v3alpha.wails.io/"
-    exit 1
+# 检查 wails3 是否安装（仅在需要生成绑定时必需）
+WAILS3_AVAILABLE=false
+if command -v wails3 &> /dev/null; then
+    WAILS3_AVAILABLE=true
 fi
 
 # 检查 Node.js 是否安装
@@ -78,6 +73,102 @@ installWindowsDeps() {
     echo -e "${GREEN}✓ Windows cross-compilation dependencies OK${NC}"
 }
 
+# generateWindowsResources 生成 Windows 资源文件（图标嵌入）
+generateWindowsResources() {
+    local ARCH="$1"
+    echo -e "${YELLOW}Generating Windows resources (icon embedding)...${NC}"
+    
+    # 检查 go-winres 是否安装
+    if ! command -v go-winres &> /dev/null; then
+        echo -e "${YELLOW}Installing go-winres...${NC}"
+        go install github.com/tc-hib/go-winres@latest
+    fi
+    
+    # 创建 winres 目录
+    mkdir -p winres
+    
+    # 复制图标文件
+    if [ -f "build/windows/icon.ico" ]; then
+        cp "build/windows/icon.ico" "winres/icon.ico"
+    elif [ -f "build/appicon.png" ]; then
+        cp "build/appicon.png" "winres/icon.png"
+    fi
+    
+    # 生成正确的 manifest 文件（替换模板变量）
+    cat > "winres/app.manifest" << 'EOF'
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
+    <assemblyIdentity type="win32" name="com.awecloud.signaling.desktop" version="1.0.0.0" processorArchitecture="*"/>
+    <dependency>
+        <dependentAssembly>
+            <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0" processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
+        </dependentAssembly>
+    </dependency>
+    <asmv3:application>
+        <asmv3:windowsSettings>
+            <dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>
+            <dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">permonitorv2,permonitor</dpiAwareness>
+        </asmv3:windowsSettings>
+    </asmv3:application>
+</assembly>
+EOF
+    
+    # 创建 winres.json 配置文件
+    cat > "winres/winres.json" << EOF
+{
+    "RT_GROUP_ICON": {
+        "APP": {
+            "0000": "icon.ico"
+        }
+    },
+    "RT_MANIFEST": {
+        "#1": {
+            "0000": "app.manifest"
+        }
+    },
+    "RT_VERSION": {
+        "#1": {
+            "0000": {
+                "fixed": {
+                    "file_version": "${BUILD_VERSION}.${BUILD_NUMBER}",
+                    "product_version": "${BUILD_VERSION}.${BUILD_NUMBER}"
+                },
+                "info": {
+                    "0409": {
+                        "CompanyName": "AWECloud",
+                        "FileDescription": "AWECloud Signaling Desktop",
+                        "FileVersion": "${BUILD_VERSION}",
+                        "InternalName": "awecloud-signaling-desktop",
+                        "LegalCopyright": "Copyright © 2025 AWECloud. All rights reserved.",
+                        "OriginalFilename": "awecloud-signaling-desktop.exe",
+                        "ProductName": "Signaling Desktop",
+                        "ProductVersion": "${BUILD_VERSION}"
+                    }
+                }
+            }
+        }
+    }
+}
+EOF
+    
+    # 生成 .syso 文件
+    echo "Running: go-winres make --arch ${ARCH}"
+    go-winres make --arch "${ARCH}"
+    
+    if [ -f "rsrc_windows_${ARCH}.syso" ]; then
+        echo -e "${GREEN}✓ Windows resources generated: rsrc_windows_${ARCH}.syso${NC}"
+    else
+        echo -e "${RED}✗ Failed to generate Windows resources${NC}"
+        return 1
+    fi
+}
+
+# cleanWindowsResources 清理 Windows 资源文件
+cleanWindowsResources() {
+    rm -f rsrc_windows_*.syso
+    rm -rf winres
+}
+
 # checkMacOSDeps 检查macOS构建环境
 checkMacOSDeps() {
     if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -109,9 +200,17 @@ cd frontend
 npm run build
 cd ..
 
-# 生成绑定
-echo -e "${YELLOW}Generating bindings...${NC}"
-wails3 generate bindings
+# 生成绑定（如果 wails3 可用且绑定目录不存在）
+if [ "$WAILS3_AVAILABLE" = true ]; then
+    echo -e "${YELLOW}Generating bindings...${NC}"
+    wails3 generate bindings
+elif [ -d "frontend/bindings" ]; then
+    echo -e "${YELLOW}wails3 not available, using existing bindings...${NC}"
+else
+    echo -e "${RED}Error: wails3 not available and no existing bindings found${NC}"
+    echo "Please install wails3 or ensure frontend/bindings directory exists"
+    exit 1
+fi
 
 # 创建输出目录
 mkdir -p "${OUTPUT_DIR}"
@@ -136,6 +235,7 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
             ;;
         windows)
             installWindowsDeps
+            generateWindowsResources "${ARCH}"
             ;;
         darwin)
             if ! checkMacOSDeps; then
@@ -187,14 +287,89 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
     # 检查构建结果
     if [ -f "${BUILD_OUTPUT}" ]; then
         echo -e "${GREEN}✓ Build successful: ${BUILD_OUTPUT}${NC}"
-        # 复制到输出目录并重命名
-        if [ "${BUILD_OUTPUT}" != "${OUTPUT_DIR}/${OUTPUT_NAME}" ]; then
-            cp "${BUILD_OUTPUT}" "${OUTPUT_DIR}/${OUTPUT_NAME}"
+        
+        # Windows: 清理资源文件
+        if [ "$OS" = "windows" ]; then
+            cleanWindowsResources
         fi
-        echo -e "${GREEN}✓ Output: ${OUTPUT_DIR}/${OUTPUT_NAME}${NC}"
-        # 显示文件大小
-        FILE_SIZE=$(ls -lh "${OUTPUT_DIR}/${OUTPUT_NAME}" | awk '{print $5}')
-        echo "  File size: ${FILE_SIZE}"
+        
+        # macOS: 打包为 .app.zip
+        if [ "$OS" = "darwin" ]; then
+            echo -e "${YELLOW}Packaging macOS .app bundle...${NC}"
+            
+            APP_BUNDLE_NAME="Signaling Desktop.app"
+            ZIP_NAME="awecloud-signaling-${BUILD_VERSION}-${OS}-${ARCH}.zip"
+            
+            # 创建 .app 目录结构
+            rm -rf "${OUTPUT_DIR}/${APP_BUNDLE_NAME}"
+            mkdir -p "${OUTPUT_DIR}/${APP_BUNDLE_NAME}/Contents/MacOS"
+            mkdir -p "${OUTPUT_DIR}/${APP_BUNDLE_NAME}/Contents/Resources"
+            
+            # 复制可执行文件
+            cp "${BUILD_OUTPUT}" "${OUTPUT_DIR}/${APP_BUNDLE_NAME}/Contents/MacOS/awecloud-signaling-desktop"
+            
+            # 创建 Info.plist
+            cat > "${OUTPUT_DIR}/${APP_BUNDLE_NAME}/Contents/Info.plist" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleName</key>
+    <string>Signaling Desktop</string>
+    <key>CFBundleExecutable</key>
+    <string>awecloud-signaling-desktop</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.awecloud.signaling.desktop</string>
+    <key>CFBundleVersion</key>
+    <string>${BUILD_VERSION}</string>
+    <key>CFBundleShortVersionString</key>
+    <string>${BUILD_VERSION}</string>
+    <key>CFBundleIconFile</key>
+    <string>iconfile</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>10.13.0</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2025 AWECloud. All rights reserved.</string>
+</dict>
+</plist>
+EOF
+            
+            # 复制图标（如果存在）
+            if [ -f "build/darwin/icons.icns" ]; then
+                cp "build/darwin/icons.icns" "${OUTPUT_DIR}/${APP_BUNDLE_NAME}/Contents/Resources/iconfile.icns"
+            elif [ -f "build/appicon.png" ]; then
+                cp "build/appicon.png" "${OUTPUT_DIR}/${APP_BUNDLE_NAME}/Contents/Resources/iconfile.png"
+            fi
+            
+            # 创建 PkgInfo 文件
+            echo -n "APPL????" > "${OUTPUT_DIR}/${APP_BUNDLE_NAME}/Contents/PkgInfo"
+            
+            # 创建 zip 压缩包
+            cd "${OUTPUT_DIR}"
+            zip -r "${ZIP_NAME}" "${APP_BUNDLE_NAME}"
+            cd - > /dev/null
+            
+            # 清理 .app 目录和原始二进制文件
+            rm -rf "${OUTPUT_DIR}/${APP_BUNDLE_NAME}"
+            rm -f "${BUILD_OUTPUT}"
+            
+            echo -e "${GREEN}✓ Output: ${OUTPUT_DIR}/${ZIP_NAME}${NC}"
+            FILE_SIZE=$(ls -lh "${OUTPUT_DIR}/${ZIP_NAME}" | awk '{print $5}')
+            echo "  File size: ${FILE_SIZE}"
+        else
+            # 非 macOS: 复制到输出目录并重命名
+            if [ "${BUILD_OUTPUT}" != "${OUTPUT_DIR}/${OUTPUT_NAME}" ]; then
+                cp "${BUILD_OUTPUT}" "${OUTPUT_DIR}/${OUTPUT_NAME}"
+            fi
+            echo -e "${GREEN}✓ Output: ${OUTPUT_DIR}/${OUTPUT_NAME}${NC}"
+            # 显示文件大小
+            FILE_SIZE=$(ls -lh "${OUTPUT_DIR}/${OUTPUT_NAME}" | awk '{print $5}')
+            echo "  File size: ${FILE_SIZE}"
+        fi
     else
         echo -e "${RED}✗ Build failed for ${OS}/${ARCH}${NC}"
         echo -e "${RED}Expected output: ${BUILD_OUTPUT}${NC}"

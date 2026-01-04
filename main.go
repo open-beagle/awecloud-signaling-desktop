@@ -28,6 +28,7 @@ func main() {
 	mainApp = application.New(application.Options{
 		Name:        "awecloud-signaling",
 		Description: "AWECloud Signaling Desktop Client",
+		Icon:        appIcon,
 		Services: []application.Service{
 			application.NewService(app),
 		},

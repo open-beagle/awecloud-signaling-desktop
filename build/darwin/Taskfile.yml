@@ -3,6 +3,9 @@ version: '3'
 includes:
   common: ../Taskfile.yml
 
+vars:
+  APP_BUNDLE_NAME: "Signaling Desktop.app"
+
 tasks:
   build:
     summary: Builds the application for macOS
@@ -24,6 +27,43 @@ tasks:
       CGO_ENABLED: 1
       GOARCH: '{{.ARCH | default "arm64"}}'
       PRODUCTION: '{{.PRODUCTION | default "true"}}'
+
+  package:
+    summary: Packages the application as .app bundle and creates .zip for distribution
+    deps:
+      - task: build
+        vars:
+          ARCH:
+            ref: .ARCH
+          LDFLAGS:
+            ref: .LDFLAGS
+    vars:
+      ARCH: '{{.ARCH | default "arm64"}}'
+      VERSION: '{{.VERSION | default "dev"}}'
+      ZIP_NAME: 'awecloud-signaling-{{.VERSION}}-darwin-{{.ARCH}}.zip'
+    cmds:
+      # 创建 .app 目录结构
+      - rm -rf "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}"
+      - mkdir -p "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}/Contents/MacOS"
+      - mkdir -p "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}/Contents/Resources"
+      # 复制可执行文件
+      - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}/Contents/MacOS/{{.APP_NAME}}"
+      # 复制 Info.plist
+      - cp build/darwin/Info.plist "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}/Contents/Info.plist"
+      # 复制图标（如果存在）
+      - |
+        if [ -f build/darwin/icons.icns ]; then
+          cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}/Contents/Resources/iconfile.icns"
+        elif [ -f build/appicon.png ]; then
+          cp build/appicon.png "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}/Contents/Resources/iconfile.png"
+        fi
+      # 创建 PkgInfo 文件
+      - echo -n "APPL????" > "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}/Contents/PkgInfo"
+      # 创建 zip 压缩包
+      - cd "{{.BIN_DIR}}" && zip -r "{{.ZIP_NAME}}" "{{.APP_BUNDLE_NAME}}"
+      # 清理 .app 目录（可选，保留 zip）
+      - rm -rf "{{.BIN_DIR}}/{{.APP_BUNDLE_NAME}}"
+      - echo "Package created: {{.BIN_DIR}}/{{.ZIP_NAME}}"
 
   run:
     cmds:
