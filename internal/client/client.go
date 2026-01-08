@@ -541,3 +541,13 @@ func (c *DesktopClient) UpdateFavoritePort(instanceID int64, localPort int) erro
 
 	return c.favoriteClient.UpdateFavoritePort(instanceID, localPort)
 }
+
+// GetTailscaleAuth 获取 Tailscale 认证信息
+func (c *DesktopClient) GetTailscaleAuth() (*TailscaleAuthResponse, error) {
+	if c.sessionToken == "" {
+		return nil, fmt.Errorf("not authenticated")
+	}
+
+	tsClient := NewTailscaleClient(c.serverURL, c.sessionToken)
+	return tsClient.GetTailscaleAuth()
+}
