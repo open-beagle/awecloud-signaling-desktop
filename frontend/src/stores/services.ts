@@ -12,6 +12,10 @@ export interface ServiceInfo {
   access_type?: string      // 'public', 'private', 'group'
   status?: string           // 'online', 'offline'
   is_favorite?: boolean     // 是否收藏
+  // Tailscale 模式字段
+  agent_tailscale_ip?: string  // Agent 的 Tailscale IP
+  listen_port?: number         // Agent 监听端口
+  target_addr?: string         // 内网目标地址
 }
 
 export interface ConnectionStatus {

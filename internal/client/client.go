@@ -159,18 +159,15 @@ func (c *DesktopClient) GetServices() ([]*models.ServiceInfo, error) {
 		return nil, fmt.Errorf("not authenticated")
 	}
 
-	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
-	defer cancel()
-
-	resp, err := c.grpcClient.GetServices(ctx, &pb.GetServicesRequest{
-		SessionToken: c.sessionToken,
-	})
+	// 使用 Tailscale 版本的 API
+	tsClient := NewTailscaleClient(c.serverURL, c.sessionToken)
+	servicesV2, err := tsClient.GetServicesV2()
 	if err != nil {
-		log.Printf("[Desktop-Web] GetServices error: %v", err)
+		log.Printf("[Desktop-Web] GetServicesV2 error: %v", err)
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
 
-	log.Printf("[Desktop-Web] GetServices response: success=%v, services_count=%d", resp.Success, len(resp.Services))
+	log.Printf("[Desktop-Web] GetServicesV2 response: services_count=%d", len(servicesV2))
 
 	// 更新服务列表
 	c.servicesMutex.Lock()
@@ -179,17 +176,21 @@ func (c *DesktopClient) GetServices() ([]*models.ServiceInfo, error) {
 	c.services = make(map[int64]*models.ServiceInfo)
 	var services []*models.ServiceInfo
 
-	for _, svc := range resp.Services {
+	for _, svc := range servicesV2 {
 		service := &models.ServiceInfo{
-			InstanceID:   svc.InstanceId,
-			InstanceName: svc.InstanceName,
-			AgentName:    svc.AgentName,
-			Description:  svc.Description,
-			ServicePort:  int(svc.LocalPort),
-			ServiceIP:    svc.LocalIp,
-			AccessType:   svc.AccessType,
-			Status:       svc.Status,
-			// SecretKey 需要通过 ConnectService 获取
+			InstanceID:       svc.ID,
+			InstanceName:     svc.Name,
+			AgentName:        svc.AgentName,
+			AgentTailscaleIP: svc.TailscaleIP,
+			ListenPort:       svc.ListenPort,
+			TargetAddr:       svc.TargetAddr,
+			Status:           svc.Status,
+		}
+		// 设置在线状态
+		if svc.Status == "running" {
+			service.Status = "online"
+		} else {
+			service.Status = "offline"
 		}
 		c.services[service.InstanceID] = service
 		services = append(services, service)

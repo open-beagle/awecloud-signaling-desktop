@@ -55,17 +55,6 @@
             />
           </el-tooltip>
           
-          <el-tooltip :content="allFavoritesConnected ? '断开' : '连接'" placement="bottom">
-            <el-button 
-              :icon="Connection" 
-              @click="handleToggleAllFavorites"
-              :disabled="favoriteCount === 0 || connectingAll"
-              :loading="connectingAll"
-              :type="allFavoritesConnected ? 'danger' : 'warning'"
-              circle
-            />
-          </el-tooltip>
-          
           <el-tooltip content="刷新" placement="bottom">
             <el-button 
               :icon="Refresh" 
@@ -94,9 +83,6 @@
             v-for="service in filteredServices"
             :key="service.instance_id"
             :service="service"
-            :connection="servicesStore.getConnectionStatus(service.instance_id)"
-            @connect="handleConnect"
-            @disconnect="handleDisconnect"
           />
         </div>
       </div>
@@ -107,12 +93,12 @@
 <script setup lang="ts">
 import { onMounted, ref, computed, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, Search, Connection } from '@element-plus/icons-vue'
+import { Refresh, Search } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
 import Layout from '../components/Layout.vue'
 import ServiceCard from '../components/ServiceCard.vue'
-import { GetServices, ConnectService, DisconnectService } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import { GetServices } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 const authStore = useAuthStore()
 const servicesStore = useServicesStore()
@@ -140,9 +126,6 @@ const getDefaultFilterStatus = () => {
 }
 
 const filterStatus = ref(getDefaultFilterStatus())
-
-// 一键连接状态
-const connectingAll = ref(false)
 
 // 切换搜索框展开/收起
 const toggleSearch = async () => {
@@ -245,212 +228,6 @@ const handleRefresh = async () => {
   await loadServices()
   ElMessage.success('刷新成功')
 }
-
-const handleConnect = async (instanceId: number, localPort: number) => {
-  // 更新状态为连接中
-  servicesStore.updateConnectionStatus(instanceId, {
-    instance_id: instanceId,
-    status: 'connecting',
-    local_port: localPort
-  })
-
-  try {
-    await ConnectService(instanceId, localPort)
-    
-    // 更新状态为已连接
-    servicesStore.updateConnectionStatus(instanceId, {
-      instance_id: instanceId,
-      status: 'connected',
-      local_port: localPort
-    })
-    
-    ElMessage.success(`连接成功，本地端口: ${localPort}`)
-  } catch (error: any) {
-    // 更新状态为错误
-    servicesStore.updateConnectionStatus(instanceId, {
-      instance_id: instanceId,
-      status: 'error',
-      local_port: localPort,
-      error: error.message
-    })
-    
-    ElMessage.error(error.message || '连接失败')
-  }
-}
-
-const handleDisconnect = async (instanceId: number) => {
-  try {
-    await DisconnectService(instanceId)
-    
-    // 更新状态为已断开
-    servicesStore.updateConnectionStatus(instanceId, {
-      instance_id: instanceId,
-      status: 'disconnected',
-      local_port: 0
-    })
-    
-    ElMessage.success('已断开连接')
-  } catch (error: any) {
-    ElMessage.error(error.message || '断开连接失败')
-  }
-}
-
-// 检查是否所有收藏服务都已连接
-const allFavoritesConnected = computed(() => {
-  const favoriteServices = servicesStore.services.filter(
-    service => service.is_favorite && service.status === 'online'
-  )
-  
-  if (favoriteServices.length === 0) {
-    return false
-  }
-  
-  return favoriteServices.every(service => {
-    const connection = servicesStore.getConnectionStatus(service.instance_id)
-    return connection.status === 'connected'
-  })
-})
-
-// 一键连接/断开所有收藏的服务
-const handleToggleAllFavorites = async () => {
-  if (allFavoritesConnected.value) {
-    // 当前所有收藏都已连接，执行断开操作
-    await handleDisconnectAllFavorites()
-  } else {
-    // 有未连接的收藏，执行连接操作
-    await handleConnectAllFavorites()
-  }
-}
-
-// 一键连接所有收藏的服务
-const handleConnectAllFavorites = async () => {
-  // 获取所有收藏且在线的服务
-  const favoriteServices = servicesStore.services.filter(
-    service => service.is_favorite && service.status === 'online'
-  )
-
-  if (favoriteServices.length === 0) {
-    ElMessage.warning('没有在线的收藏服务')
-    return
-  }
-
-  // 过滤掉已经连接的服务
-  const disconnectedFavorites = favoriteServices.filter(service => {
-    const connection = servicesStore.getConnectionStatus(service.instance_id)
-    return connection.status !== 'connected' && connection.status !== 'connecting'
-  })
-
-  if (disconnectedFavorites.length === 0) {
-    ElMessage.info('所有收藏的服务都已连接')
-    return
-  }
-
-  connectingAll.value = true
-  let successCount = 0
-  let failCount = 0
-
-  // 依次连接所有服务
-  for (const service of disconnectedFavorites) {
-    const localPort = service.preferred_port || service.service_port
-
-    // 更新状态为连接中
-    servicesStore.updateConnectionStatus(service.instance_id, {
-      instance_id: service.instance_id,
-      status: 'connecting',
-      local_port: localPort
-    })
-
-    try {
-      await ConnectService(service.instance_id, localPort)
-      
-      // 更新状态为已连接
-      servicesStore.updateConnectionStatus(service.instance_id, {
-        instance_id: service.instance_id,
-        status: 'connected',
-        local_port: localPort
-      })
-      
-      successCount++
-    } catch (error: any) {
-      // 更新状态为错误
-      servicesStore.updateConnectionStatus(service.instance_id, {
-        instance_id: service.instance_id,
-        status: 'error',
-        local_port: localPort,
-        error: error.message
-      })
-      
-      failCount++
-    }
-
-    // 添加短暂延迟，避免同时发起太多连接
-    await new Promise(resolve => setTimeout(resolve, 300))
-  }
-
-  connectingAll.value = false
-
-  // 显示结果
-  if (failCount === 0) {
-    ElMessage.success(`成功连接 ${successCount} 个服务`)
-  } else if (successCount === 0) {
-    ElMessage.error(`连接失败，${failCount} 个服务连接失败`)
-  } else {
-    ElMessage.warning(`连接完成：${successCount} 个成功，${failCount} 个失败`)
-  }
-}
-
-// 一键断开所有收藏的服务
-const handleDisconnectAllFavorites = async () => {
-  // 获取所有已连接的收藏服务
-  const connectedFavorites = servicesStore.services.filter(service => {
-    if (!service.is_favorite) return false
-    const connection = servicesStore.getConnectionStatus(service.instance_id)
-    return connection.status === 'connected'
-  })
-
-  if (connectedFavorites.length === 0) {
-    ElMessage.info('没有已连接的收藏服务')
-    return
-  }
-
-  connectingAll.value = true
-  let successCount = 0
-  let failCount = 0
-
-  // 依次断开所有服务
-  for (const service of connectedFavorites) {
-    try {
-      await DisconnectService(service.instance_id)
-      
-      // 更新状态为已断开
-      servicesStore.updateConnectionStatus(service.instance_id, {
-        instance_id: service.instance_id,
-        status: 'disconnected',
-        local_port: 0
-      })
-      
-      successCount++
-    } catch (error: any) {
-      failCount++
-    }
-
-    // 添加短暂延迟
-    await new Promise(resolve => setTimeout(resolve, 200))
-  }
-
-  connectingAll.value = false
-
-  // 显示结果
-  if (failCount === 0) {
-    ElMessage.success(`成功断开 ${successCount} 个服务`)
-  } else if (successCount === 0) {
-    ElMessage.error(`断开失败，${failCount} 个服务断开失败`)
-  } else {
-    ElMessage.warning(`断开完成：${successCount} 个成功，${failCount} 个失败`)
-  }
-}
-
-
 </script>
 
 <style scoped>

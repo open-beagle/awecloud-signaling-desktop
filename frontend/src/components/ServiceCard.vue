@@ -1,5 +1,5 @@
 <template>
-  <el-card class="service-card" :class="{ 'connected': isConnected }">
+  <el-card class="service-card">
     <template #header>
       <div class="card-header">
         <div class="header-left">
@@ -22,7 +22,6 @@
             <StarFilled v-if="service.is_favorite" />
             <Star v-else />
           </el-icon>
-          <StatusBadge :status="connection.status" />
         </div>
       </div>
     </template>
@@ -42,109 +41,50 @@
       </div>
 
       <div class="info-item">
-        <span class="label">服务地址:</span>
-        <span class="value">{{ service.service_ip }}:{{ service.service_port }}</span>
+        <span class="label">隧道地址:</span>
+        <span class="value tunnel-addr" v-if="tunnelAddress">
+          {{ tunnelAddress }}
+          <el-icon class="copy-icon" @click="copyAddress"><CopyDocument /></el-icon>
+        </span>
+        <span class="value" v-else>-</span>
+      </div>
+
+      <div class="info-item" v-if="service.target_addr">
+        <span class="label">目标地址:</span>
+        <span class="value">{{ service.target_addr }}</span>
       </div>
 
       <div class="info-item" v-if="service.description">
         <span class="label">描述:</span>
         <span class="value">{{ service.description }}</span>
       </div>
-
-      <div class="info-item" v-if="isConnected">
-        <span class="label">本地端口:</span>
-        <span class="value highlight">{{ connection.local_port }}</span>
-      </div>
-
-      <div class="info-item error" v-if="connection.status === 'error'">
-        <span class="label">错误:</span>
-        <span class="value">{{ connection.error }}</span>
-      </div>
     </div>
-
-    <template #footer>
-      <div class="card-footer">
-        <template v-if="!isConnected && connection.status !== 'connecting'">
-          <el-input
-            v-model="localPortInput"
-            placeholder="本地端口"
-            style="width: 120px; margin-right: 10px"
-            @input="handlePortInput"
-          />
-          <el-button
-            type="primary"
-            @click="handleConnect"
-            :disabled="!isValidPort || service.status !== 'online'"
-          >
-            {{ service.status === 'online' ? '连接' : '服务离线' }}
-          </el-button>
-        </template>
-
-        <el-button
-          v-else-if="connection.status === 'connecting'"
-          type="info"
-          loading
-          disabled
-        >
-          连接中...
-        </el-button>
-
-        <el-button
-          v-else
-          type="danger"
-          @click="handleDisconnect"
-        >
-          断开连接
-        </el-button>
-      </div>
-    </template>
   </el-card>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { Star, StarFilled } from '@element-plus/icons-vue'
-import type { ServiceInfo, ConnectionStatus } from '../stores/services'
+import { computed } from 'vue'
+import { Star, StarFilled, CopyDocument } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import type { ServiceInfo } from '../stores/services'
 import { useServicesStore } from '../stores/services'
-import StatusBadge from './StatusBadge.vue'
 import { ToggleFavorite } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 interface Props {
   service: ServiceInfo
-  connection: ConnectionStatus
 }
 
 const props = defineProps<Props>()
-const emit = defineEmits<{
-  connect: [instanceId: number, localPort: number]
-  disconnect: [instanceId: number]
-}>()
 
 const servicesStore = useServicesStore()
 
-// 使用偏好端口，如果没有则使用服务端口
-const localPort = ref(props.service.preferred_port || props.service.service_port)
-const localPortInput = ref(String(localPort.value))
-
-const isConnected = computed(() => props.connection.status === 'connected')
-
-// 验证端口是否有效
-const isValidPort = computed(() => {
-  const port = parseInt(localPortInput.value)
-  return !isNaN(port) && port >= 1 && port <= 65535
-})
-
-// 处理端口输入，只允许纯数字
-const handlePortInput = (value: string) => {
-  // 移除所有非数字字符
-  const cleaned = value.replace(/\D/g, '')
-  localPortInput.value = cleaned
-  
-  // 更新数字值
-  if (cleaned) {
-    localPort.value = parseInt(cleaned)
+// 计算隧道地址
+const tunnelAddress = computed(() => {
+  if (props.service.agent_tailscale_ip && props.service.listen_port) {
+    return `${props.service.agent_tailscale_ip}:${props.service.listen_port}`
   }
-}
+  return ''
+})
 
 const getAccessTypeLabel = (type: string) => {
   const labels: Record<string, string> = {
@@ -164,23 +104,24 @@ const getAccessTypeColor = (type: string) => {
   return colors[type] || 'success'
 }
 
-const handleConnect = () => {
-  if (localPort.value && localPort.value > 0 && localPort.value <= 65535) {
-    emit('connect', props.service.instance_id, localPort.value)
+const copyAddress = async () => {
+  if (tunnelAddress.value) {
+    try {
+      await navigator.clipboard.writeText(tunnelAddress.value)
+      ElMessage.success('已复制到剪贴板')
+    } catch (err) {
+      ElMessage.error('复制失败')
+    }
   }
-}
-
-const handleDisconnect = () => {
-  emit('disconnect', props.service.instance_id)
 }
 
 const handleToggleFavorite = async () => {
   // 先乐观更新UI
   servicesStore.toggleFavorite(props.service.instance_id)
   
-  // 调用后端API，传递当前端口
+  // 调用后端API
   try {
-    await ToggleFavorite(props.service.instance_id, localPort.value)
+    await ToggleFavorite(props.service.instance_id, 0)
   } catch (error: any) {
     // 如果失败，回滚UI状态
     servicesStore.toggleFavorite(props.service.instance_id)
@@ -196,10 +137,6 @@ const handleToggleFavorite = async () => {
 
 .service-card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.service-card.connected {
-  border-color: #67c23a;
 }
 
 .card-header {
@@ -262,19 +199,22 @@ const handleToggleFavorite = async () => {
   color: #333;
 }
 
-.info-item .value.highlight {
-  color: #67c23a;
-  font-weight: bold;
-}
-
-.info-item.error .value {
-  color: #f56c6c;
-  font-size: 12px;
-}
-
-.card-footer {
+.info-item .value.tunnel-addr {
+  color: #409eff;
+  font-family: monospace;
+  font-weight: 500;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  gap: 6px;
+}
+
+.copy-icon {
+  cursor: pointer;
+  color: #909399;
+  transition: color 0.3s;
+}
+
+.copy-icon:hover {
+  color: #409eff;
 }
 </style>
