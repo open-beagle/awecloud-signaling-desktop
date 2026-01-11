@@ -1,7 +1,37 @@
 # Wails v3 Development Configuration
-frontend:
-  dir: frontend
-  install: npm install
-  build: npm run build
-  dev: npm run dev
-  devServerUrl: auto
+version: '3'
+
+info:
+  companyName: "AWECloud"
+  productName: "Signaling Desktop"
+  productIdentifier: "com.awecloud.signaling.desktop"
+  description: "AWECloud Signaling Desktop"
+  copyright: "(c) 2025, AWECloud"
+  version: "0.0.1"
+
+dev_mode:
+  root_path: .
+  log_level: warn
+  debounce: 1000
+  ignore:
+    dir:
+      - .git
+      - node_modules
+      - frontend
+      - bin
+    file:
+      - .DS_Store
+      - .gitignore
+      - .gitkeep
+    watched_extension:
+      - "*.go"
+      - "*.js"
+      - "*.ts"
+    git_ignore: true
+  executes:
+    - cmd: wails3 build DEV=true
+      type: blocking
+    - cmd: wails3 task common:dev:frontend
+      type: background
+    - cmd: wails3 task run
+      type: primary

@@ -105,6 +105,31 @@ export class ServiceInfo {
              */
             this["is_favorite"] = false;
         }
+        if (!("agent_tailscale_ip" in $$source)) {
+            /**
+             * Tailscale 模式新增字段
+             * Agent 的 Tailscale IP
+             * @member
+             * @type {string}
+             */
+            this["agent_tailscale_ip"] = "";
+        }
+        if (!("listen_port" in $$source)) {
+            /**
+             * Agent 监听端口
+             * @member
+             * @type {number}
+             */
+            this["listen_port"] = 0;
+        }
+        if (!("target_addr" in $$source)) {
+            /**
+             * 内网目标地址（仅展示）
+             * @member
+             * @type {string}
+             */
+            this["target_addr"] = "";
+        }
 
         Object.assign(this, $$source);
     }

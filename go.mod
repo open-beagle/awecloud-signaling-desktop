@@ -5,7 +5,7 @@ go 1.25.5
 require (
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/shirou/gopsutil v3.21.11+incompatible
-	github.com/wailsapp/wails/v3 v3.0.0-alpha.55
+	github.com/wailsapp/wails/v3 v3.0.0-alpha.59
 	google.golang.org/grpc v1.77.0
 	google.golang.org/protobuf v1.36.10
 	tailscale.com v1.92.5
@@ -47,7 +47,6 @@ require (
 	github.com/gaissmai/bart v0.18.0 // indirect
 	github.com/go-json-experiment/json v0.0.0-20251027170946-4849db3c2f7e // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
-	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/godbus/dbus/v5 v5.1.1-0.20230522191255-76236955d466 // indirect
 	github.com/google/btree v1.1.2 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect

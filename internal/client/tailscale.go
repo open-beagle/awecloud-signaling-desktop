@@ -69,14 +69,14 @@ func (c *TailscaleClient) GetTailscaleAuth() (*TailscaleAuthResponse, error) {
 	}
 
 	if !result.Success {
-		return nil, fmt.Errorf("get tailscale auth failed: %s", result.Message)
+		return nil, fmt.Errorf("get tunnel auth failed: %s", result.Message)
 	}
 
-	log.Printf("[TailscaleClient] Got auth info: control_url=%s", result.ControlURL)
+	log.Printf("[Tunnel] Got auth info: control_url=%s", result.ControlURL)
 	return &result, nil
 }
 
-// DisconnectTailscale 断开 Tailscale 连接
+// DisconnectTailscale 断开隧道连接
 func (c *TailscaleClient) DisconnectTailscale() error {
 	url := fmt.Sprintf("%s/api/v1/client/tailscale/disconnect", c.serverURL)
 
@@ -98,7 +98,7 @@ func (c *TailscaleClient) DisconnectTailscale() error {
 		return fmt.Errorf("request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	log.Printf("[TailscaleClient] Disconnected from Tailscale")
+	log.Printf("[Tunnel] Disconnected")
 	return nil
 }
 
@@ -155,6 +155,6 @@ func (c *TailscaleClient) GetServicesV2() ([]ServiceV2Info, error) {
 		return nil, fmt.Errorf("get services failed: %s", result.Message)
 	}
 
-	log.Printf("[TailscaleClient] Got %d services", len(result.Services))
+	log.Printf("[Tunnel] Got %d services", len(result.Services))
 	return result.Services, nil
 }

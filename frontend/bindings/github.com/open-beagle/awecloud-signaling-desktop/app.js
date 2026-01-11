@@ -26,7 +26,6 @@ import * as models$0 from "./internal/models/models.js";
 import * as $models from "./models.js";
 
 /**
- * CheckSavedCredentials 检查是否有保存的凭据
  * @returns {$CancellablePromise<$models.SavedCredentials | null>}
  */
 export function CheckSavedCredentials() {
@@ -36,7 +35,6 @@ export function CheckSavedCredentials() {
 }
 
 /**
- * CheckVersion 检查客户端版本
  * @param {string} serverAddr
  * @returns {$CancellablePromise<client$0.VersionCheckResponse | null>}
  */
@@ -47,7 +45,6 @@ export function CheckVersion(serverAddr) {
 }
 
 /**
- * ClearCredentials 清除保存的凭据
  * @returns {$CancellablePromise<void>}
  */
 export function ClearCredentials() {
@@ -55,7 +52,6 @@ export function ClearCredentials() {
 }
 
 /**
- * ConnectService 连接服务
  * @param {number} instanceID
  * @param {number} localPort
  * @returns {$CancellablePromise<void>}
@@ -65,7 +61,6 @@ export function ConnectService(instanceID, localPort) {
 }
 
 /**
- * DeleteDevice 删除设备记录
  * @param {string} deviceToken
  * @returns {$CancellablePromise<void>}
  */
@@ -74,7 +69,6 @@ export function DeleteDevice(deviceToken) {
 }
 
 /**
- * DisconnectService 断开服务
  * @param {number} instanceID
  * @returns {$CancellablePromise<void>}
  */
@@ -83,7 +77,6 @@ export function DisconnectService(instanceID) {
 }
 
 /**
- * GetConfig 获取配置
  * @returns {$CancellablePromise<config$0.Config | null>}
  */
 export function GetConfig() {
@@ -93,7 +86,6 @@ export function GetConfig() {
 }
 
 /**
- * GetDevices 获取已登录的设备列表
  * @returns {$CancellablePromise<($models.DeviceInfo | null)[]>}
  */
 export function GetDevices() {
@@ -103,7 +95,6 @@ export function GetDevices() {
 }
 
 /**
- * GetLogs 获取日志（最近 100 行）
  * @returns {$CancellablePromise<string[]>}
  */
 export function GetLogs() {
@@ -113,7 +104,6 @@ export function GetLogs() {
 }
 
 /**
- * GetServices 获取服务列表
  * @returns {$CancellablePromise<(models$0.ServiceInfo | null)[]>}
  */
 export function GetServices() {
@@ -123,17 +113,25 @@ export function GetServices() {
 }
 
 /**
- * GetVersion 获取版本信息
- * @returns {$CancellablePromise<$models.VersionInfo | null>}
+ * GetTunnelStatus 获取隧道连接状态
+ * @returns {$CancellablePromise<$models.TunnelStatus | null>}
  */
-export function GetVersion() {
-    return $Call.ByID(1049863377).then(/** @type {($result: any) => any} */(($result) => {
+export function GetTunnelStatus() {
+    return $Call.ByID(1614806691).then(/** @type {($result: any) => any} */(($result) => {
         return $$createType14($result);
     }));
 }
 
 /**
- * GetWindowTitle 获取窗口标题
+ * @returns {$CancellablePromise<$models.VersionInfo | null>}
+ */
+export function GetVersion() {
+    return $Call.ByID(1049863377).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType16($result);
+    }));
+}
+
+/**
  * @returns {$CancellablePromise<string>}
  */
 export function GetWindowTitle() {
@@ -141,7 +139,6 @@ export function GetWindowTitle() {
 }
 
 /**
- * HideToTray 隐藏窗口到系统托盘
  * @returns {$CancellablePromise<void>}
  */
 export function HideToTray() {
@@ -149,7 +146,6 @@ export function HideToTray() {
 }
 
 /**
- * IsAuthenticated 检查是否已认证
  * @returns {$CancellablePromise<boolean>}
  */
 export function IsAuthenticated() {
@@ -157,7 +153,6 @@ export function IsAuthenticated() {
 }
 
 /**
- * Login 用户登录
  * @param {string} serverAddr
  * @param {string} clientID
  * @param {string} clientSecret
@@ -169,7 +164,6 @@ export function Login(serverAddr, clientID, clientSecret, rememberMe) {
 }
 
 /**
- * Logout 用户登出
  * @returns {$CancellablePromise<void>}
  */
 export function Logout() {
@@ -177,7 +171,6 @@ export function Logout() {
 }
 
 /**
- * OfflineDevice 让设备下线
  * @param {string} deviceToken
  * @returns {$CancellablePromise<void>}
  */
@@ -186,7 +179,6 @@ export function OfflineDevice(deviceToken) {
 }
 
 /**
- * QuitApp 完全退出应用
  * @returns {$CancellablePromise<void>}
  */
 export function QuitApp() {
@@ -194,7 +186,14 @@ export function QuitApp() {
 }
 
 /**
- * ShowFromTray 从系统托盘恢复窗口
+ * ReconnectTunnel 重新连接隧道
+ * @returns {$CancellablePromise<void>}
+ */
+export function ReconnectTunnel() {
+    return $Call.ByID(3980011288);
+}
+
+/**
  * @returns {$CancellablePromise<void>}
  */
 export function ShowFromTray() {
@@ -202,7 +201,6 @@ export function ShowFromTray() {
 }
 
 /**
- * ToggleFavorite 切换服务收藏状态（带端口）
  * @param {number} instanceID
  * @param {number} localPort
  * @returns {$CancellablePromise<boolean>}
@@ -212,7 +210,6 @@ export function ToggleFavorite(instanceID, localPort) {
 }
 
 /**
- * UpdateFavoritePort 更新收藏服务的端口
  * @param {number} instanceID
  * @param {number} localPort
  * @returns {$CancellablePromise<void>}
@@ -235,5 +232,7 @@ const $$createType9 = $Create.Array($Create.Any);
 const $$createType10 = models$0.ServiceInfo.createFrom;
 const $$createType11 = $Create.Nullable($$createType10);
 const $$createType12 = $Create.Array($$createType11);
-const $$createType13 = $models.VersionInfo.createFrom;
+const $$createType13 = $models.TunnelStatus.createFrom;
 const $$createType14 = $Create.Nullable($$createType13);
+const $$createType15 = $models.VersionInfo.createFrom;
+const $$createType16 = $Create.Nullable($$createType15);

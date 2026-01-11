@@ -2,6 +2,7 @@ package version
 
 import (
 	"fmt"
+	"os"
 )
 
 var (
@@ -11,6 +12,15 @@ var (
 	BuildTime   = "unknown"
 	BuildNumber = "0"
 )
+
+func init() {
+	// 如果是 dev 版本，尝试从环境变量读取版本号
+	if Version == "dev" {
+		if envVersion := os.Getenv("APP_VERSION"); envVersion != "" {
+			Version = envVersion
+		}
+	}
+}
 
 // GetVersion 获取版本号
 func GetVersion() string {

@@ -129,36 +129,57 @@ func (a *App) Login(serverAddr, clientID, clientSecret string, rememberMe bool) 
 	log.Printf("Config: Server=%s, Token length=%d",
 		config.GlobalConfig.ServerAddress, len(config.GlobalConfig.DeviceToken))
 	log.Printf("Authentication successful: %s", authResult.Message)
-	log.Printf("Login successful, Tailscale will be initialized when connecting to services")
+
+	// 登录成功后自动初始化隧道
+	log.Printf("Initializing tunnel after login...")
+	if err := a.initializeTailscale(); err != nil {
+		log.Printf("Warning: Failed to initialize tunnel: %v", err)
+		// 不返回错误，允许用户继续使用，后续可以重试
+	} else {
+		log.Printf("Tunnel initialized successfully, IP: %s", a.tsManager.GetIP())
+	}
 
 	return nil
 }
 
 func (a *App) initializeTailscale() error {
 	if a.tsManager != nil && a.tsManager.IsConnected() {
-		log.Printf("[App] Tailscale already connected")
+		log.Printf("[App] Tunnel already connected")
 		return nil
 	}
 
-	log.Printf("[App] Initializing Tailscale client...")
+	log.Printf("[App] Initializing tunnel client...")
 
-	tsAuth, err := a.desktopClient.GetTailscaleAuth()
-	if err != nil {
-		log.Printf("[App] Failed to get Tailscale auth: %v", err)
-		return fmt.Errorf("获取 Tailscale 认证失败: %w", err)
+	// 重试获取隧道认证，最多重试 3 次
+	var tsAuth *client.TailscaleAuthResponse
+	var err error
+	for i := 0; i < 3; i++ {
+		tsAuth, err = a.desktopClient.GetTailscaleAuth()
+		if err == nil {
+			break
+		}
+		log.Printf("[App] Failed to get tunnel auth (attempt %d/3): %v", i+1, err)
+		if i < 2 {
+			time.Sleep(time.Second * 2)
+		}
 	}
 
-	log.Printf("[App] Tailscale auth received: control_url=%s", tsAuth.ControlURL)
+	if err != nil {
+		log.Printf("[App] Failed to get tunnel auth after 3 attempts: %v", err)
+		return fmt.Errorf("获取隧道认证失败，请稍后重试: %w", err)
+	}
+
+	log.Printf("[App] Tunnel auth received: control_url=%s", tsAuth.ControlURL)
 
 	a.tsManager = tailscale.NewManager()
 
 	hostname := fmt.Sprintf("desktop-%s", config.GlobalConfig.ClientID)
 	if err := a.tsManager.Connect(tsAuth.ControlURL, tsAuth.AuthKey, hostname); err != nil {
 		a.tsManager = nil
-		return fmt.Errorf("连接 Tailscale 失败: %w", err)
+		return fmt.Errorf("连接隧道失败: %w", err)
 	}
 
-	log.Printf("[App] Tailscale connected, IP: %s", a.tsManager.GetIP())
+	log.Printf("[App] Tunnel connected, IP: %s", a.tsManager.GetIP())
 	return nil
 }
 
@@ -270,9 +291,9 @@ func (a *App) ConnectService(instanceID int64, localPort int) error {
 	}
 
 	if a.tsManager == nil || !a.tsManager.IsConnected() {
-		log.Printf("[App] Initializing Tailscale for first connection")
+		log.Printf("[App] Initializing tunnel for first connection")
 		if err := a.initializeTailscale(); err != nil {
-			return fmt.Errorf("failed to initialize Tailscale: %w", err)
+			return fmt.Errorf("failed to initialize tunnel: %w", err)
 		}
 	}
 
@@ -511,6 +532,61 @@ func (a *App) HideToTray() {
 	if mainWindow != nil {
 		mainWindow.Hide()
 	}
+}
+
+// TunnelStatus 隧道状态信息
+type TunnelStatus struct {
+	Connected  bool   `json:"connected"`
+	IP         string `json:"ip"`
+	ControlURL string `json:"control_url"`
+	Hostname   string `json:"hostname"`
+	Error      string `json:"error"`
+}
+
+// GetTunnelStatus 获取隧道连接状态
+func (a *App) GetTunnelStatus() *TunnelStatus {
+	status := &TunnelStatus{
+		Connected: false,
+		IP:        "",
+	}
+
+	if a.tsManager == nil {
+		status.Error = "隧道未初始化"
+		return status
+	}
+
+	status.Connected = a.tsManager.IsConnected()
+	if status.Connected {
+		status.IP = a.tsManager.GetIP()
+		status.Hostname = fmt.Sprintf("desktop-%s", config.GlobalConfig.ClientID)
+	} else {
+		status.Error = "隧道未连接"
+	}
+
+	return status
+}
+
+// ReconnectTunnel 重新连接隧道
+func (a *App) ReconnectTunnel() error {
+	log.Printf("[App] ReconnectTunnel called")
+
+	if a.desktopClient == nil {
+		return fmt.Errorf("未登录")
+	}
+
+	// 先断开现有连接
+	if a.tsManager != nil {
+		a.tsManager.Disconnect()
+		a.tsManager = nil
+	}
+
+	// 重新初始化
+	if err := a.initializeTailscale(); err != nil {
+		return fmt.Errorf("重连失败: %w", err)
+	}
+
+	log.Printf("[App] Tunnel reconnected, IP: %s", a.tsManager.GetIP())
+	return nil
 }
 
 func (a *App) ShowFromTray() {

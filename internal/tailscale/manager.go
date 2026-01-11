@@ -34,9 +34,9 @@ func NewManager() *Manager {
 	}
 }
 
-// Connect 连接 Tailscale 网络
+// Connect 连接隧道网络
 func (m *Manager) Connect(controlURL, authKey, hostname string) error {
-	log.Printf("[Tailscale] Connecting to: %s", controlURL)
+	log.Printf("[Tunnel] Connecting to: %s", controlURL)
 
 	// 确定状态存储目录
 	stateDir := m.getStateDir()
@@ -53,28 +53,28 @@ func (m *Manager) Connect(controlURL, authKey, hostname string) error {
 		Ephemeral:  true, // Desktop 使用临时节点，断开后自动清理
 	}
 
-	// 启动 Tailscale
+	// 启动隧道
 	status, err := m.tsServer.Up(m.ctx)
 	if err != nil {
-		return fmt.Errorf("failed to start Tailscale: %w", err)
+		return fmt.Errorf("failed to start tunnel: %w", err)
 	}
 
-	// 获取 Tailscale IP
+	// 获取隧道 IP
 	if len(status.TailscaleIPs) > 0 {
 		m.mutex.Lock()
 		m.tailscaleIP = status.TailscaleIPs[0].String()
 		m.connected = true
 		m.mutex.Unlock()
 
-		log.Printf("[Tailscale] Connected, IP: %s", m.tailscaleIP)
+		log.Printf("[Tunnel] Connected, IP: %s", m.tailscaleIP)
 	} else {
-		return fmt.Errorf("no Tailscale IP assigned")
+		return fmt.Errorf("no tunnel IP assigned")
 	}
 
 	return nil
 }
 
-// Disconnect 断开 Tailscale 连接
+// Disconnect 断开隧道连接
 func (m *Manager) Disconnect() error {
 	m.cancel()
 
@@ -85,25 +85,25 @@ func (m *Manager) Disconnect() error {
 
 	if m.tsServer != nil {
 		if err := m.tsServer.Close(); err != nil {
-			log.Printf("[Tailscale] Close error: %v", err)
+			log.Printf("[Tunnel] Close error: %v", err)
 			return err
 		}
 		m.tsServer = nil
 	}
 
-	log.Printf("[Tailscale] Disconnected")
+	log.Printf("[Tunnel] Disconnected")
 	return nil
 }
 
-// Dial 通过 Tailscale 网络拨号
+// Dial 通过隧道网络拨号
 func (m *Manager) Dial(ctx context.Context, network, addr string) (net.Conn, error) {
 	if m.tsServer == nil {
-		return nil, fmt.Errorf("Tailscale not connected")
+		return nil, fmt.Errorf("tunnel not connected")
 	}
 	return m.tsServer.Dial(ctx, network, addr)
 }
 
-// GetIP 获取 Tailscale IP
+// GetIP 获取隧道 IP
 func (m *Manager) GetIP() string {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()

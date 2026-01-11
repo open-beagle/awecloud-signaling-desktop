@@ -6,6 +6,15 @@
         <img src="../assets/logo.png" alt="Logo" class="logo" />
         <span class="app-name">信令桌面</span>
         <span class="server-address" v-if="authStore.serverAddress">{{ authStore.serverAddress }}</span>
+        <!-- 隧道状态 -->
+        <el-tooltip :content="tunnelTooltip" placement="bottom">
+          <div class="tunnel-status" @click="handleTunnelClick">
+            <el-icon v-if="tunnelLoading" class="is-loading tunnel-icon"><Loading /></el-icon>
+            <el-icon v-else-if="tunnelStatus.connected" class="tunnel-icon connected"><CircleCheck /></el-icon>
+            <el-icon v-else class="tunnel-icon disconnected"><CircleClose /></el-icon>
+            <span v-if="tunnelStatus.connected" class="tunnel-ip">{{ tunnelStatus.ip }}</span>
+          </div>
+        </el-tooltip>
       </div>
       
       <div class="navbar-right">
@@ -73,18 +82,76 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Grid, Document, Monitor, User, SwitchButton } from '@element-plus/icons-vue'
+import { Grid, Document, Monitor, User, SwitchButton, CircleCheck, CircleClose, Loading } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
-import { Logout } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import { Logout, GetTunnelStatus, ReconnectTunnel } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const servicesStore = useServicesStore()
+
+// 隧道状态
+const tunnelStatus = ref({ connected: false, ip: '', error: '' })
+const tunnelLoading = ref(false)
+let tunnelTimer: number | null = null
+
+const tunnelTooltip = computed(() => {
+  if (tunnelLoading.value) return '正在连接隧道...'
+  if (tunnelStatus.value.connected) {
+    return `隧道已连接\n点击可重连`
+  }
+  return `${tunnelStatus.value.error || '隧道未连接'}\n点击连接`
+})
+
+const loadTunnelStatus = async () => {
+  try {
+    const status = await GetTunnelStatus()
+    if (status) {
+      tunnelStatus.value = {
+        connected: status.connected,
+        ip: status.ip || '',
+        error: status.error || ''
+      }
+    }
+  } catch (error) {
+    console.error('Failed to get tunnel status:', error)
+  }
+}
+
+const handleTunnelClick = async () => {
+  if (tunnelLoading.value) return
+  tunnelLoading.value = true
+  try {
+    await ReconnectTunnel()
+    await loadTunnelStatus()
+    if (tunnelStatus.value.connected) {
+      ElMessage.success(`隧道已连接: ${tunnelStatus.value.ip}`)
+    } else {
+      ElMessage.error(tunnelStatus.value.error || '连接失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '重连失败')
+    await loadTunnelStatus()
+  } finally {
+    tunnelLoading.value = false
+  }
+}
+
+onMounted(() => {
+  loadTunnelStatus()
+  tunnelTimer = window.setInterval(loadTunnelStatus, 5000)
+})
+
+onUnmounted(() => {
+  if (tunnelTimer) {
+    clearInterval(tunnelTimer)
+  }
+})
 
 const currentRoute = computed(() => route.path)
 
@@ -147,6 +214,39 @@ const handleUserCommand = (command: string) => {
   color: #909399;
   padding-left: 12px;
   border-left: 1px solid #e4e7ed;
+}
+
+.tunnel-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-left: 8px;
+}
+
+.tunnel-status:hover {
+  background: #f5f5f5;
+}
+
+.tunnel-icon {
+  font-size: 16px;
+}
+
+.tunnel-icon.connected {
+  color: #67c23a;
+}
+
+.tunnel-icon.disconnected {
+  color: #f56c6c;
+}
+
+.tunnel-ip {
+  font-size: 12px;
+  color: #67c23a;
+  font-family: monospace;
 }
 
 .navbar-right {

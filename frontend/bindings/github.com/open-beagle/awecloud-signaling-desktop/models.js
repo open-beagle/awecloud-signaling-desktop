@@ -6,9 +6,6 @@
 // @ts-ignore: Unused imports
 import { Create as $Create } from "@wailsio/runtime";
 
-/**
- * DeviceInfo 设备信息
- */
 export class DeviceInfo {
     /**
      * Creates a new DeviceInfo instance.
@@ -93,9 +90,6 @@ export class DeviceInfo {
     }
 }
 
-/**
- * SavedCredentials 保存的凭据
- */
 export class SavedCredentials {
     /**
      * Creates a new SavedCredentials instance.
@@ -160,8 +154,64 @@ export class SavedCredentials {
 }
 
 /**
- * VersionInfo 版本信息结构
+ * TunnelStatus 隧道状态信息
  */
+export class TunnelStatus {
+    /**
+     * Creates a new TunnelStatus instance.
+     * @param {Partial<TunnelStatus>} [$$source = {}] - The source object to create the TunnelStatus.
+     */
+    constructor($$source = {}) {
+        if (!("connected" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["connected"] = false;
+        }
+        if (!("ip" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["ip"] = "";
+        }
+        if (!("control_url" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["control_url"] = "";
+        }
+        if (!("hostname" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["hostname"] = "";
+        }
+        if (!("error" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["error"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new TunnelStatus instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {TunnelStatus}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new TunnelStatus(/** @type {Partial<TunnelStatus>} */($$parsedSource));
+    }
+}
+
 export class VersionInfo {
     /**
      * Creates a new VersionInfo instance.
