@@ -9,7 +9,6 @@ export interface ServiceInfo {
   service_port: number      // Agent端的本地服务端口
   service_ip: string        // Agent端的本地服务IP
   preferred_port?: number   // 用户偏好的本地端口
-  access_type?: string      // 'public', 'private', 'group'
   status?: string           // 'online', 'offline'
   is_favorite?: boolean     // 是否收藏
   // Tailscale 模式字段

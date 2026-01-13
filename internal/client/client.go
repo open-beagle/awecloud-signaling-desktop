@@ -187,7 +187,7 @@ func (c *DesktopClient) receiveHeartbeat() {
 			c.authorizedServices = resp.AuthorizedServices
 			c.servicesMutex.Unlock()
 
-			log.Printf("[DesktopClient] Heartbeat received, authorized services: %d", len(resp.AuthorizedServices))
+			log.Printf("[DEBUG] [DesktopClient] Heartbeat received, authorized services: %d", len(resp.AuthorizedServices))
 		}
 	}
 }

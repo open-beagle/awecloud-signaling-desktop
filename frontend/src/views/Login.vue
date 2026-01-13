@@ -132,7 +132,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
-import { Login, GetVersion, CheckSavedCredentials, ClearCredentials, CheckVersion } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import { Login, GetVersion, CheckSavedCredentials, ClearCredentials } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 import UpgradeDialog from '../components/UpgradeDialog.vue'
 
 const router = useRouter()
@@ -176,13 +176,6 @@ const handleLogin = async () => {
 
     loading.value = true
     try {
-      // 先检查版本
-      const versionCheck = await checkVersionBeforeLogin(form.server)
-      if (!versionCheck) {
-        loading.value = false
-        return
-      }
-
       await Login(
         form.server,
         form.client,
@@ -204,52 +197,12 @@ const handleLogin = async () => {
   })
 }
 
-const checkVersionBeforeLogin = async (serverAddr: string): Promise<boolean> => {
-  try {
-    // 构建完整的服务器地址（添加协议）
-    let fullServerAddr = serverAddr
-    if (!fullServerAddr.startsWith('http://') && !fullServerAddr.startsWith('https://')) {
-      fullServerAddr = 'http://' + fullServerAddr
-    }
-
-    const versionInfo = await GetVersion()
-    const versionCheckResult = await CheckVersion(fullServerAddr)
-    
-    if (versionCheckResult && !versionCheckResult.version_valid) {
-      // 版本过低，显示升级对话框
-      // 使用服务器地址 + /download 而不是 API 返回的 download_url
-      const downloadPageUrl = fullServerAddr + '/download'
-      upgradeDialogRef.value?.show(
-        versionInfo?.version || 'unknown',
-        versionCheckResult.min_version,
-        downloadPageUrl
-      )
-      return false
-    }
-    
-    return true
-  } catch (error: any) {
-    console.error('Version check failed:', error)
-    // 版本检查失败不阻止登录（可能是网络问题）
-    return true
-  }
-}
-
 const handleReconnect = async () => {
   reconnecting.value = true
   isAutoLogging.value = true
   startLoadingDots()
   
   try {
-    // 先检查版本
-    const versionCheck = await checkVersionBeforeLogin(form.server)
-    if (!versionCheck) {
-      reconnecting.value = false
-      isAutoLogging.value = false
-      stopLoadingDots()
-      return
-    }
-
     // 尝试使用保存的Token重新连接
     await Login(
       form.server,

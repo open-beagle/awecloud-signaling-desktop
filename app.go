@@ -28,7 +28,7 @@ func NewApp() *App {
 
 func (a *App) startup() {
 	log.SetOutput(&logWriter{})
-	log.SetFlags(log.Ltime)
+	log.SetFlags(0) // 移除默认的时间戳，使用自定义格式
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -207,13 +207,18 @@ func (a *App) Logout() {
 
 // ServiceInfo 服务信息（用于前端显示）
 type ServiceInfo struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	AgentName  string `json:"agent_name"`
-	ListenAddr string `json:"listen_addr"`
-	Status     string `json:"status"`
-	IsFavorite bool   `json:"is_favorite"`
-	LocalPort  int    `json:"local_port"`
+	InstanceID       uint   `json:"instance_id"`
+	InstanceName     string `json:"instance_name"`
+	AgentName        string `json:"agent_name"`
+	Description      string `json:"description"`
+	ServicePort      int    `json:"service_port"`
+	ServiceIP        string `json:"service_ip"`
+	PreferredPort    int    `json:"preferred_port,omitempty"`
+	Status           string `json:"status,omitempty"`
+	IsFavorite       bool   `json:"is_favorite"`
+	AgentTailscaleIP string `json:"agent_tailscale_ip,omitempty"`
+	ListenPort       int    `json:"listen_port,omitempty"`
+	TargetAddr       string `json:"target_addr,omitempty"`
 }
 
 func (a *App) GetServices() ([]*ServiceInfo, error) {
@@ -230,15 +235,30 @@ func (a *App) GetServices() ([]*ServiceInfo, error) {
 
 	// 转换为前端格式
 	services := make([]*ServiceInfo, 0, len(authorizedServices))
-	for _, svc := range authorizedServices {
+	for i, svc := range authorizedServices {
+		// 解析 listen_addr（格式：IP:端口）
+		var agentIP string
+		var listenPort int
+		if svc.ListenAddr != "" {
+			parts := strings.Split(svc.ListenAddr, ":")
+			if len(parts) == 2 {
+				agentIP = parts[0]
+				fmt.Sscanf(parts[1], "%d", &listenPort)
+			}
+		}
+
 		services = append(services, &ServiceInfo{
-			ID:         svc.Id,
-			Name:       svc.Name,
-			AgentName:  svc.AgentName,
-			ListenAddr: svc.ListenAddr,
-			Status:     "online",
-			IsFavorite: false,
-			LocalPort:  0,
+			InstanceID:       uint(i + 1), // 临时使用索引作为ID
+			InstanceName:     svc.Name,
+			AgentName:        svc.AgentName,
+			Description:      "",
+			ServicePort:      0,
+			ServiceIP:        "",
+			Status:           "online",
+			IsFavorite:       false,
+			AgentTailscaleIP: agentIP,
+			ListenPort:       listenPort,
+			TargetAddr:       "",
 		})
 	}
 
@@ -323,6 +343,17 @@ func (a *App) GetLogs() []string {
 	return GetRecentLogs(100)
 }
 
+// SetLogLevel 设置日志级别
+func (a *App) SetLogLevel(level string) {
+	SetLogLevel(level)
+	log.Printf("[INFO] Log level changed to: %s", level)
+}
+
+// GetLogLevel 获取当前日志级别
+func (a *App) GetLogLevel() string {
+	return GetLogLevel()
+}
+
 func (a *App) HideToTray() {
 	log.Printf("[App] HideToTray called")
 	if mainWindow != nil {
@@ -402,11 +433,103 @@ func (a *App) QuitApp() {
 	}
 }
 
+// ToggleFavorite 切换服务收藏状态
+func (a *App) ToggleFavorite(instanceID uint, desktopID uint64) error {
+	log.Printf("[App] ToggleFavorite: instanceID=%d, desktopID=%d", instanceID, desktopID)
+	// TODO: 实现收藏功能，需要调用服务器API
+	return nil
+}
+
+// GetDevices 获取设备列表
+func (a *App) GetDevices() ([]*DeviceInfo, error) {
+	log.Printf("[App] GetDevices called")
+	// TODO: 实现获取设备列表功能
+	return []*DeviceInfo{}, nil
+}
+
+// OfflineDevice 让设备下线
+func (a *App) OfflineDevice(deviceToken string) error {
+	log.Printf("[App] OfflineDevice: deviceToken=%s", deviceToken)
+	// TODO: 实现设备下线功能
+	return nil
+}
+
+// DeleteDevice 删除设备
+func (a *App) DeleteDevice(deviceToken string) error {
+	log.Printf("[App] DeleteDevice: deviceToken=%s", deviceToken)
+	// TODO: 实现删除设备功能
+	return nil
+}
+
+// CheckVersion 检查版本更新
+func (a *App) CheckVersion() (*VersionCheckResult, error) {
+	log.Printf("[App] CheckVersion called")
+	// TODO: 实现版本检查功能
+	return &VersionCheckResult{
+		HasUpdate:      false,
+		LatestVersion:  appVersion.Version,
+		CurrentVersion: appVersion.Version,
+		UpdateURL:      "",
+	}, nil
+}
+
+// DeviceInfo 设备信息
+type DeviceInfo struct {
+	DeviceToken string `json:"device_token"`
+	DeviceName  string `json:"device_name"`
+	OS          string `json:"os"`
+	Arch        string `json:"arch"`
+	Hostname    string `json:"hostname"`
+	Status      string `json:"status"`
+	LastUsedAt  string `json:"last_used_at"`
+	CreatedAt   string `json:"created_at"`
+	IsCurrent   bool   `json:"is_current"`
+}
+
+// VersionCheckResult 版本检查结果
+type VersionCheckResult struct {
+	HasUpdate      bool   `json:"has_update"`
+	LatestVersion  string `json:"latest_version"`
+	CurrentVersion string `json:"current_version"`
+	UpdateURL      string `json:"update_url"`
+	ReleaseNotes   string `json:"release_notes"`
+}
+
 var (
 	logBuffer   []string
 	logMutex    sync.Mutex
 	maxLogLines = 5000
+	logLevel    = "INFO" // 默认日志级别：DEBUG, INFO, WARN, ERROR
 )
+
+// SetLogLevel 设置日志级别
+func SetLogLevel(level string) {
+	logMutex.Lock()
+	defer logMutex.Unlock()
+	logLevel = strings.ToUpper(level)
+}
+
+// GetLogLevel 获取当前日志级别
+func GetLogLevel() string {
+	logMutex.Lock()
+	defer logMutex.Unlock()
+	return logLevel
+}
+
+// shouldLog 判断是否应该输出日志
+func shouldLog(level string) bool {
+	levels := map[string]int{
+		"DEBUG": 0,
+		"INFO":  1,
+		"WARN":  2,
+		"ERROR": 3,
+	}
+
+	currentLevel := levels[logLevel]
+	msgLevel := levels[strings.ToUpper(level)]
+
+	return msgLevel >= currentLevel
+}
 
 func LogToBuffer(message string) {
 	logMutex.Lock()
@@ -445,8 +568,24 @@ func (w *logWriter) Write(p []byte) (n int, err error) {
 	defer logMutex.Unlock()
 
 	message := strings.TrimSuffix(string(p), "\n")
+
+	// 提取日志级别（如果有）
+	level := "INFO"
+	if strings.Contains(message, "[DEBUG]") {
+		level = "DEBUG"
+	} else if strings.Contains(message, "[WARN]") {
+		level = "WARN"
+	} else if strings.Contains(message, "[ERROR]") {
+		level = "ERROR"
+	}
+
+	// 检查是否应该输出
+	if !shouldLog(level) {
+		return len(p), nil
+	}
+
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	logLine := fmt.Sprintf("[%s] %s", timestamp, message)
+	logLine := fmt.Sprintf("[%s] [%s] %s", timestamp, level, message)
 
 	logBuffer = append(logBuffer, logLine)
 	if len(logBuffer) > maxLogLines {

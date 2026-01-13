@@ -61,5 +61,5 @@ echo.
 REM 设置版本环境变量供应用读取
 set APP_VERSION=%BUILD_VERSION%
 
-REM 启动开发模式
-wails3 dev
+REM 启动开发模式（使用 -port 参数避开 Windows 保留端口 9200-9299）
+wails3 dev -port 34115

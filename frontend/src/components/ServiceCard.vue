@@ -3,15 +3,8 @@
     <template #header>
       <div class="card-header">
         <div class="header-left">
+          <span class="service-index">#{{ index }}</span>
           <span class="service-name">{{ service.instance_name }}</span>
-          <el-tag
-            v-if="service.access_type"
-            :type="getAccessTypeColor(service.access_type)"
-            size="small"
-            style="margin-left: 8px"
-          >
-            {{ getAccessTypeLabel(service.access_type) }}
-          </el-tag>
         </div>
         <div class="header-right">
           <el-icon 
@@ -72,6 +65,7 @@ import { ToggleFavorite } from '../../bindings/github.com/open-beagle/awecloud-s
 
 interface Props {
   service: ServiceInfo
+  index: number
 }
 
 const props = defineProps<Props>()
@@ -85,24 +79,6 @@ const tunnelAddress = computed(() => {
   }
   return ''
 })
-
-const getAccessTypeLabel = (type: string) => {
-  const labels: Record<string, string> = {
-    'public': 'Public',
-    'private': 'Private',
-    'group': 'Group'
-  }
-  return labels[type] || 'Public'
-}
-
-const getAccessTypeColor = (type: string) => {
-  const colors: Record<string, any> = {
-    'public': 'success',
-    'private': 'warning',
-    'group': 'info'
-  }
-  return colors[type] || 'success'
-}
 
 const copyAddress = async () => {
   if (tunnelAddress.value) {
@@ -149,12 +125,26 @@ const handleToggleFavorite = async () => {
   display: flex;
   align-items: center;
   flex: 1;
+  gap: 8px;
 }
 
 .header-right {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.service-index {
+  font-size: 14px;
+  color: #909399;
+  font-weight: 500;
+  min-width: 30px;
+}
+
+.service-name {
+  font-weight: bold;
+  font-size: 16px;
+  color: #333;
 }
 
 .favorite-icon {

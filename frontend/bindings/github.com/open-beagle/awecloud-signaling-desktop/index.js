@@ -10,6 +10,8 @@ export {
 export {
     DeviceInfo,
     SavedCredentials,
+    ServiceInfo,
     TunnelStatus,
+    VersionCheckResult,
     VersionInfo
 } from "./models.js";

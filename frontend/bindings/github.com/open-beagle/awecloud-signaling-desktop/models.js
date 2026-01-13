@@ -6,6 +6,9 @@
 // @ts-ignore: Unused imports
 import { Create as $Create } from "@wailsio/runtime";
 
+/**
+ * DeviceInfo 设备信息
+ */
 export class DeviceInfo {
     /**
      * Creates a new DeviceInfo instance.
@@ -131,13 +134,6 @@ export class SavedCredentials {
              */
             this["has_token"] = false;
         }
-        if (!("is_online" in $$source)) {
-            /**
-             * @member
-             * @type {boolean}
-             */
-            this["is_online"] = false;
-        }
 
         Object.assign(this, $$source);
     }
@@ -150,6 +146,114 @@ export class SavedCredentials {
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new SavedCredentials(/** @type {Partial<SavedCredentials>} */($$parsedSource));
+    }
+}
+
+/**
+ * ServiceInfo 服务信息（用于前端显示）
+ */
+export class ServiceInfo {
+    /**
+     * Creates a new ServiceInfo instance.
+     * @param {Partial<ServiceInfo>} [$$source = {}] - The source object to create the ServiceInfo.
+     */
+    constructor($$source = {}) {
+        if (!("instance_id" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["instance_id"] = 0;
+        }
+        if (!("instance_name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["instance_name"] = "";
+        }
+        if (!("agent_name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["agent_name"] = "";
+        }
+        if (!("description" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["description"] = "";
+        }
+        if (!("service_port" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["service_port"] = 0;
+        }
+        if (!("service_ip" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["service_ip"] = "";
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {number | undefined}
+             */
+            this["preferred_port"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["status"] = undefined;
+        }
+        if (!("is_favorite" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["is_favorite"] = false;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["agent_tailscale_ip"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {number | undefined}
+             */
+            this["listen_port"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["target_addr"] = undefined;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ServiceInfo instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {ServiceInfo}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ServiceInfo(/** @type {Partial<ServiceInfo>} */($$parsedSource));
     }
 }
 
@@ -175,13 +279,6 @@ export class TunnelStatus {
              * @type {string}
              */
             this["ip"] = "";
-        }
-        if (!("control_url" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["control_url"] = "";
         }
         if (!("hostname" in $$source)) {
             /**
@@ -209,6 +306,65 @@ export class TunnelStatus {
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new TunnelStatus(/** @type {Partial<TunnelStatus>} */($$parsedSource));
+    }
+}
+
+/**
+ * VersionCheckResult 版本检查结果
+ */
+export class VersionCheckResult {
+    /**
+     * Creates a new VersionCheckResult instance.
+     * @param {Partial<VersionCheckResult>} [$$source = {}] - The source object to create the VersionCheckResult.
+     */
+    constructor($$source = {}) {
+        if (!("has_update" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["has_update"] = false;
+        }
+        if (!("latest_version" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["latest_version"] = "";
+        }
+        if (!("current_version" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["current_version"] = "";
+        }
+        if (!("update_url" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["update_url"] = "";
+        }
+        if (!("release_notes" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["release_notes"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new VersionCheckResult instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {VersionCheckResult}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new VersionCheckResult(/** @type {Partial<VersionCheckResult>} */($$parsedSource));
     }
 }
 

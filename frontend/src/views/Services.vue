@@ -80,9 +80,10 @@
         
         <div v-else class="services-grid">
           <ServiceCard
-            v-for="service in filteredServices"
+            v-for="(service, index) in filteredServices"
             :key="service.instance_id"
             :service="service"
+            :index="index + 1"
           />
         </div>
       </div>

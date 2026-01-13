@@ -13,13 +13,7 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as client$0 from "./internal/client/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
 import * as config$0 from "./internal/config/models.js";
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore: Unused imports
-import * as models$0 from "./internal/models/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
@@ -35,11 +29,11 @@ export function CheckSavedCredentials() {
 }
 
 /**
- * @param {string} serverAddr
- * @returns {$CancellablePromise<client$0.VersionCheckResponse | null>}
+ * CheckVersion 检查版本更新
+ * @returns {$CancellablePromise<$models.VersionCheckResult | null>}
  */
-export function CheckVersion(serverAddr) {
-    return $Call.ByID(3248805153, serverAddr).then(/** @type {($result: any) => any} */(($result) => {
+export function CheckVersion() {
+    return $Call.ByID(3248805153).then(/** @type {($result: any) => any} */(($result) => {
         return $$createType3($result);
     }));
 }
@@ -52,28 +46,12 @@ export function ClearCredentials() {
 }
 
 /**
- * @param {number} instanceID
- * @param {number} localPort
- * @returns {$CancellablePromise<void>}
- */
-export function ConnectService(instanceID, localPort) {
-    return $Call.ByID(1728507696, instanceID, localPort);
-}
-
-/**
+ * DeleteDevice 删除设备
  * @param {string} deviceToken
  * @returns {$CancellablePromise<void>}
  */
 export function DeleteDevice(deviceToken) {
     return $Call.ByID(2539306500, deviceToken);
-}
-
-/**
- * @param {number} instanceID
- * @returns {$CancellablePromise<void>}
- */
-export function DisconnectService(instanceID) {
-    return $Call.ByID(1422720182, instanceID);
 }
 
 /**
@@ -86,12 +64,21 @@ export function GetConfig() {
 }
 
 /**
+ * GetDevices 获取设备列表
  * @returns {$CancellablePromise<($models.DeviceInfo | null)[]>}
  */
 export function GetDevices() {
     return $Call.ByID(2647233474).then(/** @type {($result: any) => any} */(($result) => {
         return $$createType8($result);
     }));
+}
+
+/**
+ * GetLogLevel 获取当前日志级别
+ * @returns {$CancellablePromise<string>}
+ */
+export function GetLogLevel() {
+    return $Call.ByID(2884930143);
 }
 
 /**
@@ -104,7 +91,7 @@ export function GetLogs() {
 }
 
 /**
- * @returns {$CancellablePromise<(models$0.ServiceInfo | null)[]>}
+ * @returns {$CancellablePromise<($models.ServiceInfo | null)[]>}
  */
 export function GetServices() {
     return $Call.ByID(839930963).then(/** @type {($result: any) => any} */(($result) => {
@@ -153,14 +140,15 @@ export function IsAuthenticated() {
 }
 
 /**
+ * Login 登录（首次登录或密码登录）
  * @param {string} serverAddr
- * @param {string} clientID
+ * @param {string} clientName
  * @param {string} clientSecret
  * @param {boolean} rememberMe
  * @returns {$CancellablePromise<void>}
  */
-export function Login(serverAddr, clientID, clientSecret, rememberMe) {
-    return $Call.ByID(1387155178, serverAddr, clientID, clientSecret, rememberMe);
+export function Login(serverAddr, clientName, clientSecret, rememberMe) {
+    return $Call.ByID(1387155178, serverAddr, clientName, clientSecret, rememberMe);
 }
 
 /**
@@ -171,6 +159,7 @@ export function Logout() {
 }
 
 /**
+ * OfflineDevice 让设备下线
  * @param {string} deviceToken
  * @returns {$CancellablePromise<void>}
  */
@@ -194,6 +183,15 @@ export function ReconnectTunnel() {
 }
 
 /**
+ * SetLogLevel 设置日志级别
+ * @param {string} level
+ * @returns {$CancellablePromise<void>}
+ */
+export function SetLogLevel(level) {
+    return $Call.ByID(2079598923, level);
+}
+
+/**
  * @returns {$CancellablePromise<void>}
  */
 export function ShowFromTray() {
@@ -201,27 +199,19 @@ export function ShowFromTray() {
 }
 
 /**
+ * ToggleFavorite 切换服务收藏状态
  * @param {number} instanceID
- * @param {number} localPort
- * @returns {$CancellablePromise<boolean>}
- */
-export function ToggleFavorite(instanceID, localPort) {
-    return $Call.ByID(1319626997, instanceID, localPort);
-}
-
-/**
- * @param {number} instanceID
- * @param {number} localPort
+ * @param {number} desktopID
  * @returns {$CancellablePromise<void>}
  */
-export function UpdateFavoritePort(instanceID, localPort) {
-    return $Call.ByID(528842443, instanceID, localPort);
+export function ToggleFavorite(instanceID, desktopID) {
+    return $Call.ByID(1319626997, instanceID, desktopID);
 }
 
 // Private type creation functions
 const $$createType0 = $models.SavedCredentials.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
-const $$createType2 = client$0.VersionCheckResponse.createFrom;
+const $$createType2 = $models.VersionCheckResult.createFrom;
 const $$createType3 = $Create.Nullable($$createType2);
 const $$createType4 = config$0.Config.createFrom;
 const $$createType5 = $Create.Nullable($$createType4);
@@ -229,7 +219,7 @@ const $$createType6 = $models.DeviceInfo.createFrom;
 const $$createType7 = $Create.Nullable($$createType6);
 const $$createType8 = $Create.Array($$createType7);
 const $$createType9 = $Create.Array($Create.Any);
-const $$createType10 = models$0.ServiceInfo.createFrom;
+const $$createType10 = $models.ServiceInfo.createFrom;
 const $$createType11 = $Create.Nullable($$createType10);
 const $$createType12 = $Create.Array($$createType11);
 const $$createType13 = $models.TunnelStatus.createFrom;
