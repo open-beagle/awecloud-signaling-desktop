@@ -9,7 +9,6 @@ import (
 
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/client"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
-	"github.com/open-beagle/awecloud-signaling-desktop/internal/models"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/tailscale"
 	appVersion "github.com/open-beagle/awecloud-signaling-desktop/internal/version"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -19,16 +18,12 @@ import (
 type App struct {
 	desktopClient *client.DesktopClient
 	tsManager     *tailscale.Manager
-	commandChan   chan *models.VisitorCommand
-	statusChan    chan *models.VisitorStatus
+	authResult    *client.AuthResult
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{
-		commandChan: make(chan *models.VisitorCommand, 10),
-		statusChan:  make(chan *models.VisitorStatus, 10),
-	}
+	return &App{}
 }
 
 func (a *App) startup() {
@@ -95,29 +90,41 @@ func (a *App) shutdown() {
 	log.Printf("Desktop app shutdown")
 }
 
-func (a *App) Login(serverAddr, clientID, clientSecret string, rememberMe bool) error {
-	log.Printf("[App] Login: serverAddr=%s, clientID=%s, rememberMe=%v", serverAddr, clientID, rememberMe)
+// Login 登录（首次登录或密码登录）
+func (a *App) Login(serverAddr, clientName, clientSecret string, rememberMe bool) error {
+	log.Printf("[App] Login: serverAddr=%s, clientName=%s, rememberMe=%v", serverAddr, clientName, rememberMe)
 
 	config.GlobalConfig.ServerAddress = serverAddr
-	config.GlobalConfig.ClientID = clientID
+	config.GlobalConfig.ClientID = clientName
 	config.GlobalConfig.RememberMe = rememberMe
 
-	log.Printf("[App] Creating Desktop-Web client for: %s", serverAddr)
-	a.desktopClient = client.NewDesktopClient(serverAddr, a.commandChan, a.statusChan)
+	// 创建客户端
+	log.Printf("[App] Creating Desktop client for: %s", serverAddr)
+	a.desktopClient = client.NewDesktopClient(serverAddr)
 	if err := a.desktopClient.Start(); err != nil {
 		return fmt.Errorf("failed to start desktop client: %w", err)
 	}
-	log.Printf("[App] Desktop-Web client started successfully")
+	log.Printf("[App] Desktop client started successfully")
 
 	var authResult *client.AuthResult
 	var err error
 
+	// 检查是否有保存的凭证
 	if clientSecret == "" && config.GlobalConfig.HasValidToken() {
-		log.Printf("Attempting token authentication...")
-		authResult, err = a.desktopClient.AuthWithToken(config.GlobalConfig.ClientID, config.GlobalConfig.DeviceToken)
+		log.Printf("Attempting authentication with saved credentials...")
+		// 解析 desktop_id 和 secret
+		parts := strings.Split(config.GlobalConfig.DeviceToken, ":")
+		if len(parts) == 2 {
+			var desktopID uint64
+			fmt.Sscanf(parts[0], "%d", &desktopID)
+			secret := parts[1]
+			authResult, err = a.desktopClient.Authenticate(desktopID, secret)
+		} else {
+			err = fmt.Errorf("invalid device token format")
+		}
 	} else {
-		log.Printf("Attempting secret authentication...")
-		authResult, err = a.desktopClient.AuthWithSecret(clientID, clientSecret, rememberMe)
+		log.Printf("Attempting login with client credentials...")
+		authResult, err = a.desktopClient.Login(clientName, clientSecret)
 	}
 
 	if err != nil {
@@ -126,8 +133,10 @@ func (a *App) Login(serverAddr, clientID, clientSecret string, rememberMe bool) 
 		return fmt.Errorf("authentication failed: %w", err)
 	}
 
-	log.Printf("Config: Server=%s, Token length=%d",
-		config.GlobalConfig.ServerAddress, len(config.GlobalConfig.DeviceToken))
+	a.authResult = authResult
+
+	log.Printf("Config: Server=%s, DesktopID=%d",
+		config.GlobalConfig.ServerAddress, authResult.DesktopID)
 	log.Printf("Authentication successful: %s", authResult.Message)
 
 	// 登录成功后自动初始化隧道
@@ -148,38 +157,29 @@ func (a *App) initializeTailscale() error {
 		return nil
 	}
 
+	if a.authResult == nil {
+		return fmt.Errorf("not authenticated")
+	}
+
 	log.Printf("[App] Initializing tunnel client...")
 
-	// 重试获取隧道认证，最多重试 3 次
-	var tsAuth *client.TailscaleAuthResponse
-	var err error
-	for i := 0; i < 3; i++ {
-		tsAuth, err = a.desktopClient.GetTailscaleAuth()
-		if err == nil {
-			break
-		}
-		log.Printf("[App] Failed to get tunnel auth (attempt %d/3): %v", i+1, err)
-		if i < 2 {
-			time.Sleep(time.Second * 2)
-		}
-	}
-
-	if err != nil {
-		log.Printf("[App] Failed to get tunnel auth after 3 attempts: %v", err)
-		return fmt.Errorf("获取隧道认证失败，请稍后重试: %w", err)
-	}
-
-	log.Printf("[App] Tunnel auth received: control_url=%s", tsAuth.ControlURL)
+	// 从认证结果获取隧道配置
+	tsAuth := a.desktopClient.GetTailscaleAuth(a.authResult)
+	log.Printf("[App] Tunnel auth: control_url=%s", tsAuth.ControlURL)
 
 	a.tsManager = tailscale.NewManager()
 
-	hostname := fmt.Sprintf("desktop-%s", config.GlobalConfig.ClientID)
+	hostname := fmt.Sprintf("desktop-%d", a.authResult.DesktopID)
 	if err := a.tsManager.Connect(tsAuth.ControlURL, tsAuth.AuthKey, hostname); err != nil {
 		a.tsManager = nil
 		return fmt.Errorf("连接隧道失败: %w", err)
 	}
 
 	log.Printf("[App] Tunnel connected, IP: %s", a.tsManager.GetIP())
+
+	// 更新心跳信息
+	a.desktopClient.UpdateHeartbeat(a.tsManager.GetIP(), true)
+
 	return nil
 }
 
@@ -195,23 +195,28 @@ func (a *App) Logout() {
 		a.tsManager = nil
 	}
 
-	if config.GlobalConfig.RememberMe {
-		config.GlobalConfig.ClearToken()
-		if err := config.GlobalConfig.Save(); err != nil {
-			log.Printf("[App] Failed to save config after logout: %v", err)
-		} else {
-			log.Printf("[App] Token cleared, config saved")
-		}
+	a.authResult = nil
+
+	// 清除配置
+	if err := config.Delete(); err != nil {
+		log.Printf("[App] Failed to delete config after logout: %v", err)
 	} else {
-		if err := config.Delete(); err != nil {
-			log.Printf("[App] Failed to delete config after logout: %v", err)
-		} else {
-			log.Printf("[App] Config deleted")
-		}
+		log.Printf("[App] Config deleted")
 	}
 }
 
-func (a *App) GetServices() ([]*models.ServiceInfo, error) {
+// ServiceInfo 服务信息（用于前端显示）
+type ServiceInfo struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	AgentName  string `json:"agent_name"`
+	ListenAddr string `json:"listen_addr"`
+	Status     string `json:"status"`
+	IsFavorite bool   `json:"is_favorite"`
+	LocalPort  int    `json:"local_port"`
+}
+
+func (a *App) GetServices() ([]*ServiceInfo, error) {
 	log.Printf("[App] GetServices called")
 
 	if a.desktopClient == nil {
@@ -219,115 +224,26 @@ func (a *App) GetServices() ([]*models.ServiceInfo, error) {
 		return nil, fmt.Errorf("not logged in")
 	}
 
-	log.Printf("[App] Calling desktopClient.GetServices()")
-	services, err := a.desktopClient.GetServices()
-	if err != nil {
-		log.Printf("[App] GetServices error: %v", err)
-		return nil, err
-	}
+	// 从客户端获取已授权服务
+	authorizedServices := a.desktopClient.GetAuthorizedServices()
+	log.Printf("[App] Got %d authorized services", len(authorizedServices))
 
-	log.Printf("[App] Got %d services from desktopClient", len(services))
-
-	favorites, err := a.desktopClient.GetFavorites()
-	if err != nil {
-		log.Printf("[App] Failed to get favorites: %v", err)
-	} else {
-		log.Printf("[App] Got %d favorites from server", len(favorites))
-		favoriteMap := make(map[int64]bool)
-		favoritePortMap := make(map[int64]int)
-		for _, fav := range favorites {
-			log.Printf("[App] Favorite: instance_id=%d, local_port=%d", fav.STCPInstanceID, fav.LocalPort)
-			favoriteMap[fav.STCPInstanceID] = true
-			if fav.LocalPort > 0 {
-				favoritePortMap[fav.STCPInstanceID] = fav.LocalPort
-			}
-		}
-		for _, service := range services {
-			service.IsFavorite = favoriteMap[service.InstanceID]
-			if port, ok := favoritePortMap[service.InstanceID]; ok {
-				service.PreferredPort = port
-			}
-		}
-		log.Printf("[App] Marked %d services as favorites with port preferences", len(favorites))
+	// 转换为前端格式
+	services := make([]*ServiceInfo, 0, len(authorizedServices))
+	for _, svc := range authorizedServices {
+		services = append(services, &ServiceInfo{
+			ID:         svc.Id,
+			Name:       svc.Name,
+			AgentName:  svc.AgentName,
+			ListenAddr: svc.ListenAddr,
+			Status:     "online",
+			IsFavorite: false,
+			LocalPort:  0,
+		})
 	}
 
 	log.Printf("[App] Returning %d services", len(services))
 	return services, nil
-}
-
-func (a *App) ToggleFavorite(instanceID int64, localPort int) (bool, error) {
-	if a.desktopClient == nil {
-		return false, fmt.Errorf("not logged in")
-	}
-
-	isFavorite, err := a.desktopClient.ToggleFavorite(instanceID, localPort)
-	if err != nil {
-		log.Printf("[App] Failed to toggle favorite for instance %d: %v", instanceID, err)
-		return false, err
-	}
-
-	log.Printf("[App] Toggled favorite for instance %d: is_favorite=%v, port=%d", instanceID, isFavorite, localPort)
-	return isFavorite, nil
-}
-
-func (a *App) UpdateFavoritePort(instanceID int64, localPort int) error {
-	if a.desktopClient == nil {
-		return fmt.Errorf("not logged in")
-	}
-
-	err := a.desktopClient.UpdateFavoritePort(instanceID, localPort)
-	if err != nil {
-		log.Printf("[App] Failed to update favorite port for instance %d: %v", instanceID, err)
-		return err
-	}
-
-	log.Printf("[App] Updated favorite port for instance %d: port=%d", instanceID, localPort)
-	return nil
-}
-
-func (a *App) ConnectService(instanceID int64, localPort int) error {
-	if a.desktopClient == nil {
-		return fmt.Errorf("not logged in")
-	}
-
-	if a.tsManager == nil || !a.tsManager.IsConnected() {
-		log.Printf("[App] Initializing tunnel for first connection")
-		if err := a.initializeTailscale(); err != nil {
-			return fmt.Errorf("failed to initialize tunnel: %w", err)
-		}
-	}
-
-	if err := a.desktopClient.ConnectService(instanceID, localPort); err != nil {
-		return err
-	}
-
-	log.Printf("[App] Connected to service %d on port %d", instanceID, localPort)
-
-	services, err := a.GetServices()
-	if err != nil {
-		log.Printf("[App] Failed to get services for port update check: %v", err)
-		return nil
-	}
-
-	for _, service := range services {
-		if service.InstanceID == instanceID && service.IsFavorite && service.PreferredPort != localPort {
-			go func() {
-				if err := a.UpdateFavoritePort(instanceID, localPort); err != nil {
-					log.Printf("[App] Failed to update favorite port: %v", err)
-				}
-			}()
-			break
-		}
-	}
-
-	return nil
-}
-
-func (a *App) DisconnectService(instanceID int64) error {
-	if a.desktopClient == nil {
-		return fmt.Errorf("not logged in")
-	}
-	return a.desktopClient.DisconnectService(instanceID)
 }
 
 func (a *App) IsAuthenticated() bool {
@@ -354,11 +270,6 @@ func (a *App) GetVersion() *VersionInfo {
 	}
 }
 
-func (a *App) CheckVersion(serverAddr string) (*client.VersionCheckResponse, error) {
-	log.Printf("[App] CheckVersion called for server: %s", serverAddr)
-	return client.CheckVersion(serverAddr)
-}
-
 func (a *App) GetWindowTitle() string {
 	if appVersion.BuildNumber != "0" && appVersion.BuildNumber != "" {
 		return fmt.Sprintf("awecloud-signaling  %s (Build %s)", appVersion.Version, appVersion.BuildNumber)
@@ -372,7 +283,6 @@ type SavedCredentials struct {
 	ClientSecret  string `json:"client_secret"`
 	RememberMe    bool   `json:"remember_me"`
 	HasToken      bool   `json:"has_token"`
-	IsOnline      bool   `json:"is_online"`
 }
 
 func (a *App) CheckSavedCredentials() *SavedCredentials {
@@ -387,13 +297,11 @@ func (a *App) CheckSavedCredentials() *SavedCredentials {
 			ClientSecret:  "",
 			RememberMe:    true,
 			HasToken:      false,
-			IsOnline:      false,
 		}
 	}
 
 	hasToken := config.GlobalConfig.HasValidToken()
-	isOnline := client.CanConnectToServer(config.GlobalConfig.ServerAddress)
-	log.Printf("[App] Token status: HasToken=%v, Server online: %v", hasToken, isOnline)
+	log.Printf("[App] Token status: HasToken=%v", hasToken)
 
 	return &SavedCredentials{
 		ServerAddress: serverAddr,
@@ -401,7 +309,6 @@ func (a *App) CheckSavedCredentials() *SavedCredentials {
 		ClientSecret:  "",
 		RememberMe:    true,
 		HasToken:      hasToken,
-		IsOnline:      isOnline,
 	}
 }
 
@@ -416,60 +323,83 @@ func (a *App) GetLogs() []string {
 	return GetRecentLogs(100)
 }
 
-type DeviceInfo struct {
-	DeviceToken string `json:"device_token"`
-	DeviceName  string `json:"device_name"`
-	OS          string `json:"os"`
-	Arch        string `json:"arch"`
-	Hostname    string `json:"hostname"`
-	Status      string `json:"status"`
-	LastUsedAt  string `json:"last_used_at"`
-	CreatedAt   string `json:"created_at"`
-	IsCurrent   bool   `json:"is_current"`
+func (a *App) HideToTray() {
+	log.Printf("[App] HideToTray called")
+	if mainWindow != nil {
+		mainWindow.Hide()
+	}
 }
 
-func (a *App) GetDevices() ([]*DeviceInfo, error) {
-	if a.desktopClient == nil {
-		return nil, fmt.Errorf("not logged in")
-	}
-
-	clientDevices, err := a.desktopClient.GetDevices()
-	if err != nil {
-		return nil, err
-	}
-
-	devices := make([]*DeviceInfo, 0, len(clientDevices))
-	for _, d := range clientDevices {
-		devices = append(devices, &DeviceInfo{
-			DeviceToken: d.DeviceToken,
-			DeviceName:  d.DeviceName,
-			OS:          d.OS,
-			Arch:        d.Arch,
-			Hostname:    d.Hostname,
-			Status:      d.Status,
-			LastUsedAt:  d.LastUsedAt,
-			CreatedAt:   d.CreatedAt,
-			IsCurrent:   d.IsCurrent,
-		})
-	}
-
-	return devices, nil
+// TunnelStatus 隧道状态信息
+type TunnelStatus struct {
+	Connected bool   `json:"connected"`
+	IP        string `json:"ip"`
+	Hostname  string `json:"hostname"`
+	Error     string `json:"error"`
 }
 
-func (a *App) OfflineDevice(deviceToken string) error {
-	if a.desktopClient == nil {
-		return fmt.Errorf("not logged in")
+// GetTunnelStatus 获取隧道连接状态
+func (a *App) GetTunnelStatus() *TunnelStatus {
+	status := &TunnelStatus{
+		Connected: false,
+		IP:        "",
 	}
-	log.Printf("Offline device: %s", deviceToken)
-	return a.desktopClient.OfflineDevice(deviceToken)
+
+	if a.tsManager == nil {
+		status.Error = "隧道未初始化"
+		return status
+	}
+
+	status.Connected = a.tsManager.IsConnected()
+	if status.Connected {
+		status.IP = a.tsManager.GetIP()
+		if a.authResult != nil {
+			status.Hostname = fmt.Sprintf("desktop-%d", a.authResult.DesktopID)
+		}
+	} else {
+		status.Error = "隧道未连接"
+	}
+
+	return status
 }
 
-func (a *App) DeleteDevice(deviceToken string) error {
+// ReconnectTunnel 重新连接隧道
+func (a *App) ReconnectTunnel() error {
+	log.Printf("[App] ReconnectTunnel called")
+
 	if a.desktopClient == nil {
-		return fmt.Errorf("not logged in")
+		return fmt.Errorf("未登录")
 	}
-	log.Printf("Delete device: %s", deviceToken)
-	return a.desktopClient.DeleteDevice(deviceToken)
+
+	// 先断开现有连接
+	if a.tsManager != nil {
+		a.tsManager.Disconnect()
+		a.tsManager = nil
+	}
+
+	// 重新初始化
+	if err := a.initializeTailscale(); err != nil {
+		return fmt.Errorf("重连失败: %w", err)
+	}
+
+	log.Printf("[App] Tunnel reconnected, IP: %s", a.tsManager.GetIP())
+	return nil
+}
+
+func (a *App) ShowFromTray() {
+	log.Printf("[App] ShowFromTray called")
+	if mainWindow != nil {
+		mainWindow.Show()
+		mainWindow.Focus()
+	}
+}
+
+func (a *App) QuitApp() {
+	log.Printf("[App] QuitApp called")
+	a.shutdown()
+	if mainApp != nil {
+		mainApp.Quit()
+	}
 }
 
 var (
@@ -525,82 +455,4 @@ func (w *logWriter) Write(p []byte) (n int, err error) {
 
 	fmt.Println(logLine)
 	return len(p), nil
-}
-
-func (a *App) HideToTray() {
-	log.Printf("[App] HideToTray called")
-	if mainWindow != nil {
-		mainWindow.Hide()
-	}
-}
-
-// TunnelStatus 隧道状态信息
-type TunnelStatus struct {
-	Connected  bool   `json:"connected"`
-	IP         string `json:"ip"`
-	ControlURL string `json:"control_url"`
-	Hostname   string `json:"hostname"`
-	Error      string `json:"error"`
-}
-
-// GetTunnelStatus 获取隧道连接状态
-func (a *App) GetTunnelStatus() *TunnelStatus {
-	status := &TunnelStatus{
-		Connected: false,
-		IP:        "",
-	}
-
-	if a.tsManager == nil {
-		status.Error = "隧道未初始化"
-		return status
-	}
-
-	status.Connected = a.tsManager.IsConnected()
-	if status.Connected {
-		status.IP = a.tsManager.GetIP()
-		status.Hostname = fmt.Sprintf("desktop-%s", config.GlobalConfig.ClientID)
-	} else {
-		status.Error = "隧道未连接"
-	}
-
-	return status
-}
-
-// ReconnectTunnel 重新连接隧道
-func (a *App) ReconnectTunnel() error {
-	log.Printf("[App] ReconnectTunnel called")
-
-	if a.desktopClient == nil {
-		return fmt.Errorf("未登录")
-	}
-
-	// 先断开现有连接
-	if a.tsManager != nil {
-		a.tsManager.Disconnect()
-		a.tsManager = nil
-	}
-
-	// 重新初始化
-	if err := a.initializeTailscale(); err != nil {
-		return fmt.Errorf("重连失败: %w", err)
-	}
-
-	log.Printf("[App] Tunnel reconnected, IP: %s", a.tsManager.GetIP())
-	return nil
-}
-
-func (a *App) ShowFromTray() {
-	log.Printf("[App] ShowFromTray called")
-	if mainWindow != nil {
-		mainWindow.Show()
-		mainWindow.Focus()
-	}
-}
-
-func (a *App) QuitApp() {
-	log.Printf("[App] QuitApp called")
-	a.shutdown()
-	if mainApp != nil {
-		mainApp.Quit()
-	}
 }

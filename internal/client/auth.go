@@ -11,28 +11,110 @@ import (
 	pb "github.com/open-beagle/awecloud-signaling-desktop/pkg/proto"
 )
 
-// AuthWithSecret 使用Client Secret登录并获取Device Token
-func (c *DesktopClient) AuthWithSecret(clientID, clientSecret string, rememberMe bool) (*AuthResult, error) {
+// AuthResult 认证结果
+type AuthResult struct {
+	Success    bool
+	DesktopID  uint64
+	Secret     string
+	AuthKey    string
+	ServerURL  string
+	Message    string
+	IsNewLogin bool // 是否是首次登录
+}
+
+// Login 首次登录（使用 Client 凭证）
+func (c *DesktopClient) Login(clientName, clientSecret string) (*AuthResult, error) {
 	// 获取设备指纹
 	fingerprint, err := device.GetFingerprint()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get device fingerprint: %w", err)
 	}
 
-	log.Printf("Authenticating with secret: client_id=%s, device=%s", clientID, fingerprint.Hash)
+	// 获取系统信息
+	systemInfo, err := getSystemInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get system info: %w", err)
+	}
 
-	// 调用认证API
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	log.Printf("[DesktopClient] Login: client_name=%s, device=%s", clientName, fingerprint.Hash)
+
+	// 调用 gRPC Login
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
 	defer cancel()
 
-	req := &pb.AuthRequest{
-		ClientId:     clientID,
-		ClientSecret: clientSecret,
-		DeviceInfo: &pb.DeviceInfo{
-			Os:       fingerprint.OS,
-			Arch:     fingerprint.Arch,
-			Hostname: fingerprint.Hostname,
-		},
+	req := &pb.DesktopLoginRequest{
+		ClientName:        clientName,
+		ClientSecret:      clientSecret,
+		DeviceName:        fingerprint.Hostname,
+		DeviceFingerprint: fingerprint.Hash,
+		SystemInfo:        systemInfo,
+	}
+
+	resp, err := c.grpcClient.Login(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("login failed: %w", err)
+	}
+
+	if !resp.Success {
+		return nil, fmt.Errorf("login failed: %s", resp.Message)
+	}
+
+	log.Printf("[DesktopClient] Login successful: desktop_id=%d", resp.DesktopId)
+
+	// 保存认证信息
+	c.desktopID = resp.DesktopId
+	c.secret = resp.Secret
+	c.clientID = clientName
+
+	// 保存到配置文件
+	config.GlobalConfig.ClientID = clientName
+	config.GlobalConfig.DeviceToken = fmt.Sprintf("%d:%s", resp.DesktopId, resp.Secret)
+	config.GlobalConfig.RememberMe = true
+	if err := config.GlobalConfig.Save(); err != nil {
+		log.Printf("[DesktopClient] Warning: failed to save config: %v", err)
+	}
+
+	// 启动心跳（初始状态：隧道未连接）
+	if err := c.startHeartbeat("", false); err != nil {
+		log.Printf("[DesktopClient] Warning: failed to start heartbeat: %v", err)
+	}
+
+	return &AuthResult{
+		Success:    true,
+		DesktopID:  resp.DesktopId,
+		Secret:     resp.Secret,
+		AuthKey:    resp.AuthKey,
+		ServerURL:  resp.ServerUrl,
+		Message:    resp.Message,
+		IsNewLogin: true,
+	}, nil
+}
+
+// Authenticate 认证（使用 Desktop 凭证）
+func (c *DesktopClient) Authenticate(desktopID uint64, secret string) (*AuthResult, error) {
+	// 获取设备指纹
+	fingerprint, err := device.GetFingerprint()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get device fingerprint: %w", err)
+	}
+
+	// 获取系统信息
+	systemInfo, err := getSystemInfo()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get system info: %w", err)
+	}
+
+	log.Printf("[DesktopClient] Authenticate: desktop_id=%d, device=%s", desktopID, fingerprint.Hash)
+
+	// 调用 gRPC Authenticate
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	defer cancel()
+
+	req := &pb.DesktopAuthenticateRequest{
+		DesktopId:         desktopID,
+		Secret:            secret,
+		DeviceFingerprint: fingerprint.Hash,
+		SystemInfo:        systemInfo,
 	}
 
 	resp, err := c.grpcClient.Authenticate(ctx, req)
@@ -44,162 +126,38 @@ func (c *DesktopClient) AuthWithSecret(clientID, clientSecret string, rememberMe
 		return nil, fmt.Errorf("authentication failed: %s", resp.Message)
 	}
 
-	log.Printf("Authentication successful: session_token received")
+	log.Printf("[DesktopClient] Authentication successful")
 
-	// 设置sessionToken到client
-	c.sessionToken = resp.SessionToken
-	c.clientID = clientID
+	// 保存认证信息
+	c.desktopID = desktopID
+	c.secret = secret
 
-	// 初始化审计日志客户端
-	// 使用原始的服务器URL（包含协议）
-	c.auditClient = NewAuditClient(c.serverURL, resp.SessionToken)
-
-	// 初始化设备管理客户端
-	c.deviceClient = NewDeviceClient(c.serverURL, resp.SessionToken)
-
-	// 初始化隧道配置客户端
-	c.tunnelConfigClient = NewTunnelConfigClient(c.serverURL, resp.SessionToken)
-
-	// 初始化服务收藏客户端
-	c.favoriteClient = NewFavoriteClient(c.serverURL, resp.SessionToken)
-
-	// 根据 rememberMe 决定是否保存配置
-	config.GlobalConfig.ClientID = clientID
-	config.GlobalConfig.RememberMe = rememberMe
-
-	if rememberMe {
-		// 保存配置到文件（包括 Token）
-		config.GlobalConfig.ClientSecret = clientSecret
-		config.GlobalConfig.DeviceToken = resp.DeviceToken
-		config.GlobalConfig.TokenExpiresAt = resp.ExpiresAt
-		log.Printf("Saving config with device token: %s", resp.DeviceToken[:16]+"...")
-		if err := config.GlobalConfig.Save(); err != nil {
-			log.Printf("Warning: failed to save config: %v", err)
-		}
-	} else {
-		// 不保存配置，删除配置文件
-		config.GlobalConfig.ClientSecret = ""
-		config.GlobalConfig.DeviceToken = ""
-		config.GlobalConfig.TokenExpiresAt = 0
-		log.Printf("RememberMe=false, deleting config file")
-		if err := config.Delete(); err != nil {
-			log.Printf("Warning: failed to delete config: %v", err)
-		}
+	// 启动心跳（初始状态：隧道未连接）
+	if err := c.startHeartbeat("", false); err != nil {
+		log.Printf("[DesktopClient] Warning: failed to start heartbeat: %v", err)
 	}
 
 	return &AuthResult{
-		Success:      true,
-		SessionToken: resp.SessionToken,
-		ExpiresAt:    resp.ExpiresAt,
-		TunnelToken:  resp.Token,
-		TunnelServer: resp.Server,
-		TunnelPort:   int(resp.Port),
-		Message:      "Login successful",
+		Success:    true,
+		DesktopID:  desktopID,
+		Secret:     secret,
+		AuthKey:    resp.AuthKey,
+		ServerURL:  resp.ServerUrl,
+		Message:    resp.Message,
+		IsNewLogin: false,
 	}, nil
 }
 
-// AuthWithToken 使用Device Token登录
-func (c *DesktopClient) AuthWithToken(clientID, deviceToken string) (*AuthResult, error) {
-	// 获取设备指纹
-	fingerprint, err := device.GetFingerprint()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get device fingerprint: %w", err)
-	}
-
-	log.Printf("Authenticating with device token: client_id=%s, device=%s", clientID, fingerprint.Hash)
-
-	// 使用Device Token换取JWT Token
-	jwtToken, err := c.exchangeDeviceTokenForJWT(clientID, deviceToken)
-	if err != nil {
-		log.Printf("Failed to exchange device token for JWT: %v", err)
-		// 清除无效的Token
-		if config.GlobalConfig != nil {
-			config.GlobalConfig.ClearToken()
-			config.GlobalConfig.Save()
-		}
-		// 返回更友好的错误信息
-		return nil, fmt.Errorf("登录凭据已过期，请重新输入密码")
-	}
-
-	log.Printf("Token authentication successful, got JWT token")
-
-	// 设置sessionToken到client（使用JWT）
-	c.sessionToken = jwtToken
-
-	// 初始化审计日志客户端
-	// 使用原始的服务器URL（包含协议）和JWT token
-	c.auditClient = NewAuditClient(c.serverURL, jwtToken)
-
-	// 初始化设备管理客户端
-	c.deviceClient = NewDeviceClient(c.serverURL, jwtToken)
-
-	// 初始化隧道配置客户端
-	c.tunnelConfigClient = NewTunnelConfigClient(c.serverURL, jwtToken)
-
-	// 初始化服务收藏客户端
-	c.favoriteClient = NewFavoriteClient(c.serverURL, jwtToken)
-
-	// 不再从配置文件读取隧道配置
-	// 隧道配置将在连接服务时从Server动态获取
-	log.Printf("Token authentication successful, tunnel config will be fetched when connecting to services")
-
-	result := &AuthResult{
-		Success:      true,
-		SessionToken: jwtToken,
-		ExpiresAt:    0, // Token认证不返回新的过期时间
-		Message:      "Login successful with device token",
-	}
-
-	return result, nil
+// TailscaleAuthInfo Tailscale 认证信息
+type TailscaleAuthInfo struct {
+	ControlURL string
+	AuthKey    string
 }
 
-// HandleTokenExpired 处理Token过期
-func (c *DesktopClient) HandleTokenExpired() error {
-	log.Printf("Token expired, clearing credentials")
-
-	if config.GlobalConfig == nil {
-		return fmt.Errorf("global config not initialized")
+// GetTailscaleAuth 获取 Tailscale 认证信息（从认证结果中获取）
+func (c *DesktopClient) GetTailscaleAuth(authResult *AuthResult) *TailscaleAuthInfo {
+	return &TailscaleAuthInfo{
+		ControlURL: authResult.ServerURL,
+		AuthKey:    authResult.AuthKey,
 	}
-
-	config.GlobalConfig.ClearToken()
-	return config.GlobalConfig.Save()
-}
-
-// AuthResult 认证结果
-type AuthResult struct {
-	Success      bool
-	SessionToken string
-	ExpiresAt    int64
-	TunnelToken  string
-	TunnelServer string
-	TunnelPort   int
-	Message      string
-}
-
-// exchangeDeviceTokenForJWT 使用Device Token换取JWT Token
-func (c *DesktopClient) exchangeDeviceTokenForJWT(clientID, deviceToken string) (string, error) {
-	// 调用Server API: POST /api/v1/client/auth/login/token
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	req := &pb.LoginWithTokenRequest{
-		ClientId:    clientID,
-		DeviceToken: deviceToken,
-	}
-
-	resp, err := c.grpcClient.LoginWithToken(ctx, req)
-	if err != nil {
-		return "", fmt.Errorf("failed to call LoginWithToken API: %w", err)
-	}
-
-	if !resp.Success {
-		return "", fmt.Errorf("login with token failed: %s", resp.Message)
-	}
-
-	if resp.JwtToken == "" {
-		return "", fmt.Errorf("server did not return JWT token")
-	}
-
-	log.Printf("Successfully exchanged device token for JWT")
-	return resp.JwtToken, nil
 }

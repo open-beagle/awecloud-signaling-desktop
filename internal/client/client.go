@@ -9,75 +9,57 @@ import (
 	"sync"
 	"time"
 
-	"github.com/open-beagle/awecloud-signaling-desktop/internal/device"
-	"github.com/open-beagle/awecloud-signaling-desktop/internal/models"
-	pb "github.com/open-beagle/awecloud-signaling-desktop/pkg/proto"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/device"
+	pb "github.com/open-beagle/awecloud-signaling-desktop/pkg/proto"
 )
 
-// DesktopClient 是 Desktop-Web 线程，负责 gRPC 通信
+// DesktopClient Desktop 客户端
 type DesktopClient struct {
 	serverAddr string // gRPC地址（去掉协议前缀）
 	serverURL  string // 完整的服务器URL（包含协议）
 
 	// gRPC 连接
 	grpcConn   *grpc.ClientConn
-	grpcClient pb.ClientServiceClient
+	grpcClient pb.DesktopServiceClient
 
-	// 审计日志客户端
-	auditClient *AuditClient
+	// Desktop 信息
+	desktopID uint64
+	secret    string
+	clientID  string
 
-	// 设备管理客户端
-	deviceClient *DeviceClient
+	// 心跳流
+	heartbeatStream pb.DesktopService_HeartbeatClient
+	heartbeatMutex  sync.Mutex
 
-	// 隧道配置客户端
-	tunnelConfigClient *TunnelConfigClient
-
-	// 服务收藏客户端
-	favoriteClient *FavoriteClient
-
-	// 认证信息
-	sessionToken string
-	clientID     string
-
-	// 服务列表
-	services      map[int64]*models.ServiceInfo
-	servicesMutex sync.RWMutex
-
-	// 命令通道（发送给 Desktop-Tunnel）
-	commandChan chan *models.VisitorCommand
-
-	// 状态通道（接收自 Desktop-Tunnel）
-	statusChan chan *models.VisitorStatus
+	// 已授权服务列表
+	authorizedServices []*pb.AuthorizedService
+	servicesMutex      sync.RWMutex
 
 	// 上下文
 	ctx    context.Context
 	cancel context.CancelFunc
 }
 
-// NewDesktopClient 创建 Desktop-Web 线程
-func NewDesktopClient(serverAddr string, commandChan chan *models.VisitorCommand, statusChan chan *models.VisitorStatus) *DesktopClient {
+// NewDesktopClient 创建 Desktop 客户端
+func NewDesktopClient(serverAddr string) *DesktopClient {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &DesktopClient{
-		serverAddr:  serverAddr,
-		serverURL:   serverAddr, // 保存原始URL
-		services:    make(map[int64]*models.ServiceInfo),
-		commandChan: commandChan,
-		statusChan:  statusChan,
-		ctx:         ctx,
-		cancel:      cancel,
+		serverAddr:         serverAddr,
+		serverURL:          serverAddr,
+		authorizedServices: make([]*pb.AuthorizedService, 0),
+		ctx:                ctx,
+		cancel:             cancel,
 	}
 }
 
-// Start 启动 Desktop-Web 线程
+// Start 启动客户端
 func (c *DesktopClient) Start() error {
 	// 规范化服务器地址（移除末尾的斜杠）
 	c.serverAddr = strings.TrimSuffix(c.serverAddr, "/")
-
-	// 保存原始URL（包含协议）
 	c.serverURL = c.serverAddr
 
 	// 根据地址判断是否使用 TLS
@@ -89,22 +71,17 @@ func (c *DesktopClient) Start() error {
 			InsecureSkipVerify: true,
 		}
 		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
-		log.Printf("[Desktop-Web] Using TLS connection (skip verify)")
-
-		// 移除 https:// 前缀
+		log.Printf("[DesktopClient] Using TLS connection (skip verify)")
 		c.serverAddr = strings.TrimPrefix(c.serverAddr, "https://")
 	} else if strings.HasPrefix(c.serverAddr, "http://") {
 		// HTTP：不使用 TLS
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		log.Printf("[Desktop-Web] Using plaintext connection")
-
-		// 移除 http:// 前缀
+		log.Printf("[DesktopClient] Using plaintext connection")
 		c.serverAddr = strings.TrimPrefix(c.serverAddr, "http://")
 	} else {
 		// 没有协议前缀，默认使用 plaintext
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		log.Printf("[Desktop-Web] Using plaintext connection (no protocol specified)")
-		// 为没有协议的地址添加 http:// 前缀
+		log.Printf("[DesktopClient] Using plaintext connection (no protocol specified)")
 		c.serverURL = "http://" + c.serverAddr
 	}
 
@@ -115,17 +92,13 @@ func (c *DesktopClient) Start() error {
 	}
 
 	c.grpcConn = conn
-	c.grpcClient = pb.NewClientServiceClient(conn)
+	c.grpcClient = pb.NewDesktopServiceClient(conn)
 
-	log.Printf("[Desktop-Web] Connected to server: %s", c.serverAddr)
-
-	// 启动状态监听 goroutine
-	go c.statusListener()
-
+	log.Printf("[DesktopClient] Connected to server: %s", c.serverAddr)
 	return nil
 }
 
-// Stop 停止 Desktop-Web 线程
+// Stop 停止客户端
 func (c *DesktopClient) Stop() {
 	c.cancel()
 	if c.grpcConn != nil {
@@ -133,422 +106,162 @@ func (c *DesktopClient) Stop() {
 	}
 }
 
-// Authenticate 进行 Client 认证
-func (c *DesktopClient) Authenticate(clientID, clientSecret string) error {
-	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
-	defer cancel()
+// IsAuthenticated 检查是否已认证
+func (c *DesktopClient) IsAuthenticated() bool {
+	return c.desktopID > 0 && c.secret != ""
+}
 
-	resp, err := c.grpcClient.Authenticate(ctx, &pb.AuthRequest{
-		ClientId:     clientID,
-		ClientSecret: clientSecret,
-	})
-	if err != nil {
-		return fmt.Errorf("authentication failed: %w", err)
+// GetAuthorizedServices 获取已授权服务列表
+func (c *DesktopClient) GetAuthorizedServices() []*pb.AuthorizedService {
+	c.servicesMutex.RLock()
+	defer c.servicesMutex.RUnlock()
+	return c.authorizedServices
+}
+
+// startHeartbeat 启动心跳
+func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) error {
+	c.heartbeatMutex.Lock()
+	defer c.heartbeatMutex.Unlock()
+
+	// 如果已有心跳流，先关闭
+	if c.heartbeatStream != nil {
+		c.heartbeatStream.CloseSend()
+		c.heartbeatStream = nil
 	}
 
-	c.sessionToken = resp.SessionToken
-	c.clientID = clientID
+	// 创建心跳流
+	stream, err := c.grpcClient.Heartbeat(c.ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create heartbeat stream: %w", err)
+	}
 
-	log.Printf("[Desktop-Web] Authenticated as: %s", clientID)
+	c.heartbeatStream = stream
+
+	// 发送首次心跳
+	req := &pb.DesktopHeartbeatRequest{
+		DesktopId:       c.desktopID,
+		TunnelIp:        tunnelIP,
+		TunnelConnected: tunnelConnected,
+	}
+
+	if err := stream.Send(req); err != nil {
+		return fmt.Errorf("failed to send initial heartbeat: %w", err)
+	}
+
+	log.Printf("[DesktopClient] Heartbeat started")
+
+	// 启动接收 goroutine
+	go c.receiveHeartbeat()
+
+	// 启动发送 goroutine
+	go c.sendHeartbeat(tunnelIP, tunnelConnected)
+
 	return nil
 }
 
-// GetServices 获取可访问的服务列表
-func (c *DesktopClient) GetServices() ([]*models.ServiceInfo, error) {
-	if c.sessionToken == "" {
-		return nil, fmt.Errorf("not authenticated")
-	}
-
-	// 使用 Tailscale 版本的 API
-	tsClient := NewTailscaleClient(c.serverURL, c.sessionToken)
-	servicesV2, err := tsClient.GetServicesV2()
-	if err != nil {
-		log.Printf("[Desktop-Web] GetServicesV2 error: %v", err)
-		return nil, fmt.Errorf("failed to get services: %w", err)
-	}
-
-	log.Printf("[Desktop-Web] GetServicesV2 response: services_count=%d", len(servicesV2))
-
-	// 更新服务列表
-	c.servicesMutex.Lock()
-	defer c.servicesMutex.Unlock()
-
-	c.services = make(map[int64]*models.ServiceInfo)
-	var services []*models.ServiceInfo
-
-	for _, svc := range servicesV2 {
-		service := &models.ServiceInfo{
-			InstanceID:       svc.ID,
-			InstanceName:     svc.Name,
-			AgentName:        svc.AgentName,
-			AgentTailscaleIP: svc.TailscaleIP,
-			ListenPort:       svc.ListenPort,
-			TargetAddr:       svc.TargetAddr,
-			Status:           svc.Status,
-		}
-		// 设置在线状态
-		if svc.Status == "running" {
-			service.Status = "online"
-		} else {
-			service.Status = "offline"
-		}
-		c.services[service.InstanceID] = service
-		services = append(services, service)
-	}
-
-	log.Printf("[Desktop-Web] Got %d services", len(services))
-	return services, nil
-}
-
-// ConnectService 连接到服务
-func (c *DesktopClient) ConnectService(instanceID int64, localPort int) error {
-	if c.sessionToken == "" {
-		return fmt.Errorf("not authenticated")
-	}
-
-	// 检查服务是否存在
-	c.servicesMutex.RLock()
-	_, ok := c.services[instanceID]
-	c.servicesMutex.RUnlock()
-
-	if !ok {
-		return fmt.Errorf("service not found: %d", instanceID)
-	}
-
-	// 调用 ConnectService gRPC 获取 SecretKey
-	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
-	defer cancel()
-
-	resp, err := c.grpcClient.ConnectService(ctx, &pb.ConnectRequest{
-		SessionToken: c.sessionToken,
-		InstanceId:   instanceID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to connect service: %w", err)
-	}
-
-	if !resp.Success {
-		return fmt.Errorf("connect failed: %s", resp.Message)
-	}
-
-	// 如果没有指定本地端口，使用建议的端口
-	if localPort == 0 {
-		localPort = int(resp.SuggestedLocalPort)
-	}
-
-	// 处理ServerURL
-	serverURL := resp.ServerUrl
-	if serverURL == "" {
-		// 如果Server没有返回URL，使用连接的Server地址 + 默认端口7000
-		// 从serverURL中提取主机名（移除协议和端口）
-		host := c.serverURL
-		host = strings.TrimPrefix(host, "https://")
-		host = strings.TrimPrefix(host, "http://")
-		host = strings.TrimPrefix(host, "wss://")
-		host = strings.TrimPrefix(host, "ws://")
-		if idx := strings.Index(host, ":"); idx != -1 {
-			host = host[:idx]
-		}
-		if idx := strings.Index(host, "/"); idx != -1 {
-			host = host[:idx]
-		}
-		serverURL = fmt.Sprintf("ws://%s:7000", host)
-		log.Printf("[Desktop-Web] Server returned empty URL, using: %s", serverURL)
-	}
-
-	// 创建命令
-	cmd := &models.VisitorCommand{
-		Action:       "connect",
-		InstanceID:   instanceID,
-		InstanceName: resp.InstanceName,
-		SecretKey:    resp.SecretKey,
-		LocalPort:    localPort,
-		ServerURL:    serverURL, // 使用处理后的隧道地址
-		Response:     make(chan error, 1),
-	}
-
-	// 发送命令到 Desktop-Tunnel
-	select {
-	case c.commandChan <- cmd:
-		// 等待响应
-		select {
-		case err := <-cmd.Response:
-			// 记录审计日志
-			c.recordAuditLog(instanceID, "connect", localPort, err == nil, err)
-			return err
-		case <-time.After(30 * time.Second):
-			err := fmt.Errorf("connect timeout")
-			c.recordAuditLog(instanceID, "connect", localPort, false, err)
-			return err
-		}
-	case <-time.After(5 * time.Second):
-		err := fmt.Errorf("command channel full")
-		c.recordAuditLog(instanceID, "connect", localPort, false, err)
-		return err
-	}
-}
-
-// DisconnectService 断开服务连接
-func (c *DesktopClient) DisconnectService(instanceID int64) error {
-	// 获取服务信息
-	c.servicesMutex.RLock()
-	service, ok := c.services[instanceID]
-	c.servicesMutex.RUnlock()
-
-	if !ok {
-		return fmt.Errorf("service not found: %d", instanceID)
-	}
-
-	// 创建命令
-	cmd := &models.VisitorCommand{
-		Action:       "disconnect",
-		InstanceID:   instanceID,
-		InstanceName: service.InstanceName,
-		Response:     make(chan error, 1),
-	}
-
-	// 发送命令到 Desktop-Tunnel
-	select {
-	case c.commandChan <- cmd:
-		// 等待响应
-		select {
-		case err := <-cmd.Response:
-			// 记录审计日志
-			c.recordAuditLog(instanceID, "disconnect", 0, err == nil, err)
-			return err
-		case <-time.After(10 * time.Second):
-			err := fmt.Errorf("disconnect timeout")
-			c.recordAuditLog(instanceID, "disconnect", 0, false, err)
-			return err
-		}
-	case <-time.After(5 * time.Second):
-		return fmt.Errorf("command channel full")
-	}
-}
-
-// statusListener 监听来自 Desktop-Tunnel 的状态更新
-func (c *DesktopClient) statusListener() {
+// receiveHeartbeat 接收心跳响应
+func (c *DesktopClient) receiveHeartbeat() {
 	for {
 		select {
-		case status := <-c.statusChan:
-			log.Printf("[Desktop-Web] Status update: %s - %s", status.InstanceName, status.Status)
-			// 这里可以通知前端更新 UI
 		case <-c.ctx.Done():
 			return
+		default:
+			c.heartbeatMutex.Lock()
+			stream := c.heartbeatStream
+			c.heartbeatMutex.Unlock()
+
+			if stream == nil {
+				time.Sleep(time.Second)
+				continue
+			}
+
+			resp, err := stream.Recv()
+			if err != nil {
+				log.Printf("[DesktopClient] Heartbeat receive error: %v", err)
+				time.Sleep(time.Second * 5)
+				continue
+			}
+
+			// 更新已授权服务列表
+			c.servicesMutex.Lock()
+			c.authorizedServices = resp.AuthorizedServices
+			c.servicesMutex.Unlock()
+
+			log.Printf("[DesktopClient] Heartbeat received, authorized services: %d", len(resp.AuthorizedServices))
 		}
 	}
 }
 
-// GetSessionToken 返回当前的 session token
-func (c *DesktopClient) GetSessionToken() string {
-	return c.sessionToken
-}
+// sendHeartbeat 发送心跳
+func (c *DesktopClient) sendHeartbeat(tunnelIP string, tunnelConnected bool) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
 
-// IsAuthenticated 检查是否已认证
-func (c *DesktopClient) IsAuthenticated() bool {
-	return c.sessionToken != ""
-}
-
-// recordAuditLog 记录审计日志（异步，不阻塞主流程）
-func (c *DesktopClient) recordAuditLog(instanceID int64, action string, localPort int, success bool, err error) {
-	// 异步记录，避免阻塞
-	go func() {
-		if c.auditClient == nil {
-			log.Printf("[Audit] Audit client not initialized, skipping log")
+	for {
+		select {
+		case <-c.ctx.Done():
 			return
-		}
+		case <-ticker.C:
+			c.heartbeatMutex.Lock()
+			stream := c.heartbeatStream
+			c.heartbeatMutex.Unlock()
 
-		// 获取设备指纹和信息
-		fingerprint, fpErr := device.GetFingerprint()
-		if fpErr != nil {
-			log.Printf("[Audit] Failed to get device fingerprint: %v", fpErr)
-			return
-		}
+			if stream == nil {
+				continue
+			}
 
-		// 构建错误消息
-		errorMessage := ""
-		if err != nil {
-			errorMessage = err.Error()
-		}
+			req := &pb.DesktopHeartbeatRequest{
+				DesktopId:       c.desktopID,
+				TunnelIp:        tunnelIP,
+				TunnelConnected: tunnelConnected,
+			}
 
-		// 构建设备信息
-		deviceInfo := DeviceInfo{
-			OS:        fingerprint.OS,
-			OSVersion: device.GetOSInfo(),
-			Arch:      fingerprint.Arch,
-			CPUModel:  "",
-			MachineID: fingerprint.MachineID,
-			Hostname:  fingerprint.Hostname,
-		}
-
-		// 记录审计日志
-		req := &RecordConnectionRequest{
-			STCPInstanceID:    instanceID,
-			Action:            action,
-			LocalPort:         localPort,
-			DeviceFingerprint: fingerprint.Hash,
-			DeviceInfo:        deviceInfo,
-			Success:           success,
-			ErrorMessage:      errorMessage,
-			ServerAddress:     c.serverAddr, // Desktop连接的Server地址
-		}
-
-		if err := c.auditClient.RecordConnection(req); err != nil {
-			log.Printf("[Audit] Failed to record audit log: %v", err)
-		} else {
-			log.Printf("[Audit] Recorded %s action for instance %d (success=%v)", action, instanceID, success)
-		}
-	}()
-}
-
-// DeviceInfoResult 设备信息结果（用于返回给App层）
-type DeviceInfoResult struct {
-	DeviceToken string
-	DeviceName  string
-	OS          string
-	Arch        string
-	Hostname    string
-	Status      string
-	LastUsedAt  string
-	CreatedAt   string
-	IsCurrent   bool
-}
-
-// GetDevices 获取已登录的设备列表
-func (c *DesktopClient) GetDevices() ([]*DeviceInfoResult, error) {
-	if c.sessionToken == "" {
-		return nil, fmt.Errorf("not authenticated")
-	}
-
-	if c.deviceClient == nil {
-		return nil, fmt.Errorf("device client not initialized")
-	}
-
-	// 调用Server API获取设备列表
-	devices, err := c.deviceClient.ListDevices()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list devices: %w", err)
-	}
-
-	// 转换为DeviceInfoResult
-	results := make([]*DeviceInfoResult, 0, len(devices))
-	for _, d := range devices {
-		// 构建设备名称
-		deviceName := fmt.Sprintf("%s %s", d.DeviceInfo.OS, d.DeviceInfo.Hostname)
-
-		// 确定状态
-		status := "offline"
-		if !d.Revoked {
-			// 检查是否过期
-			expiresAt, err := time.Parse(time.RFC3339, d.ExpiresAt)
-			if err == nil && time.Now().Before(expiresAt) {
-				status = "online"
+			if err := stream.Send(req); err != nil {
+				log.Printf("[DesktopClient] Failed to send heartbeat: %v", err)
 			}
 		}
-
-		results = append(results, &DeviceInfoResult{
-			DeviceToken: d.DeviceToken,
-			DeviceName:  deviceName,
-			OS:          d.DeviceInfo.OS,
-			Arch:        d.DeviceInfo.Arch,
-			Hostname:    d.DeviceInfo.Hostname,
-			Status:      status,
-			LastUsedAt:  d.LastUsedAt,
-			CreatedAt:   d.CreatedAt,
-			IsCurrent:   d.IsCurrent,
-		})
 	}
-
-	return results, nil
 }
 
-// OfflineDevice 让设备下线
-func (c *DesktopClient) OfflineDevice(deviceToken string) error {
-	if c.sessionToken == "" {
-		return fmt.Errorf("not authenticated")
+// UpdateHeartbeat 更新心跳信息（当隧道状态变化时调用）
+func (c *DesktopClient) UpdateHeartbeat(tunnelIP string, tunnelConnected bool) {
+	c.heartbeatMutex.Lock()
+	stream := c.heartbeatStream
+	c.heartbeatMutex.Unlock()
+
+	if stream == nil {
+		// 如果心跳未启动，启动它
+		if err := c.startHeartbeat(tunnelIP, tunnelConnected); err != nil {
+			log.Printf("[DesktopClient] Failed to start heartbeat: %v", err)
+		}
+		return
 	}
 
-	if c.deviceClient == nil {
-		return fmt.Errorf("device client not initialized")
+	req := &pb.DesktopHeartbeatRequest{
+		DesktopId:       c.desktopID,
+		TunnelIp:        tunnelIP,
+		TunnelConnected: tunnelConnected,
 	}
 
-	return c.deviceClient.OfflineDevice(deviceToken)
+	if err := stream.Send(req); err != nil {
+		log.Printf("[DesktopClient] Failed to update heartbeat: %v", err)
+	}
 }
 
-// DeleteDevice 删除设备记录
-func (c *DesktopClient) DeleteDevice(deviceToken string) error {
-	if c.sessionToken == "" {
-		return fmt.Errorf("not authenticated")
+// getSystemInfo 获取系统信息
+func getSystemInfo() (*pb.DesktopSystemInfo, error) {
+	fingerprint, err := device.GetFingerprint()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get device fingerprint: %w", err)
 	}
 
-	if c.deviceClient == nil {
-		return fmt.Errorf("device client not initialized")
-	}
-
-	return c.deviceClient.DeleteDevice(deviceToken)
-}
-
-// GetTunnelConfig 获取隧道配置
-func (c *DesktopClient) GetTunnelConfig() (*TunnelConfigResponse, error) {
-	if c.sessionToken == "" {
-		return nil, fmt.Errorf("not authenticated")
-	}
-
-	if c.tunnelConfigClient == nil {
-		return nil, fmt.Errorf("tunnel config client not initialized")
-	}
-
-	return c.tunnelConfigClient.GetTunnelConfig()
-}
-
-// GetFavorites 获取用户的服务收藏列表（包含端口信息）
-func (c *DesktopClient) GetFavorites() ([]FavoriteInfo, error) {
-	log.Printf("[DesktopClient] GetFavorites called: hasToken=%v, hasFavoriteClient=%v",
-		c.sessionToken != "", c.favoriteClient != nil)
-
-	if c.sessionToken == "" {
-		return nil, fmt.Errorf("not authenticated")
-	}
-
-	if c.favoriteClient == nil {
-		return nil, fmt.Errorf("favorite client not initialized")
-	}
-
-	return c.favoriteClient.GetFavorites()
-}
-
-// ToggleFavorite 切换服务收藏状态
-func (c *DesktopClient) ToggleFavorite(instanceID int64, localPort int) (bool, error) {
-	if c.sessionToken == "" {
-		return false, fmt.Errorf("not authenticated")
-	}
-
-	if c.favoriteClient == nil {
-		return false, fmt.Errorf("favorite client not initialized")
-	}
-
-	return c.favoriteClient.ToggleFavorite(instanceID, localPort)
-}
-
-// UpdateFavoritePort 更新收藏服务的端口
-func (c *DesktopClient) UpdateFavoritePort(instanceID int64, localPort int) error {
-	if c.sessionToken == "" {
-		return fmt.Errorf("not authenticated")
-	}
-
-	if c.favoriteClient == nil {
-		return fmt.Errorf("favorite client not initialized")
-	}
-
-	return c.favoriteClient.UpdateFavoritePort(instanceID, localPort)
-}
-
-// GetTailscaleAuth 获取 Tailscale 认证信息
-func (c *DesktopClient) GetTailscaleAuth() (*TailscaleAuthResponse, error) {
-	if c.sessionToken == "" {
-		return nil, fmt.Errorf("not authenticated")
-	}
-
-	tsClient := NewTailscaleClient(c.serverURL, c.sessionToken)
-	return tsClient.GetTailscaleAuth()
+	return &pb.DesktopSystemInfo{
+		Os:        fingerprint.OS,
+		OsVersion: device.GetOSInfo(),
+		Arch:      fingerprint.Arch,
+		Hostname:  fingerprint.Hostname,
+		Cpu:       "",
+		CpuCores:  0,
+		MemoryGb:  0,
+	}, nil
 }
