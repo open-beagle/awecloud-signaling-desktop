@@ -120,7 +120,7 @@ Client Secret: [上面创建时返回的 secret]
 
 **步骤**:
 
-1. 双击 `desktop/build/bin/awecloud-desktop.exe`
+1. 双击 `desktop/build/bin/signal-desktop.exe`
 2. 等待应用启动
 
 **预期结果**:
@@ -420,7 +420,7 @@ Client Secret: [上面创建时返回的 secret]
 
 **Desktop 日志**:
 
-- 位置：`%APPDATA%\awecloud-desktop\logs\` (如果有)
+- 位置：`%APPDATA%\signal-desktop\logs\` (如果有)
 - 或查看控制台输出
 
 **Server 日志**:

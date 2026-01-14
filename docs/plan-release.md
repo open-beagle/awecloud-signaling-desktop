@@ -8,7 +8,7 @@
 
 ### Windows 版本
 
-**文件**: `build/bin/awecloud-desktop.exe`  
+**文件**: `build/bin/signal-desktop.exe`  
 **大小**: 22MB  
 **平台**: Windows 10/11 (64位)  
 **架构**: amd64
@@ -36,7 +36,7 @@
 
 ### 后端 (Go)
 
-- **框架**: Wails v2.11.0
+- **框架**: Wails v3.0.0
 - **通信**: gRPC v1.77.0
 - **隧道**: FRP v0.65.0
 - **架构**: 单进程双线程
@@ -69,7 +69,7 @@
 
 ### 安装
 
-1. 下载 `awecloud-desktop.exe`
+1. 下载 `signal-desktop.exe`
 2. 双击运行（无需安装）
 3. 如提示安装 WebView2，按提示操作
 
@@ -96,7 +96,7 @@
 
 配置文件自动存储在：
 
-**Windows**: `%APPDATA%\awecloud-desktop\config.json`
+**Windows**: `%APPDATA%\signal-desktop\config.json`
 
 包含内容：
 - 服务器地址
@@ -161,7 +161,7 @@
 
 ### 构建信息
 
-- **构建工具**: Wails CLI v2.11.0
+- **构建工具**: Wails CLI v3.0.0
 - **Go 版本**: 1.23
 - **Node 版本**: 18+
 - **构建时间**: ~15 秒
@@ -220,4 +220,4 @@
 
 ---
 
-**感谢使用 AWECloud Desktop！** 🎉
+**感谢使用 Signal Desktop！** 🎉

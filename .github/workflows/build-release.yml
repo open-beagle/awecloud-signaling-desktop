@@ -38,7 +38,7 @@ jobs:
             nsis
 
       - name: Install Wails v3
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.55
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.60
 
       - name: Build Desktop Applications (Linux and Windows)
         run: |
@@ -74,7 +74,7 @@ jobs:
           node-version: '20'
 
       - name: Install Wails v3
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.55
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.60
 
       - name: Build Desktop Application (macOS)
         run: |

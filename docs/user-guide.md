@@ -1,8 +1,8 @@
-# AWECloud Desktop 用户手册
+# Signal Desktop 用户手册
 
 ## 简介
 
-AWECloud Desktop 是一个桌面客户端应用，用于安全地访问通过 AWECloud Signaling 系统暴露的远程服务。
+Signal Desktop 是一个桌面客户端应用，用于安全地访问通过 AWECloud Signaling 系统暴露的远程服务。
 
 ## 系统要求
 
@@ -14,7 +14,7 @@ AWECloud Desktop 是一个桌面客户端应用，用于安全地访问通过 AW
 
 ### Windows
 
-1. 下载 `awecloud-desktop-setup.exe`
+1. 下载 `signal-desktop-setup.exe`
 2. 双击运行安装程序
 3. 按照向导完成安装
 4. 从开始菜单或桌面快捷方式启动应用
@@ -108,7 +108,7 @@ mysql -h 127.0.0.1 -P 3306 -u username -p
 
 Desktop 应用的配置文件存储在：
 
-- **Windows**: `%APPDATA%\awecloud-desktop\config.json`
+- **Windows**: `%APPDATA%\signal-desktop\config.json`
 
 配置文件包含：
 

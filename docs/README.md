@@ -1,4 +1,4 @@
-# AWECloud Desktop 文档
+# Signal Desktop 文档
 
 ## 文档索引
 
@@ -47,8 +47,8 @@ wails build
 
 配置文件位置：
 
-- **Windows**: `%APPDATA%\awecloud-desktop\config.json`
-- **macOS**: `~/Library/Application Support/awecloud-desktop/config.json`
-- **Linux**: `~/.config/awecloud-desktop/config.json`
+- **Windows**: `%APPDATA%\signal-desktop\config.json`
+- **macOS**: `~/Library/Application Support/signal-desktop/config.json`
+- **Linux**: `~/.config/signal-desktop/config.json`
 
 配置示例见 `config/config.example.json`

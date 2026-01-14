@@ -4,7 +4,7 @@
 
 set -e
 
-echo "Starting AWECloud Desktop in development mode..."
+echo "Starting Signal Desktop in development mode..."
 
 # 安装前端依赖（如果需要）
 if [ ! -d "frontend/node_modules" ]; then
@@ -15,4 +15,4 @@ if [ ! -d "frontend/node_modules" ]; then
 fi
 
 # 启动开发模式
-wails dev
+wails3 dev

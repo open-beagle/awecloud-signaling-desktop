@@ -3,14 +3,35 @@ setlocal enabledelayedexpansion
 
 REM Desktop 开发脚本 - Windows 版本
 
-REM 切换到项目根目录（脚本所在目录的上一级）
-cd /d "%~dp0.."
+
+REM ----------------------------------------------------------------
+REM 自动获取管理员权限 (System VPN 需要)
+REM ----------------------------------------------------------------
+>nul 2>&1 "%SYSTEMROOT%\system32\cacls.exe" "%SYSTEMROOT%\system32\config\system"
+if '%errorlevel%' NEQ '0' (
+    echo [INFO] Requesting administrative privileges...
+    goto UACPrompt
+) else ( goto gotAdmin )
+
+:UACPrompt
+    echo Set UAC = CreateObject^("Shell.Application"^) > "%temp%\getadmin.vbs"
+    echo UAC.ShellExecute "%~s0", "", "", "runas", 1 >> "%temp%\getadmin.vbs"
+    "%temp%\getadmin.vbs"
+    exit /B
+
+:gotAdmin
+    if exist "%temp%\getadmin.vbs" ( del "%temp%\getadmin.vbs" )
+    pushd "%CD%"
+    CD /D "%~dp0.."
+
+REM ----------------------------------------------------------------
+
 
 REM 设置默认版本
 if "%BUILD_VERSION%"=="" set BUILD_VERSION=v0.2.0
 
 echo ========================================
-echo AWECloud Desktop - Development Mode
+echo Signal Desktop - Development Mode
 echo ========================================
 echo Version: %BUILD_VERSION%
 echo.
@@ -54,9 +75,30 @@ if not exist "frontend\node_modules" (
     echo [INFO] Frontend dependencies already installed
 )
 
+
+REM ----------------------------------------------------------------
+REM 检查 Wintun 驱动 (系统级 VPN 必须)
+REM ----------------------------------------------------------------
+if not exist "wintun.dll" (
+    echo [INFO] wintun.dll not found. Downloading...
+    powershell -Command "Invoke-WebRequest -Uri 'https://www.wintun.net/builds/wintun-0.14.1.zip' -OutFile 'wintun.zip'"
+    if exist "wintun.zip" (
+        echo [INFO] Extracting wintun.dll...
+        powershell -Command "Expand-Archive -Path 'wintun.zip' -DestinationPath 'wintun_temp' -Force"
+        copy "wintun_temp\wintun-0.14.1\bin\amd64\wintun.dll" ".\wintun.dll" >nul
+        rd /s /q "wintun_temp"
+        del "wintun.zip"
+        echo [INFO] wintun.dll installed.
+    ) else (
+        echo [WARN] Failed to download wintun.dll. VPN initialize might fail.
+    )
+)
+
 echo.
 echo [INFO] Starting Wails development server...
+echo [WARN] ENSURE YOU ARE RUNNING AS ADMINISTRATOR for VPN features!
 echo.
+
 
 REM 设置版本环境变量供应用读取
 set APP_VERSION=%BUILD_VERSION%

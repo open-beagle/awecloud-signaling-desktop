@@ -24,9 +24,9 @@ desktop/
 
 ### 前置要求
 
-- Go 1.23+
+- Go 1.25+
 - Node.js 18+
-- Wails CLI v2.11.0+
+- Wails CLI v3.0.0+
 
 ### 安装 Wails CLI
 
@@ -120,7 +120,7 @@ wails build -platform windows/amd64
 ./scripts/build.sh
 ```
 
-输出位置：`build/bin/awecloud-desktop`
+输出位置：`build/bin/signal-desktop`
 
 ## 架构说明
 
@@ -259,7 +259,7 @@ npm test
 # Windows
 wails build -platform windows/amd64 -clean
 
-# 输出: build/bin/awecloud-desktop.exe
+# 输出: build/bin/signal-desktop.exe
 ```
 
 ### 3. 打包（可选）

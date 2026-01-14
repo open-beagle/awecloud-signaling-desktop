@@ -12,14 +12,14 @@ Desktop 客户端应用 - 基于 Wails 的跨平台桌面应用
 
 ### 前置要求
 
-- Go 1.23+
+- Go 1.25+
 - Node.js 18+
-- Wails CLI v2.11.0+
+- Wails CLI v3.0.0+
 
 安装 Wails CLI:
 
 ```bash
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
+go install github.com/wailsapp/wails/v3/cmd/wails3@latest
 ```
 
 ### 开发模式
@@ -29,7 +29,7 @@ go install github.com/wailsapp/wails/v2/cmd/wails@latest
 cd frontend && npm install && cd ..
 
 # 启动开发模式（热重载）
-wails dev
+wails3 dev
 
 # 或使用脚本
 ./scripts/dev.sh
@@ -39,13 +39,13 @@ wails dev
 
 ```bash
 # 构建当前平台
-wails build
+wails3 build
 
 # 或使用脚本
 ./scripts/build.sh
 ```
 
-输出位置: `build/bin/awecloud-desktop`
+输出位置: `build/bin/signal-desktop`
 
 ## 文档规范
 

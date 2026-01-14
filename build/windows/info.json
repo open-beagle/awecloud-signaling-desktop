@@ -1,15 +1,15 @@
 {
-	"fixed": {
-		"file_version": "{{.Info.ProductVersion}}"
-	},
-	"info": {
-		"0000": {
-			"ProductVersion": "{{.Info.ProductVersion}}",
-			"CompanyName": "{{.Info.CompanyName}}",
-			"FileDescription": "{{.Info.ProductName}}",
-			"LegalCopyright": "{{.Info.Copyright}}",
-			"ProductName": "{{.Info.ProductName}}",
-			"Comments": "{{.Info.Comments}}"
-		}
-	}
+  "fixed": {
+    "file_version": "{{.Info.ProductVersion}}"
+  },
+  "info": {
+    "0000": {
+      "ProductVersion": "{{.Info.ProductVersion}}",
+      "CompanyName": "北京比格大数据有限公司",
+      "FileDescription": "Signaling Desktop",
+      "LegalCopyright": "Copyright © 2025 北京比格大数据有限公司. All rights reserved.",
+      "ProductName": "Signaling Desktop",
+      "Comments": "北京比格大数据有限公司 信令桌面客户端"
+    }
+  }
 }
