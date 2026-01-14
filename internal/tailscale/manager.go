@@ -244,7 +244,7 @@ func (m *Manager) watchStatus() {
 
 			if changed {
 				if connected {
-					log.Printf("[INFO] [Tunnel] 已连接: IP=%s", ip)
+					log.Printf("[Tunnel] 已连接: IP=%s", ip)
 				} else {
 					log.Printf("[DEBUG] [Tunnel] 状态: %s", st.BackendState)
 				}

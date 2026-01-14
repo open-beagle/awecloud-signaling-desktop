@@ -2,20 +2,8 @@
   <el-card class="service-card">
     <template #header>
       <div class="card-header">
-        <div class="header-left">
-          <span class="service-index">#{{ index }}</span>
-          <span class="service-name">{{ service.instance_name }}</span>
-        </div>
-        <div class="header-right">
-          <el-icon 
-            class="favorite-icon" 
-            :class="{ 'is-favorite': service.is_favorite }"
-            @click="handleToggleFavorite"
-          >
-            <StarFilled v-if="service.is_favorite" />
-            <Star v-else />
-          </el-icon>
-        </div>
+        <span class="service-index">#{{ index }}</span>
+        <span class="service-name">{{ service.instance_name }}</span>
       </div>
     </template>
 
@@ -42,26 +30,21 @@
         <span class="value" v-else>-</span>
       </div>
 
-      <div class="info-item" v-if="service.target_addr">
-        <span class="label">目标地址:</span>
-        <span class="value">{{ service.target_addr }}</span>
+      <div class="info-item">
+        <span class="label">远程服务:</span>
+        <span class="value" v-if="service.target_addr">{{ service.target_addr }}</span>
+        <span class="value" v-else>-</span>
       </div>
 
-      <div class="info-item" v-if="service.description">
-        <span class="label">描述:</span>
-        <span class="value">{{ service.description }}</span>
-      </div>
     </div>
   </el-card>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Star, StarFilled, CopyDocument } from '@element-plus/icons-vue'
+import { CopyDocument } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { ServiceInfo } from '../stores/services'
-import { useServicesStore } from '../stores/services'
-import { ToggleFavorite } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 interface Props {
   service: ServiceInfo
@@ -69,8 +52,6 @@ interface Props {
 }
 
 const props = defineProps<Props>()
-
-const servicesStore = useServicesStore()
 
 // 计算隧道地址
 const tunnelAddress = computed(() => {
@@ -90,20 +71,6 @@ const copyAddress = async () => {
     }
   }
 }
-
-const handleToggleFavorite = async () => {
-  // 先乐观更新UI
-  servicesStore.toggleFavorite(props.service.instance_id)
-  
-  // 调用后端API
-  try {
-    await ToggleFavorite(props.service.instance_id, 0)
-  } catch (error: any) {
-    // 如果失败，回滚UI状态
-    servicesStore.toggleFavorite(props.service.instance_id)
-    console.error('Failed to toggle favorite:', error)
-  }
-}
 </script>
 
 <style scoped>
@@ -121,46 +88,11 @@ const handleToggleFavorite = async () => {
   align-items: center;
 }
 
-.header-left {
-  display: flex;
-  align-items: center;
-  flex: 1;
-  gap: 8px;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .service-index {
   font-size: 14px;
   color: #909399;
   font-weight: 500;
-  min-width: 30px;
-}
-
-.service-name {
-  font-weight: bold;
-  font-size: 16px;
-  color: #333;
-}
-
-.favorite-icon {
-  font-size: 20px;
-  cursor: pointer;
-  color: #dcdfe6;
-  transition: all 0.3s;
-}
-
-.favorite-icon:hover {
-  color: #ffd700;
-  transform: scale(1.2);
-}
-
-.favorite-icon.is-favorite {
-  color: #ffd700;
+  margin-right: 8px;
 }
 
 .service-name {
@@ -178,6 +110,10 @@ const handleToggleFavorite = async () => {
   justify-content: space-between;
   margin-bottom: 10px;
   font-size: 14px;
+}
+
+.info-item:last-child {
+  margin-bottom: 0;
 }
 
 .info-item .label {

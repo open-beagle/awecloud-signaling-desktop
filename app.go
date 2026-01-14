@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/banner"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/client"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/tailscale"
@@ -30,6 +31,9 @@ func (a *App) startup() {
 	log.SetOutput(&logWriter{})
 	log.SetFlags(0) // 移除默认的时间戳，使用自定义格式
 
+	// 打印启动横幅
+	banner.Print()
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Printf("Failed to load config: %v", err)
@@ -38,8 +42,6 @@ func (a *App) startup() {
 
 	config.GlobalConfig = cfg
 	log.Printf("Using server address: %s", config.GlobalConfig.ServerAddress)
-	log.Printf("Desktop app started")
-	log.Printf("Version: %s, Build: %s, Commit: %s", appVersion.Version, appVersion.BuildNumber, appVersion.GitCommit)
 
 	a.setupSystemTray()
 	log.Printf("System tray started")
@@ -258,7 +260,7 @@ func (a *App) GetServices() ([]*ServiceInfo, error) {
 			IsFavorite:       false,
 			AgentTailscaleIP: agentIP,
 			ListenPort:       listenPort,
-			TargetAddr:       "",
+			TargetAddr:       svc.TargetAddr,
 		})
 	}
 

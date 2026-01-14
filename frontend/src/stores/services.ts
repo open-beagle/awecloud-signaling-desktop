@@ -10,7 +10,6 @@ export interface ServiceInfo {
   service_ip: string        // Agent端的本地服务IP
   preferred_port?: number   // 用户偏好的本地端口
   status?: string           // 'online', 'offline'
-  is_favorite?: boolean     // 是否收藏
   // Tailscale 模式字段
   agent_tailscale_ip?: string  // Agent 的 Tailscale IP
   listen_port?: number         // Agent 监听端口
@@ -31,7 +30,6 @@ export const useServicesStore = defineStore('services', () => {
 
   function setServices(newServices: ServiceInfo[]) {
     services.value = newServices
-    // 服务的收藏状态由服务器返回，不需要本地处理
   }
 
   function setLoading(value: boolean) {
@@ -54,19 +52,6 @@ export const useServicesStore = defineStore('services', () => {
     connections.value.clear()
   }
 
-  function toggleFavorite(instanceId: number) {
-    // 更新对应服务的收藏状态（乐观更新）
-    const service = services.value.find(s => s.instance_id === instanceId)
-    if (service) {
-      service.is_favorite = !service.is_favorite
-    }
-  }
-
-  function isFavorite(instanceId: number): boolean {
-    const service = services.value.find(s => s.instance_id === instanceId)
-    return service?.is_favorite || false
-  }
-
   return {
     services,
     connections,
@@ -75,8 +60,6 @@ export const useServicesStore = defineStore('services', () => {
     setLoading,
     updateConnectionStatus,
     getConnectionStatus,
-    clearConnections,
-    toggleFavorite,
-    isFavorite
+    clearConnections
   }
 })

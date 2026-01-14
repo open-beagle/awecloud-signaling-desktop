@@ -7,14 +7,6 @@
           <h2>我的服务</h2>
           <div class="filter-tags">
             <el-tag 
-              :class="{ 'filter-tag': true, 'active': filterStatus.favorite }"
-              @click="toggleFilter('favorite')"
-              type="warning"
-              effect="plain"
-            >
-              共 {{ favoriteCount }} 个收藏
-            </el-tag>
-            <el-tag 
               :class="{ 'filter-tag': true, 'active': filterStatus.online }"
               @click="toggleFilter('online')"
               type="success"
@@ -109,20 +101,16 @@ const searchQuery = ref('')
 const searchExpanded = ref(false)
 const searchInputRef = ref()
 
-// 智能默认筛选：优先收藏 > 在线 > 离线
+// 默认筛选：优先在线 > 离线
 const getDefaultFilterStatus = () => {
-  const hasFavorites = servicesStore.services.some(s => s.is_favorite)
-  const hasOnline = servicesStore.services.some(s => s.status === 'online' && !s.is_favorite)
+  const hasOnline = servicesStore.services.some(s => s.status === 'online')
   
-  if (hasFavorites) {
-    // 有收藏：只显示收藏
-    return { favorite: true, online: false, offline: false }
-  } else if (hasOnline) {
-    // 无收藏但有在线：显示在线
-    return { favorite: false, online: true, offline: false }
+  if (hasOnline) {
+    // 有在线：显示在线
+    return { online: true, offline: false }
   } else {
-    // 无收藏且无在线：显示离线
-    return { favorite: false, online: false, offline: true }
+    // 无在线：显示离线
+    return { online: false, offline: true }
   }
 }
 
@@ -152,10 +140,6 @@ const handleSearchBlur = () => {
 }
 
 // 统计数量
-const favoriteCount = computed(() => {
-  return servicesStore.services.filter(service => service.is_favorite).length
-})
-
 const onlineCount = computed(() => {
   return servicesStore.services.filter(service => service.status === 'online').length
 })
@@ -165,7 +149,7 @@ const offlineCount = computed(() => {
 })
 
 // 切换筛选状态
-const toggleFilter = (type: 'favorite' | 'online' | 'offline') => {
+const toggleFilter = (type: 'online' | 'offline') => {
   filterStatus.value[type] = !filterStatus.value[type]
 }
 
@@ -185,18 +169,14 @@ const filteredServices = computed(() => {
 
   // 按状态过滤
   services = services.filter(service => {
-    const isFavorite = service.is_favorite
     const isOnline = service.status === 'online'
     const isOffline = service.status !== 'online'
 
-    // 如果收藏筛选开启，且服务已收藏，则显示
-    if (filterStatus.value.favorite && isFavorite) return true
+    // 如果在线筛选开启，且服务在线，则显示
+    if (filterStatus.value.online && isOnline) return true
     
-    // 如果在线筛选开启，且服务在线（但未收藏），则显示
-    if (filterStatus.value.online && isOnline && !isFavorite) return true
-    
-    // 如果离线筛选开启，且服务离线（且未收藏），则显示
-    if (filterStatus.value.offline && isOffline && !isFavorite) return true
+    // 如果离线筛选开启，且服务离线，则显示
+    if (filterStatus.value.offline && isOffline) return true
 
     return false
   })
