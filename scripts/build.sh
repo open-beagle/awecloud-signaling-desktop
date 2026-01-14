@@ -15,7 +15,7 @@ BUILD_VERSION="${BUILD_VERSION:-dev}"
 BUILD_ADDRESS="${BUILD_ADDRESS:-}"  # 默认 Server 地址（可选）
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo "0")
-BUILD_DATE=$(date -u '+%Y-%m-%d_%H:%M:%S')
+BUILD_DATE=$(date '+%Y-%m-%d_%H:%M:%S')
 
 # 目标平台
 PLATFORMS="${PLATFORMS:-windows/amd64}"  # 默认仅构建 Windows amd64

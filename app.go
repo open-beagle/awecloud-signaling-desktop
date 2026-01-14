@@ -294,9 +294,10 @@ func (a *App) GetVersion() *VersionInfo {
 
 func (a *App) GetWindowTitle() string {
 	if appVersion.BuildNumber != "0" && appVersion.BuildNumber != "" {
-		return fmt.Sprintf("awecloud-signaling  %s (Build %s)", appVersion.Version, appVersion.BuildNumber)
+		// 格式：Signaling v0.2.0 (Build 46 @ 2026-01-15_02:30:39)
+		return fmt.Sprintf("Signaling  %s (Build %s @ %s)", appVersion.Version, appVersion.BuildNumber, appVersion.BuildTime)
 	}
-	return fmt.Sprintf("awecloud-signaling  %s", appVersion.Version)
+	return fmt.Sprintf("Signaling  %s", appVersion.Version)
 }
 
 type SavedCredentials struct {
