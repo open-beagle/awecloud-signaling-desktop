@@ -293,26 +293,47 @@ const determineLoginMode = (savedCreds: any) => {
   form.client = savedCreds.client_id
   form.rememberMe = savedCreds.remember_me
 
-  // 检查是否有有效Token
-  if (savedCreds.has_token && !savedCreds.is_online) {
-    // 模式1：离线模式
-    loginMode.value = 'offline'
-    loginHint.value = ''
-  } else if (savedCreds.has_token && savedCreds.is_online) {
-    // 有Token且在线，尝试自动登录
+  // 检查是否有有效Token，有则尝试自动登录
+  if (savedCreds.has_token) {
     loginMode.value = 'full'
     autoFillMode.value = true
     isAutoLogging.value = true
     startLoadingDots()
     // 自动登录
     setTimeout(() => {
-      handleReconnect()
+      handleAutoLogin()
     }, 500)
   } else {
-    // 模式2：完整登录模式（自动填充）
+    // 没有Token，显示完整登录表单（自动填充用户名）
     loginMode.value = 'full'
     autoFillMode.value = true
     loginHint.value = '欢迎回来！请输入密码以继续'
+  }
+}
+
+const handleAutoLogin = async () => {
+  try {
+    // 尝试使用保存的Token自动登录（不传密码）
+    await Login(
+      form.server,
+      form.client,
+      '', // 使用Token登录不需要Secret
+      true
+    )
+
+    authStore.setAuthenticated(true)
+    authStore.setServerAddress(form.server)
+    authStore.setClientId(form.client)
+
+    ElMessage.success('自动登录成功')
+    router.push('/services')
+  } catch (error: any) {
+    console.error('Auto login failed:', error)
+    // 自动登录失败，切换到手动登录模式
+    isAutoLogging.value = false
+    stopLoadingDots()
+    autoFillMode.value = true
+    loginHint.value = '自动登录失败，请输入密码重新登录'
   }
 }
 

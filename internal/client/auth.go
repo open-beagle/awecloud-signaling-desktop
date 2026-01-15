@@ -68,10 +68,18 @@ func (c *DesktopClient) Login(clientName, clientSecret string) (*AuthResult, err
 
 	// 保存到配置文件
 	config.GlobalConfig.ClientID = clientName
-	config.GlobalConfig.DeviceToken = fmt.Sprintf("%d:%s", resp.DesktopId, resp.Secret)
+	// 密码登录时 Server 总是返回 secret
+	if resp.Secret != "" {
+		config.GlobalConfig.DeviceToken = fmt.Sprintf("%d:%s", resp.DesktopId, resp.Secret)
+		log.Printf("[DesktopClient] DeviceToken saved: desktop_id=%d", resp.DesktopId)
+	} else {
+		log.Printf("[WARN] [DesktopClient] No secret returned from server")
+	}
 	config.GlobalConfig.RememberMe = true
 	if err := config.GlobalConfig.Save(); err != nil {
 		log.Printf("[DesktopClient] Warning: failed to save config: %v", err)
+	} else {
+		log.Printf("[DesktopClient] Config saved successfully")
 	}
 
 	// 启动心跳（初始状态：隧道未连接）

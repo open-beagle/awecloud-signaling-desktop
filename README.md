@@ -41,11 +41,23 @@ wails3 dev
 # 构建当前平台
 wails3 build
 
-# 或使用脚本
+# 或使用脚本（支持多平台）
 ./scripts/build.sh
+
+# 指定平台构建
+PLATFORMS=windows/amd64 ./scripts/build.sh
+PLATFORMS=linux/amd64,windows/amd64 ./scripts/build.sh
+PLATFORMS=darwin/amd64,darwin/arm64 ./scripts/build.sh  # 需 macOS 环境
 ```
 
-输出位置: `build/bin/signal-desktop`
+支持的平台：
+
+- `windows/amd64` - Windows 64 位（wintun.dll 自动嵌入）
+- `linux/amd64` - Linux 64 位
+- `darwin/amd64` - macOS Intel
+- `darwin/arm64` - macOS Apple Silicon
+
+输出位置: `build/bin/`
 
 ## 文档规范
 

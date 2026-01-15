@@ -72,24 +72,29 @@ func CreateTUN() (tun.Device, string, error) {
 }
 
 // preloadWintun 预加载 wintun.dll
-// 必须使用完整路径加载，避免加载 system32 中的旧版本
+// 优先使用嵌入的 dll，回退到文件系统搜索
 func preloadWintun() error {
-	// 优先从可执行文件所在目录加载
+	// 1. 尝试从嵌入资源释放
+	if dllPath, err := extractWintun(); err == nil {
+		log.Printf("[DEBUG] [Tunnel] 加载嵌入的 DLL: %s", dllPath)
+		if _, err := windows.LoadDLL(dllPath); err == nil {
+			return nil
+		}
+		log.Printf("[WARN] [Tunnel] 嵌入 DLL 加载失败: %v", err)
+	}
+
+	// 2. 回退：从文件系统搜索（兼容开发模式）
 	exe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("获取可执行文件路径失败: %w", err)
 	}
 	exeDir := filepath.Dir(exe)
-
-	// 获取当前工作目录
 	cwd, _ := os.Getwd()
 
-	// 尝试多个可能的路径（按优先级排序）
 	searchPaths := []string{
-		filepath.Join(exeDir, "wintun.dll"),              // 可执行文件目录（最优先，build/bin/）
-		filepath.Join(cwd, "build", "bin", "wintun.dll"), // 工作目录下的 build/bin（dev 模式）
+		filepath.Join(exeDir, "wintun.dll"),              // 可执行文件目录
+		filepath.Join(cwd, "build", "bin", "wintun.dll"), // dev 模式
 		filepath.Join(cwd, "wintun.dll"),                 // 工作目录
-		filepath.Join(".", "wintun.dll"),                 // 当前目录
 	}
 
 	log.Printf("[DEBUG] [Tunnel] 搜索 DLL, exe=%s, cwd=%s", exeDir, cwd)
@@ -99,20 +104,14 @@ func preloadWintun() error {
 		if err != nil {
 			continue
 		}
-
 		if _, err := os.Stat(absPath); err != nil {
 			continue
 		}
-
 		log.Printf("[DEBUG] [Tunnel] 加载 DLL: %s", absPath)
-
-		// 使用 windows.LoadDLL 而非 syscall.LoadDLL
-		// windows.LoadDLL 是推荐的方式，与 tailscale 源码一致
 		if _, err := windows.LoadDLL(absPath); err != nil {
 			log.Printf("[WARN] [Tunnel] DLL 加载失败: %v", err)
 			continue
 		}
-
 		return nil
 	}
 

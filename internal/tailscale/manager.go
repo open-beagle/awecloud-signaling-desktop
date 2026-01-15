@@ -10,9 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/tailscale/wireguard-go/tun"
 	"tailscale.com/control/controlclient"
 	"tailscale.com/health"
@@ -82,9 +84,17 @@ func (m *Manager) Connect(controlURL, authKey, hostname string) error {
 		return fmt.Errorf("创建状态目录失败: %w", err)
 	}
 
-	// 4. 定义日志函数（打印 tailscale 内部日志）
+	// 4. 定义日志函数（过滤 tailscale 内部日志，只打印重要信息）
 	logf := logger.Logf(func(format string, args ...any) {
-		log.Printf("[Tunnel] "+format, args...)
+		msg := fmt.Sprintf(format, args...)
+		// 过滤掉过于频繁的 debug 日志
+		if shouldFilterLog(msg) {
+			return
+		}
+		// 替换 Tailscale 为 Tunnel
+		msg = strings.ReplaceAll(msg, "Tailscale", "Tunnel")
+		msg = strings.ReplaceAll(msg, "tailscale", "tunnel")
+		log.Printf("[Tunnel] %s", msg)
 	})
 
 	// 5. 初始化核心依赖 (tsd.System)
@@ -305,6 +315,12 @@ func (m *Manager) IsConnected() bool {
 
 // getStateDir 获取状态存储目录
 func (m *Manager) getStateDir() string {
+	// 使用 config 包提供的统一目录
+	if stateDir, err := config.GetTunnelStateDir(); err == nil {
+		return stateDir
+	}
+
+	// 回退方案
 	var baseDir string
 	if configDir, err := os.UserConfigDir(); err == nil {
 		baseDir = configDir
@@ -313,7 +329,7 @@ func (m *Manager) getStateDir() string {
 	} else {
 		baseDir = "/tmp"
 	}
-	return filepath.Join(baseDir, "beagle-desktop", "tailscale")
+	return filepath.Join(baseDir, "signaling-desktop", "tunnel")
 }
 
 // IsElevated 检查是否有管理员权限
@@ -331,4 +347,119 @@ func IsElevated() bool {
 		// Linux/macOS: 检查 euid 是否为 0
 		return os.Geteuid() == 0
 	}
+}
+
+// shouldFilterLog 判断是否应该过滤掉该日志
+// 过滤掉过于频繁的 debug 日志，只保留重要信息
+func shouldFilterLog(msg string) bool {
+	// warming-up 是正常启动状态，不是错误，过滤掉
+	if strings.Contains(msg, "warming-up") {
+		return true
+	}
+
+	// health 日志特殊处理
+	if strings.Contains(msg, "health(") {
+		// ok 状态过滤掉
+		if strings.Contains(msg, "): ok") {
+			return true
+		}
+		// 真正的错误保留
+		if strings.Contains(msg, "error:") {
+			return false
+		}
+	}
+
+	// 重要日志，不过滤
+	importantPatterns := []string{
+		"error",        // 错误
+		"Error",        // 错误
+		"failed",       // 失败
+		"Failed",       // 失败
+		"已连接",          // 连接成功
+		"已断开",          // 断开
+		"正在连接",         // 连接中
+		"TUN 设备已创建",    // TUN 创建
+		"引擎已启动",        // 引擎启动
+		"active login", // 登录成功
+	}
+
+	for _, pattern := range importantPatterns {
+		if strings.Contains(msg, pattern) {
+			return false // 不过滤
+		}
+	}
+
+	// 过滤掉的日志模式
+	filterPatterns := []string{
+		// 网络监控事件（太频繁）
+		"monitor: got windows change event",
+		"monitor: [unexpected]",
+		"monitor: old:",
+		"monitor: new:",
+		// 详细的网络状态 JSON
+		"InterfaceIPs",
+		"HardwareAddr",
+		// WireGuard 内部日志
+		"wg: [v2]",
+		// 控制协议详细日志
+		"control: [v1]",
+		"control: [v2]",
+		"control: [vJSON]",
+		// 网络检查
+		"netcheck: [v1] report:",
+		// 路由器防火墙详细日志
+		"router: firewall:",
+		"router: monitorDefaultRoutes",
+		// DNS 配置详细日志
+		"dns: Set:",
+		"dns: Resolvercfg:",
+		"dns: OScfg:",
+		// 其他详细日志
+		"[v1] netmap",
+		"[v1] authReconfig",
+		"[v1] linkChange",
+		"[v1] initPeerAPIListener",
+		"[v1] wgengine: Reconfig",
+		"wgengine: Reconfig:",
+		"tsdial: bart table",
+		// magicsock 相关 - 保留 rebind 和 bind 失败日志用于诊断
+		"magicsock: disco:",
+		"magicsock: [v1]",
+		"magicsock: [v2]",
+		"magicsock: adding connection",
+		"magicsock: active derp conns",
+		"derphttp.Client",
+		"LinkChange:",
+		// 保留 Rebind 日志用于诊断连接问题
+		// "Rebind;",
+		"peerapi: serving",
+		"logpolicy:",
+		"ipnext: active extensions",
+		"blockEngineUpdates",
+		"cannot fetch existing TKA state",
+		"Switching ipn state",
+		"control: NetInfo:",
+		"control: RegisterReq:",
+		"control: LoginInteractive",
+		"control: doLogin",
+		"control: client.Login",
+		"control: control server key",
+		"control: Generating",
+		"Start:",
+		"Backend:",
+		"StartLoginInteractive",
+		// 门户检测日志（太频繁）
+		"captive portal detection",
+		"DetectCaptivePortal",
+		// 心跳时间戳（太频繁）
+		"controltime",
+	}
+
+	for _, pattern := range filterPatterns {
+		if strings.Contains(msg, pattern) {
+			return true
+		}
+	}
+
+	return false
 }

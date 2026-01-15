@@ -7,7 +7,7 @@ on:
   workflow_dispatch: # 允许手动触发
 
 env:
-  BUILD_VERSION: v0.1.2
+  BUILD_VERSION: v0.2.0
 
 jobs:
   build-desktop:
@@ -35,7 +35,8 @@ jobs:
           sudo apt-get install -y \
             libgtk-3-dev \
             libwebkit2gtk-4.1-dev \
-            nsis
+            nsis \
+            unzip
 
       - name: Install Wails v3
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.60

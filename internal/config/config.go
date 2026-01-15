@@ -34,21 +34,47 @@ type LocalConfig struct {
 	Token  string `json:"token,omitempty"` // Device Token（用于自动登录）
 }
 
-// GetConfigPath 返回配置文件的路径
-func GetConfigPath() (string, error) {
+// GetAppDir 返回应用数据目录
+func GetAppDir() (string, error) {
 	// 获取用户配置目录
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err
 	}
 
-	// 创建应用配置目录
-	appConfigDir := filepath.Join(configDir, "awecloud-signaling")
-	if err := os.MkdirAll(appConfigDir, 0755); err != nil {
+	// 统一使用 signaling-desktop 目录
+	appDir := filepath.Join(configDir, "signaling-desktop")
+	if err := os.MkdirAll(appDir, 0755); err != nil {
 		return "", err
 	}
 
-	return filepath.Join(appConfigDir, "desktop.json"), nil
+	return appDir, nil
+}
+
+// GetConfigPath 返回配置文件的路径
+func GetConfigPath() (string, error) {
+	appDir, err := GetAppDir()
+	if err != nil {
+		return "", err
+	}
+
+	return filepath.Join(appDir, "desktop.json"), nil
+}
+
+// GetTunnelStateDir 返回隧道状态存储目录
+func GetTunnelStateDir() (string, error) {
+	appDir, err := GetAppDir()
+	if err != nil {
+		return "", err
+	}
+
+	// 隧道状态存储在 tunnel 子目录
+	tunnelDir := filepath.Join(appDir, "tunnel")
+	if err := os.MkdirAll(tunnelDir, 0700); err != nil {
+		return "", err
+	}
+
+	return tunnelDir, nil
 }
 
 // Load 从文件加载配置

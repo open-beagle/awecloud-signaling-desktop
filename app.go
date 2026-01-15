@@ -309,7 +309,9 @@ type SavedCredentials struct {
 }
 
 func (a *App) CheckSavedCredentials() *SavedCredentials {
-	log.Printf("[App] CheckSavedCredentials: HasToken=%v", config.GlobalConfig.HasValidToken())
+	log.Printf("[App] CheckSavedCredentials: HasToken=%v, DeviceToken=%s",
+		config.GlobalConfig.HasValidToken(),
+		maskToken(config.GlobalConfig.DeviceToken))
 
 	serverAddr := config.GlobalConfig.ServerAddress
 
@@ -324,7 +326,7 @@ func (a *App) CheckSavedCredentials() *SavedCredentials {
 	}
 
 	hasToken := config.GlobalConfig.HasValidToken()
-	log.Printf("[App] Token status: HasToken=%v", hasToken)
+	log.Printf("[App] Token status: HasToken=%v, ClientID=%s", hasToken, config.GlobalConfig.ClientID)
 
 	return &SavedCredentials{
 		ServerAddress: serverAddr,
@@ -335,6 +337,17 @@ func (a *App) CheckSavedCredentials() *SavedCredentials {
 	}
 }
 
+// maskToken 隐藏 token 中间部分，用于日志
+func maskToken(token string) string {
+	if token == "" {
+		return "<empty>"
+	}
+	if len(token) <= 10 {
+		return "***"
+	}
+	return token[:5] + "***" + token[len(token)-5:]
+}
+
 func (a *App) ClearCredentials() error {
 	config.GlobalConfig.ClearToken()
 	config.GlobalConfig.ClientID = ""
@@ -343,7 +356,7 @@ func (a *App) ClearCredentials() error {
 }
 
 func (a *App) GetLogs() []string {
-	return GetRecentLogs(100)
+	return GetRecentLogs(1000)
 }
 
 // SetLogLevel 设置日志级别

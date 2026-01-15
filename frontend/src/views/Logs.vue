@@ -10,10 +10,23 @@
           </el-tag>
         </div>
         <div class="header-right">
+          <el-switch
+            v-model="autoRefresh"
+            active-text="自动刷新"
+            inactive-text=""
+            style="margin-right: 16px;"
+          />
           <el-tooltip content="刷新" placement="bottom">
             <el-button 
               :icon="Refresh" 
               @click="handleRefresh"
+              circle
+            />
+          </el-tooltip>
+          <el-tooltip content="滚动到底部" placement="bottom">
+            <el-button 
+              :icon="Bottom" 
+              @click="scrollToBottom"
               circle
             />
           </el-tooltip>
@@ -35,7 +48,7 @@
       </div>
 
       <!-- 日志内容 -->
-      <div class="logs-content">
+      <div class="logs-content" ref="logsContainer">
         <div v-if="logs.length === 0" class="empty">
           暂无日志
         </div>
@@ -55,33 +68,54 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, Delete, Download } from '@element-plus/icons-vue'
+import { Refresh, Delete, Download, Bottom } from '@element-plus/icons-vue'
 import Layout from '../components/Layout.vue'
 import { GetLogs } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 const logs = ref<string[]>([])
+const logsContainer = ref<HTMLElement | null>(null)
+const autoRefresh = ref(true)
+const isUserAtBottom = ref(true)
 let refreshInterval: number | null = null
 
-const loadLogs = async () => {
+// 检查用户是否在底部（允许 50px 误差）
+const checkIfAtBottom = () => {
+  const container = logsContainer.value
+  if (!container) return true
+  const threshold = 50
+  return container.scrollHeight - container.scrollTop - container.clientHeight < threshold
+}
+
+// 滚动到底部
+const scrollToBottom = () => {
+  const container = logsContainer.value
+  if (container) {
+    container.scrollTop = container.scrollHeight
+    isUserAtBottom.value = true
+  }
+}
+
+const loadLogs = async (forceScroll = false) => {
   try {
     const result = await GetLogs()
     logs.value = result || []
     
-    // 自动滚动到底部
-    setTimeout(() => {
-      const container = document.querySelector('.logs-content')
-      if (container) {
-        container.scrollTop = container.scrollHeight
-      }
-    }, 100)
+    // 只有用户在底部时才自动滚动，或者强制滚动
+    if (forceScroll || isUserAtBottom.value) {
+      setTimeout(() => {
+        scrollToBottom()
+      }, 50)
+    }
   } catch (error: any) {
     ElMessage.error('加载日志失败: ' + error.message)
   }
 }
 
 const handleRefresh = () => {
+  // 手动刷新时记录当前位置
+  isUserAtBottom.value = checkIfAtBottom()
   loadLogs()
   ElMessage.success('日志已刷新')
 }
@@ -132,18 +166,55 @@ const getLogClass = (log: string) => {
   return ''
 }
 
+// 监听滚动事件，更新用户位置状态
+const handleScroll = () => {
+  isUserAtBottom.value = checkIfAtBottom()
+}
+
+// 监听自动刷新开关
+watch(autoRefresh, (newVal) => {
+  if (newVal) {
+    // 开启自动刷新
+    refreshInterval = window.setInterval(() => {
+      isUserAtBottom.value = checkIfAtBottom()
+      loadLogs()
+    }, 2000)
+  } else {
+    // 关闭自动刷新
+    if (refreshInterval) {
+      clearInterval(refreshInterval)
+      refreshInterval = null
+    }
+  }
+})
+
 onMounted(() => {
-  loadLogs()
+  // 首次加载，滚动到底部
+  loadLogs(true)
   
-  // 每 2 秒自动刷新
-  refreshInterval = window.setInterval(() => {
-    loadLogs()
-  }, 2000)
+  // 监听滚动事件
+  const container = logsContainer.value
+  if (container) {
+    container.addEventListener('scroll', handleScroll)
+  }
+  
+  // 默认开启自动刷新
+  if (autoRefresh.value) {
+    refreshInterval = window.setInterval(() => {
+      isUserAtBottom.value = checkIfAtBottom()
+      loadLogs()
+    }, 2000)
+  }
 })
 
 onUnmounted(() => {
   if (refreshInterval) {
     clearInterval(refreshInterval)
+  }
+  
+  const container = logsContainer.value
+  if (container) {
+    container.removeEventListener('scroll', handleScroll)
   }
 })
 </script>
@@ -180,6 +251,7 @@ onUnmounted(() => {
 
 .header-right {
   display: flex;
+  align-items: center;
   gap: 10px;
 }
 
