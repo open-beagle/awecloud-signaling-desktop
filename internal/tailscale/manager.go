@@ -230,6 +230,7 @@ func (m *Manager) watchStatus() {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
+	lastState := ""
 	for {
 		select {
 		case <-m.ctx.Done():
@@ -243,8 +244,11 @@ func (m *Manager) watchStatus() {
 				ip = st.TailscaleIPs[0].String()
 			}
 
-			// 打印详细状态
-			log.Printf("[DEBUG] [Tunnel] 状态: State=%s, IP=%s, AuthURL=%s", st.BackendState, ip, st.AuthURL)
+			// 只在状态变化时打印日志
+			if st.BackendState != lastState {
+				log.Printf("[INFO] [Tunnel] 状态变化: %s -> %s, IP=%s", lastState, st.BackendState, ip)
+				lastState = st.BackendState
+			}
 
 			m.mutex.Lock()
 			changed := (m.connected != connected) || (m.tailscaleIP != ip)
@@ -363,7 +367,12 @@ func shouldFilterLog(msg string) bool {
 		if strings.Contains(msg, "): ok") {
 			return true
 		}
-		// 真正的错误保留
+		// 这两个警告在空闲时是正常的，过滤掉
+		if strings.Contains(msg, "magicsock-receive-func-error") ||
+			strings.Contains(msg, "no-derp-home") {
+			return true
+		}
+		// 其他真正的错误保留
 		if strings.Contains(msg, "error:") {
 			return false
 		}
@@ -422,13 +431,14 @@ func shouldFilterLog(msg string) bool {
 		"[v1] wgengine: Reconfig",
 		"wgengine: Reconfig:",
 		"tsdial: bart table",
-		// magicsock 相关 - 保留 rebind 和 bind 失败日志用于诊断
+		// magicsock 相关 - 保留重要的 DERP 日志
 		"magicsock: disco:",
 		"magicsock: [v1]",
 		"magicsock: [v2]",
-		"magicsock: adding connection",
-		"magicsock: active derp conns",
-		"derphttp.Client",
+		// 保留 DERP 连接状态日志用于诊断
+		// "magicsock: adding connection",
+		// "magicsock: active derp conns",
+		// "derphttp.Client",
 		"LinkChange:",
 		// 保留 Rebind 日志用于诊断连接问题
 		// "Rebind;",

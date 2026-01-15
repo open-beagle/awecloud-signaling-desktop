@@ -10,16 +10,11 @@
           </el-tag>
         </div>
         <div class="header-right">
-          <el-switch
-            v-model="autoRefresh"
-            active-text="自动刷新"
-            inactive-text=""
-            style="margin-right: 16px;"
-          />
-          <el-tooltip content="刷新" placement="bottom">
+          <el-tooltip :content="autoRefresh ? '自动刷新中（点击关闭）' : '点击开启自动刷新'" placement="bottom">
             <el-button 
               :icon="Refresh" 
-              @click="handleRefresh"
+              :type="autoRefresh ? 'primary' : 'default'"
+              @click="toggleAutoRefresh"
               circle
             />
           </el-tooltip>
@@ -117,7 +112,14 @@ const handleRefresh = () => {
   // 手动刷新时记录当前位置
   isUserAtBottom.value = checkIfAtBottom()
   loadLogs()
-  ElMessage.success('日志已刷新')
+}
+
+// 切换自动刷新状态
+const toggleAutoRefresh = () => {
+  autoRefresh.value = !autoRefresh.value
+  // 切换时也执行一次刷新
+  handleRefresh()
+  ElMessage.success(autoRefresh.value ? '已开启自动刷新' : '已关闭自动刷新')
 }
 
 const handleClear = () => {
