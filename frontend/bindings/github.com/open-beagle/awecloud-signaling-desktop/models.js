@@ -93,6 +93,117 @@ export class DeviceInfo {
     }
 }
 
+/**
+ * GRPCStatus gRPC 连接状态
+ */
+export class GRPCStatus {
+    /**
+     * Creates a new GRPCStatus instance.
+     * @param {Partial<GRPCStatus>} [$$source = {}] - The source object to create the GRPCStatus.
+     */
+    constructor($$source = {}) {
+        if (!("connected" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["connected"] = false;
+        }
+        if (!("server_address" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["server_address"] = "";
+        }
+        if (!("error" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["error"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new GRPCStatus instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {GRPCStatus}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new GRPCStatus(/** @type {Partial<GRPCStatus>} */($$parsedSource));
+    }
+}
+
+/**
+ * HostInfo 主机信息
+ */
+export class HostInfo {
+    /**
+     * Creates a new HostInfo instance.
+     * @param {Partial<HostInfo>} [$$source = {}] - The source object to create the HostInfo.
+     */
+    constructor($$source = {}) {
+        if (!("host_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["host_id"] = "";
+        }
+        if (!("host_name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["host_name"] = "";
+        }
+        if (!("tunnel_ip" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["tunnel_ip"] = "";
+        }
+        if (!("service_count" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["service_count"] = 0;
+        }
+        if (!("status" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["status"] = "";
+        }
+        if (!("last_seen" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["last_seen"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new HostInfo instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {HostInfo}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new HostInfo(/** @type {Partial<HostInfo>} */($$parsedSource));
+    }
+}
+
 export class SavedCredentials {
     /**
      * Creates a new SavedCredentials instance.
@@ -241,6 +352,14 @@ export class ServiceInfo {
              * @type {string | undefined}
              */
             this["target_addr"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * 服务唯一标识
+             * @member
+             * @type {string | undefined}
+             */
+            this["service_id"] = undefined;
         }
 
         Object.assign(this, $$source);

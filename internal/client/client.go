@@ -30,6 +30,7 @@ type DesktopClient struct {
 	desktopID uint64
 	secret    string
 	clientID  string
+	mu        sync.RWMutex // 保护 desktopID 和 secret
 
 	// 心跳流
 	heartbeatStream pb.DesktopService_HeartbeatClient
@@ -69,6 +70,8 @@ func (c *DesktopClient) Start() error {
 		// HTTPS：使用 TLS，跳过证书验证
 		tlsConfig := &tls.Config{
 			InsecureSkipVerify: true,
+			// 必须设置 NextProtos 以支持 HTTP/2（gRPC 要求）
+			NextProtos: []string{"h2"},
 		}
 		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
 		log.Printf("[DesktopClient] Using TLS connection (skip verify)")
@@ -264,4 +267,221 @@ func getSystemInfo() (*pb.DesktopSystemInfo, error) {
 		CpuCores:  0,
 		MemoryGb:  0,
 	}, nil
+}
+
+// HostInfo 主机信息
+type HostInfo struct {
+	HostID       string `json:"host_id"`
+	HostName     string `json:"host_name"`
+	TunnelIP     string `json:"tunnel_ip"`
+	ServiceCount int    `json:"service_count"`
+	Status       string `json:"status"`
+	LastSeen     string `json:"last_seen"`
+}
+
+// GetAuthorizedHosts 获取已授权主机列表
+func (c *DesktopClient) GetAuthorizedHosts() ([]*HostInfo, error) {
+	if !c.IsAuthenticated() {
+		return nil, fmt.Errorf("未认证")
+	}
+
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	defer cancel()
+
+	req := &pb.GetAuthorizedHostsRequest{
+		DesktopId: c.desktopID,
+	}
+
+	resp, err := c.grpcClient.GetAuthorizedHosts(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("获取主机列表失败: %w", err)
+	}
+
+	hosts := make([]*HostInfo, 0, len(resp.Hosts))
+	for _, h := range resp.Hosts {
+		hosts = append(hosts, &HostInfo{
+			HostID:       h.HostId,
+			HostName:     h.HostName,
+			TunnelIP:     h.TunnelIp,
+			ServiceCount: int(h.ServiceCount),
+			Status:       h.Status,
+			LastSeen:     h.LastSeen,
+		})
+	}
+
+	return hosts, nil
+}
+
+// GetHostServices 获取指定主机的服务列表
+func (c *DesktopClient) GetHostServices(hostID string) ([]*pb.AuthorizedService, error) {
+	if !c.IsAuthenticated() {
+		return nil, fmt.Errorf("未认证")
+	}
+
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	defer cancel()
+
+	req := &pb.GetHostServicesRequest{
+		DesktopId: c.desktopID,
+		HostId:    hostID,
+	}
+
+	resp, err := c.grpcClient.GetHostServices(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("获取主机服务失败: %w", err)
+	}
+
+	return resp.Services, nil
+}
+
+// DeviceInfo 设备信息
+type DeviceInfo struct {
+	DeviceToken string `json:"device_token"`
+	DeviceName  string `json:"device_name"`
+	OS          string `json:"os"`
+	Arch        string `json:"arch"`
+	Hostname    string `json:"hostname"`
+	Status      string `json:"status"`
+	LastUsedAt  string `json:"last_used_at"`
+	CreatedAt   string `json:"created_at"`
+	IsCurrent   bool   `json:"is_current"`
+}
+
+// GetMyDevices 获取我的设备列表
+func (c *DesktopClient) GetMyDevices() ([]*DeviceInfo, error) {
+	if !c.IsAuthenticated() {
+		return nil, fmt.Errorf("未认证")
+	}
+
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	defer cancel()
+
+	req := &pb.GetMyDevicesRequest{
+		DesktopId: c.desktopID,
+	}
+
+	resp, err := c.grpcClient.GetMyDevices(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("获取设备列表失败: %w", err)
+	}
+
+	devices := make([]*DeviceInfo, 0, len(resp.Devices))
+	for _, d := range resp.Devices {
+		devices = append(devices, &DeviceInfo{
+			DeviceToken: d.DeviceToken,
+			DeviceName:  d.DeviceName,
+			OS:          d.Os,
+			Arch:        d.Arch,
+			Hostname:    d.Hostname,
+			Status:      d.Status,
+			LastUsedAt:  d.LastUsedAt,
+			CreatedAt:   d.CreatedAt,
+			IsCurrent:   d.IsCurrent,
+		})
+	}
+
+	return devices, nil
+}
+
+// OfflineDevice 设备下线
+func (c *DesktopClient) OfflineDevice(deviceToken string) error {
+	if !c.IsAuthenticated() {
+		return fmt.Errorf("未认证")
+	}
+
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	defer cancel()
+
+	req := &pb.OfflineDeviceRequest{
+		DesktopId:   c.desktopID,
+		DeviceToken: deviceToken,
+	}
+
+	resp, err := c.grpcClient.OfflineDevice(ctx, req)
+	if err != nil {
+		return fmt.Errorf("设备下线失败: %w", err)
+	}
+
+	if !resp.Success {
+		return fmt.Errorf(resp.Message)
+	}
+
+	return nil
+}
+
+// DeleteDevice 删除设备
+func (c *DesktopClient) DeleteDevice(deviceToken string) error {
+	if !c.IsAuthenticated() {
+		return fmt.Errorf("未认证")
+	}
+
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	defer cancel()
+
+	req := &pb.DeleteDeviceRequest{
+		DesktopId:   c.desktopID,
+		DeviceToken: deviceToken,
+	}
+
+	resp, err := c.grpcClient.DeleteDevice(ctx, req)
+	if err != nil {
+		return fmt.Errorf("删除设备失败: %w", err)
+	}
+
+	if !resp.Success {
+		return fmt.Errorf(resp.Message)
+	}
+
+	return nil
+}
+
+// ToggleFavorite 切换服务收藏状态
+func (c *DesktopClient) ToggleFavorite(serviceID string) (bool, error) {
+	c.mu.RLock()
+	desktopID := c.desktopID
+	c.mu.RUnlock()
+
+	if desktopID == 0 {
+		return false, fmt.Errorf("未认证")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	resp, err := c.grpcClient.ToggleFavorite(ctx, &pb.ToggleFavoriteRequest{
+		DesktopId: desktopID,
+		ServiceId: serviceID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("切换收藏状态失败: %w", err)
+	}
+
+	if !resp.Success {
+		return false, fmt.Errorf(resp.Message)
+	}
+
+	return resp.IsFavorite, nil
+}
+
+// GetFavoriteServices 获取收藏的服务列表
+func (c *DesktopClient) GetFavoriteServices() ([]string, error) {
+	c.mu.RLock()
+	desktopID := c.desktopID
+	c.mu.RUnlock()
+
+	if desktopID == 0 {
+		return nil, fmt.Errorf("未认证")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	resp, err := c.grpcClient.GetFavoriteServices(ctx, &pb.GetFavoriteServicesRequest{
+		DesktopId: desktopID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("获取收藏列表失败: %w", err)
+	}
+
+	return resp.ServiceIds, nil
 }

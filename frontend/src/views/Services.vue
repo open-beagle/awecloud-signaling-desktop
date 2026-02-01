@@ -7,6 +7,14 @@
           <h2>我的服务</h2>
           <div class="filter-tags">
             <el-tag 
+              :class="{ 'filter-tag': true, 'active': filterStatus.favorite }"
+              @click="toggleFilter('favorite')"
+              type="warning"
+              effect="plain"
+            >
+              ⭐ 收藏 {{ favoriteCount }}
+            </el-tag>
+            <el-tag 
               :class="{ 'filter-tag': true, 'active': filterStatus.online }"
               @click="toggleFilter('online')"
               type="success"
@@ -76,6 +84,7 @@
             :key="service.instance_id"
             :service="service"
             :index="index + 1"
+            @favorite-changed="handleFavoriteChanged"
           />
         </div>
       </div>
@@ -104,13 +113,17 @@ const searchInputRef = ref()
 // 默认筛选：优先在线 > 离线
 const getDefaultFilterStatus = () => {
   const hasOnline = servicesStore.services.some(s => s.status === 'online')
+  const hasFavorite = servicesStore.services.some(s => s.is_favorite)
   
-  if (hasOnline) {
-    // 有在线：显示在线
-    return { online: true, offline: false }
+  if (hasFavorite) {
+    // 有收藏：显示收藏
+    return { favorite: true, online: false, offline: false }
+  } else if (hasOnline) {
+    // 无收藏但有在线：显示在线
+    return { favorite: false, online: true, offline: false }
   } else {
-    // 无在线：显示离线
-    return { online: false, offline: true }
+    // 无收藏无在线：显示离线
+    return { favorite: false, online: false, offline: true }
   }
 }
 
@@ -140,6 +153,10 @@ const handleSearchBlur = () => {
 }
 
 // 统计数量
+const favoriteCount = computed(() => {
+  return servicesStore.services.filter(service => service.is_favorite).length
+})
+
 const onlineCount = computed(() => {
   return servicesStore.services.filter(service => service.status === 'online').length
 })
@@ -149,7 +166,7 @@ const offlineCount = computed(() => {
 })
 
 // 切换筛选状态
-const toggleFilter = (type: 'online' | 'offline') => {
+const toggleFilter = (type: 'favorite' | 'online' | 'offline') => {
   filterStatus.value[type] = !filterStatus.value[type]
 }
 
@@ -169,9 +186,13 @@ const filteredServices = computed(() => {
 
   // 按状态过滤
   services = services.filter(service => {
+    const isFavorite = service.is_favorite
     const isOnline = service.status === 'online'
     const isOffline = service.status !== 'online'
 
+    // 如果收藏筛选开启，且服务已收藏，则显示
+    if (filterStatus.value.favorite && isFavorite) return true
+    
     // 如果在线筛选开启，且服务在线，则显示
     if (filterStatus.value.online && isOnline) return true
     
@@ -181,7 +202,12 @@ const filteredServices = computed(() => {
     return false
   })
 
-  return services
+  // 收藏的服务优先显示
+  return services.sort((a, b) => {
+    if (a.is_favorite && !b.is_favorite) return -1
+    if (!a.is_favorite && b.is_favorite) return 1
+    return 0
+  })
 })
 
 onMounted(async () => {
@@ -208,6 +234,11 @@ const loadServices = async () => {
 const handleRefresh = async () => {
   await loadServices()
   ElMessage.success('刷新成功')
+}
+
+const handleFavoriteChanged = async () => {
+  // 收藏状态变化后重新加载服务列表
+  await loadServices()
 }
 </script>
 

@@ -7,12 +7,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
+
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/banner"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/client"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/tailscale"
 	appVersion "github.com/open-beagle/awecloud-signaling-desktop/internal/version"
-	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 // App struct
@@ -221,6 +222,7 @@ type ServiceInfo struct {
 	AgentTailscaleIP string `json:"agent_tailscale_ip,omitempty"`
 	ListenPort       int    `json:"listen_port,omitempty"`
 	TargetAddr       string `json:"target_addr,omitempty"`
+	ServiceID        string `json:"service_id,omitempty"` // 服务唯一标识
 }
 
 func (a *App) GetServices() ([]*ServiceInfo, error) {
@@ -234,6 +236,17 @@ func (a *App) GetServices() ([]*ServiceInfo, error) {
 	// 从客户端获取已授权服务
 	authorizedServices := a.desktopClient.GetAuthorizedServices()
 	log.Printf("[App] Got %d authorized services", len(authorizedServices))
+
+	// 获取收藏列表
+	favoriteIDs, err := a.desktopClient.GetFavoriteServices()
+	if err != nil {
+		log.Printf("[App] Failed to get favorite services: %v", err)
+		favoriteIDs = []string{} // 失败时使用空列表
+	}
+	favoriteMap := make(map[string]bool)
+	for _, id := range favoriteIDs {
+		favoriteMap[id] = true
+	}
 
 	// 转换为前端格式
 	services := make([]*ServiceInfo, 0, len(authorizedServices))
@@ -249,6 +262,10 @@ func (a *App) GetServices() ([]*ServiceInfo, error) {
 			}
 		}
 
+		// 服务 ID 就是 svc.Id
+		serviceID := svc.Id
+		isFavorite := favoriteMap[serviceID]
+
 		services = append(services, &ServiceInfo{
 			InstanceID:       uint(i + 1), // 临时使用索引作为ID
 			InstanceName:     svc.Name,
@@ -257,10 +274,11 @@ func (a *App) GetServices() ([]*ServiceInfo, error) {
 			ServicePort:      0,
 			ServiceIP:        "",
 			Status:           "online",
-			IsFavorite:       false,
+			IsFavorite:       isFavorite,
 			AgentTailscaleIP: agentIP,
 			ListenPort:       listenPort,
 			TargetAddr:       svc.TargetAddr,
+			ServiceID:        serviceID, // 添加服务 ID 字段
 		})
 	}
 
@@ -385,6 +403,33 @@ type TunnelStatus struct {
 	Error     string `json:"error"`
 }
 
+// GRPCStatus gRPC 连接状态
+type GRPCStatus struct {
+	Connected     bool   `json:"connected"`
+	ServerAddress string `json:"server_address"`
+	Error         string `json:"error"`
+}
+
+// GetGRPCStatus 获取 gRPC 连接状态
+func (a *App) GetGRPCStatus() *GRPCStatus {
+	status := &GRPCStatus{
+		Connected:     false,
+		ServerAddress: config.GlobalConfig.ServerAddress,
+	}
+
+	if a.desktopClient == nil {
+		status.Error = "未连接"
+		return status
+	}
+
+	status.Connected = a.desktopClient.IsAuthenticated()
+	if !status.Connected {
+		status.Error = "未认证"
+	}
+
+	return status
+}
+
 // GetTunnelStatus 获取隧道连接状态
 func (a *App) GetTunnelStatus() *TunnelStatus {
 	status := &TunnelStatus{
@@ -450,31 +495,175 @@ func (a *App) QuitApp() {
 }
 
 // ToggleFavorite 切换服务收藏状态
-func (a *App) ToggleFavorite(instanceID uint, desktopID uint64) error {
-	log.Printf("[App] ToggleFavorite: instanceID=%d, desktopID=%d", instanceID, desktopID)
-	// TODO: 实现收藏功能，需要调用服务器API
-	return nil
+func (a *App) ToggleFavorite(serviceID string) (bool, error) {
+	log.Printf("[App] ToggleFavorite: serviceID=%s", serviceID)
+
+	if a.desktopClient == nil {
+		return false, fmt.Errorf("未登录")
+	}
+
+	isFavorite, err := a.desktopClient.ToggleFavorite(serviceID)
+	if err != nil {
+		return false, err
+	}
+
+	log.Printf("[App] Service %s favorite status: %v", serviceID, isFavorite)
+	return isFavorite, nil
+}
+
+// HostInfo 主机信息
+type HostInfo struct {
+	HostID       string `json:"host_id"`
+	HostName     string `json:"host_name"`
+	TunnelIP     string `json:"tunnel_ip"`
+	ServiceCount int    `json:"service_count"`
+	Status       string `json:"status"`
+	LastSeen     string `json:"last_seen"`
+}
+
+// GetHosts 获取已授权主机列表
+func (a *App) GetHosts() ([]*HostInfo, error) {
+	log.Printf("[App] GetHosts called")
+
+	if a.desktopClient == nil {
+		return nil, fmt.Errorf("未登录")
+	}
+
+	clientHosts, err := a.desktopClient.GetAuthorizedHosts()
+	if err != nil {
+		return nil, err
+	}
+
+	// 转换为 app.HostInfo 类型
+	hosts := make([]*HostInfo, 0, len(clientHosts))
+	for _, h := range clientHosts {
+		hosts = append(hosts, &HostInfo{
+			HostID:       h.HostID,
+			HostName:     h.HostName,
+			TunnelIP:     h.TunnelIP,
+			ServiceCount: h.ServiceCount,
+			Status:       h.Status,
+			LastSeen:     h.LastSeen,
+		})
+	}
+
+	log.Printf("[App] Returning %d hosts", len(hosts))
+	return hosts, nil
+}
+
+// GetHostServices 获取指定主机的服务列表
+func (a *App) GetHostServices(hostID string) ([]*ServiceInfo, error) {
+	log.Printf("[App] GetHostServices: hostID=%s", hostID)
+
+	if a.desktopClient == nil {
+		return nil, fmt.Errorf("未登录")
+	}
+
+	services, err := a.desktopClient.GetHostServices(hostID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 获取收藏列表
+	favoriteIDs, err := a.desktopClient.GetFavoriteServices()
+	if err != nil {
+		log.Printf("[App] Failed to get favorite services: %v", err)
+		favoriteIDs = []string{}
+	}
+	favoriteMap := make(map[string]bool)
+	for _, id := range favoriteIDs {
+		favoriteMap[id] = true
+	}
+
+	// 转换为前端格式
+	result := make([]*ServiceInfo, 0, len(services))
+	for i, svc := range services {
+		// 解析 listen_addr（格式：IP:端口）
+		var agentIP string
+		var listenPort int
+		if svc.ListenAddr != "" {
+			parts := strings.Split(svc.ListenAddr, ":")
+			if len(parts) == 2 {
+				agentIP = parts[0]
+				fmt.Sscanf(parts[1], "%d", &listenPort)
+			}
+		}
+
+		serviceID := svc.Id
+		isFavorite := favoriteMap[serviceID]
+
+		result = append(result, &ServiceInfo{
+			InstanceID:       uint(i + 1),
+			InstanceName:     svc.Name,
+			AgentName:        svc.AgentName,
+			Description:      "",
+			ServicePort:      0,
+			ServiceIP:        "",
+			Status:           "online", // 主机在线则服务在线
+			IsFavorite:       isFavorite,
+			AgentTailscaleIP: agentIP,
+			ListenPort:       listenPort,
+			TargetAddr:       svc.TargetAddr,
+			ServiceID:        serviceID,
+		})
+	}
+
+	log.Printf("[App] Returning %d services for host %s", len(result), hostID)
+	return result, nil
 }
 
 // GetDevices 获取设备列表
 func (a *App) GetDevices() ([]*DeviceInfo, error) {
 	log.Printf("[App] GetDevices called")
-	// TODO: 实现获取设备列表功能
-	return []*DeviceInfo{}, nil
+
+	if a.desktopClient == nil {
+		return nil, fmt.Errorf("未登录")
+	}
+
+	devices, err := a.desktopClient.GetMyDevices()
+	if err != nil {
+		return nil, err
+	}
+
+	// 转换为前端格式
+	result := make([]*DeviceInfo, 0, len(devices))
+	for _, d := range devices {
+		result = append(result, &DeviceInfo{
+			DeviceToken: d.DeviceToken,
+			DeviceName:  d.DeviceName,
+			OS:          d.OS,
+			Arch:        d.Arch,
+			Hostname:    d.Hostname,
+			Status:      d.Status,
+			LastUsedAt:  d.LastUsedAt,
+			CreatedAt:   d.CreatedAt,
+			IsCurrent:   d.IsCurrent,
+		})
+	}
+
+	return result, nil
 }
 
 // OfflineDevice 让设备下线
 func (a *App) OfflineDevice(deviceToken string) error {
 	log.Printf("[App] OfflineDevice: deviceToken=%s", deviceToken)
-	// TODO: 实现设备下线功能
-	return nil
+
+	if a.desktopClient == nil {
+		return fmt.Errorf("未登录")
+	}
+
+	return a.desktopClient.OfflineDevice(deviceToken)
 }
 
 // DeleteDevice 删除设备
 func (a *App) DeleteDevice(deviceToken string) error {
 	log.Printf("[App] DeleteDevice: deviceToken=%s", deviceToken)
-	// TODO: 实现删除设备功能
-	return nil
+
+	if a.desktopClient == nil {
+		return fmt.Errorf("未登录")
+	}
+
+	return a.desktopClient.DeleteDevice(deviceToken)
 }
 
 // CheckVersion 检查版本更新
@@ -610,4 +799,70 @@ func (w *logWriter) Write(p []byte) (n int, err error) {
 
 	fmt.Println(logLine)
 	return len(p), nil
+}
+
+// ConnectService 快速连接服务
+func (a *App) ConnectService(serviceID string) (string, error) {
+	log.Printf("[App] ConnectService: serviceID=%s", serviceID)
+
+	if a.desktopClient == nil {
+		return "", fmt.Errorf("未登录")
+	}
+
+	// 获取服务列表，找到对应的服务
+	services, err := a.GetServices()
+	if err != nil {
+		return "", err
+	}
+
+	var targetService *ServiceInfo
+	for _, svc := range services {
+		if svc.ServiceID == serviceID {
+			targetService = svc
+			break
+		}
+	}
+
+	if targetService == nil {
+		return "", fmt.Errorf("服务不存在")
+	}
+
+	// 检查服务是否在线
+	if targetService.Status != "online" {
+		return "", fmt.Errorf("服务离线")
+	}
+
+	// 构建连接地址
+	address := fmt.Sprintf("%s:%d", targetService.AgentTailscaleIP, targetService.ListenPort)
+
+	// 根据服务名称判断服务类型，生成连接命令
+	serviceName := strings.ToLower(targetService.InstanceName)
+	var command string
+
+	if strings.Contains(serviceName, "ssh") {
+		// SSH 服务
+		command = fmt.Sprintf("ssh root@%s -p %d", targetService.AgentTailscaleIP, targetService.ListenPort)
+	} else if strings.Contains(serviceName, "mysql") {
+		// MySQL 服务
+		command = fmt.Sprintf("mysql -h %s -P %d -u root -p", targetService.AgentTailscaleIP, targetService.ListenPort)
+	} else if strings.Contains(serviceName, "redis") {
+		// Redis 服务
+		command = fmt.Sprintf("redis-cli -h %s -p %d", targetService.AgentTailscaleIP, targetService.ListenPort)
+	} else if strings.Contains(serviceName, "postgres") || strings.Contains(serviceName, "pg") {
+		// PostgreSQL 服务
+		command = fmt.Sprintf("psql -h %s -p %d -U postgres", targetService.AgentTailscaleIP, targetService.ListenPort)
+	} else if strings.Contains(serviceName, "mongo") {
+		// MongoDB 服务
+		command = fmt.Sprintf("mongo --host %s --port %d", targetService.AgentTailscaleIP, targetService.ListenPort)
+	} else if strings.Contains(serviceName, "http") || strings.Contains(serviceName, "web") ||
+		strings.Contains(serviceName, "grafana") || strings.Contains(serviceName, "kibana") {
+		// HTTP/HTTPS 服务
+		command = fmt.Sprintf("http://%s", address)
+	} else {
+		// 其他服务，返回地址
+		command = address
+	}
+
+	log.Printf("[App] Generated connection command: %s", command)
+	return command, nil
 }

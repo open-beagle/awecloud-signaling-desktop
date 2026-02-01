@@ -3,9 +3,12 @@ package main
 import (
 	"embed"
 	"log"
+	"os"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
+
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/singleton"
 )
 
 //go:embed frontend/dist
@@ -21,6 +24,12 @@ var (
 )
 
 func main() {
+	// 单实例检查
+	if !singleton.CheckSingleInstance() {
+		log.Println("应用已在运行中，退出当前实例")
+		os.Exit(0)
+	}
+	defer singleton.ReleaseSingleInstance()
 	// 创建应用实例
 	app := NewApp()
 

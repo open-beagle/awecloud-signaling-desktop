@@ -9,6 +9,8 @@ export {
 
 export {
     DeviceInfo,
+    GRPCStatus,
+    HostInfo,
     SavedCredentials,
     ServiceInfo,
     TunnelStatus,

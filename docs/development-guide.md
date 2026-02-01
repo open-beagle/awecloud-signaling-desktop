@@ -1,275 +1,241 @@
 # Desktop 开发指南
 
-## 项目结构
+## 工作目录说明
+
+### PowerShell 脚本（推荐）
+
+PowerShell 脚本（`.ps1`）设计为**从项目根目录运行**：
 
 ```
-desktop/
-├── internal/              # Go 后端代码
-│   ├── client/           # Desktop-Web 线程（gRPC 客户端）
-│   ├── frp/              # Desktop-FRP 线程（FRP 客户端）
-│   ├── config/           # 配置管理
-│   └── models/           # 数据模型
-├── frontend/             # Vue 3 前端代码
-│   ├── src/
-│   │   ├── views/       # 页面组件
-│   │   ├── components/  # 通用组件
-│   │   ├── stores/      # Pinia 状态管理
-│   │   └── router/      # Vue Router 配置
-│   └── wailsjs/         # Wails 自动生成的绑定
-├── app.go                # Wails 应用主结构
-└── main.go               # 应用入口
+C:\Users\Mengk\go\src\github.com\open-beagle\awecloud-signaling-server\
 ```
 
-## 开发环境设置
+优势：
+- 统一的工作目录，便于管理
+- 自动请求管理员权限（VPN 功能需要）
+- 更好的错误处理和输出
+- 支持参数传递
 
-### 前置要求
+### Batch 脚本（传统）
 
-- Go 1.25+
-- Node.js 18+
-- Wails CLI v3.0.0+
+Batch 脚本（`.bat`）需要**从 desktop 子目录运行**：
 
-### 安装 Wails CLI
+```
+C:\Users\Mengk\go\src\github.com\open-beagle\awecloud-signaling-server\desktop\
+```
+
+## 开发模式
+
+### 使用 PowerShell（推荐）
+
+```powershell
+# 在项目根目录运行
+cd C:\Users\Mengk\go\src\github.com\open-beagle\awecloud-signaling-server
+
+# 启动开发服务器（自动请求管理员权限）
+powershell -ExecutionPolicy Bypass -File desktop\scripts\dev.ps1
+
+# 指定版本
+powershell -ExecutionPolicy Bypass -File desktop\scripts\dev.ps1 -BuildVersion "v0.3.0"
+
+# 指定端口（默认 34115）
+powershell -ExecutionPolicy Bypass -File desktop\scripts\dev.ps1 -Port 35000
+```
+
+### 使用 Batch
 
 ```bash
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
+# 切换到 desktop 目录
+cd desktop
+
+# 启动开发服务器
+scripts\dev.bat
 ```
 
-### 安装依赖
+## 构建
+
+### 使用 PowerShell（推荐）
+
+```powershell
+# 在项目根目录运行
+cd C:\Users\Mengk\go\src\github.com\open-beagle\awecloud-signaling-server
+
+# 构建（默认 amd64）
+powershell -ExecutionPolicy Bypass -File desktop\scripts\build.ps1
+
+# 指定版本和架构
+powershell -ExecutionPolicy Bypass -File desktop\scripts\build.ps1 -BuildVersion "v0.3.0" -GoArch "amd64"
+
+# 指定服务器地址
+powershell -ExecutionPolicy Bypass -File desktop\scripts\build.ps1 -BuildAddress "https://api.example.com"
+```
+
+### 使用 Batch
 
 ```bash
-# 安装 Go 依赖
-go mod download
+# 切换到 desktop 目录
+cd desktop
 
-# 安装前端依赖
-cd frontend
-npm install
-cd ..
+# 构建
+scripts\build.bat
+
+# 指定版本
+set BUILD_VERSION=v0.3.0
+scripts\build.bat
 ```
 
-## 开发流程
+## 输出位置
 
-### 1. 启动开发模式
+构建输出统一在：
 
-```bash
-# 方式 1: 使用 Wails CLI
-wails dev
-
-# 方式 2: 使用脚本
-./scripts/dev.sh
+```
+desktop\build\bin\
+├── awecloud-signaling-desktop.exe              # 默认输出
+└── awecloud-signaling-v0.2.0-windows-amd64.exe # 带版本号的副本
 ```
 
-开发模式特性：
-- 前端热重载
-- Go 代码自动重新编译
-- 实时调试
+## 管理员权限说明
 
-### 2. 修改代码
+### 为什么需要管理员权限？
 
-#### 后端开发
+Desktop 应用使用 Tailscale VPN 功能，需要：
+- 创建虚拟网络适配器（Wintun）
+- 修改系统路由表
+- 管理网络连接
 
-修改 Go 代码后，Wails 会自动重新编译。
+### PowerShell 自动提权
 
-**暴露新方法给前端**：
+`dev.ps1` 脚本会自动检测权限并请求提升：
 
-1. 在 `app.go` 中添加方法：
-```go
-func (a *App) MyNewMethod(param string) (string, error) {
-    // 实现逻辑
-    return "result", nil
-}
+```powershell
+# 脚本会自动检测并弹出 UAC 提示
+powershell -ExecutionPolicy Bypass -File desktop\scripts\dev.ps1
 ```
 
-2. 重新生成绑定：
-```bash
-wails generate module
+### Batch 手动提权
+
+`dev.bat` 脚本也会自动请求管理员权限，但体验不如 PowerShell。
+
+### 手动以管理员身份运行
+
+右键点击 PowerShell 图标 → "以管理员身份运行"，然后执行脚本。
+
+## Wintun 驱动
+
+### 自动下载
+
+开发脚本会自动下载 Wintun 驱动（v0.14.1）到：
+
+```
+desktop\build\bin\wintun.dll
 ```
 
-3. 在前端使用：
-```typescript
-import { MyNewMethod } from '../../wailsjs/go/main/App'
+### 手动下载
 
-const result = await MyNewMethod("param")
+如果自动下载失败，可以手动下载：
+
+1. 访问：https://www.wintun.net/builds/wintun-0.14.1.zip
+2. 解压后复制 `bin\amd64\wintun.dll` 到 `desktop\build\bin\`
+
+## 常见问题
+
+### 1. 执行策略错误
+
+```
+无法加载文件 dev.ps1，因为在此系统上禁止运行脚本
 ```
 
-#### 前端开发
+解决方案：使用 `-ExecutionPolicy Bypass` 参数
 
-修改 Vue 组件后会自动热重载。
-
-**添加新页面**：
-
-1. 在 `frontend/src/views/` 创建组件
-2. 在 `frontend/src/router/index.ts` 添加路由
-3. 在需要的地方使用 `router.push()` 导航
-
-**添加新状态**：
-
-1. 在 `frontend/src/stores/` 创建 store
-2. 使用 Pinia 的 `defineStore`
-3. 在组件中使用 `useXxxStore()`
-
-### 3. 构建应用
-
-```bash
-# 构建当前平台
-wails build
-
-# 构建指定平台
-wails build -platform windows/amd64
-
-# 使用脚本
-./scripts/build.sh
+```powershell
+powershell -ExecutionPolicy Bypass -File desktop\scripts\dev.ps1
 ```
 
-输出位置：`build/bin/signal-desktop`
+### 2. 权限不足
 
-## 架构说明
-
-### 单进程双线程架构
-
-Desktop 应用是一个单一进程，包含两个工作线程：
-
-1. **Desktop-Web 线程** (`internal/client/`)
-   - 通过 gRPC 连接 Server
-   - 处理认证和服务查询
-   - 与 Desktop-FRP 线程通信
-
-2. **Desktop-FRP 线程** (`internal/frp/`)
-   - 通过 WebSocket 连接 Server-FRP
-   - 管理 STCP Visitor
-   - 建立本地端口映射
-
-### 进程内通信
-
-两个线程通过 Go channel 通信：
-
-```go
-// 命令通道：Desktop-Web → Desktop-FRP
-commandChan chan *models.VisitorCommand
-
-// 状态通道：Desktop-FRP → Desktop-Web
-statusChan chan *models.VisitorStatus
+```
+[WARN] Not running as Administrator!
 ```
 
-### 前后端通信
+解决方案：
+- PowerShell 脚本会自动请求提权
+- 或手动以管理员身份运行 PowerShell
 
-前端通过 Wails 绑定调用 Go 方法：
+### 3. Wintun 下载失败
 
-```typescript
-// 前端调用
-import { Login } from '../../wailsjs/go/main/App'
-await Login(serverAddr, clientId, clientSecret)
+```
+[ERROR] Failed to download wintun
 ```
 
-```go
-// 后端实现
-func (a *App) Login(serverAddr, clientID, clientSecret string) error {
-    // 实现逻辑
-}
+解决方案：
+- 检查网络连接
+- 手动下载并放置到 `desktop\build\bin\wintun.dll`
+- VPN 功能将不可用，但应用仍可运行
+
+### 4. 端口被占用
+
+```
+Error: listen tcp :34115: bind: Only one usage of each socket address
+```
+
+解决方案：指定其他端口
+
+```powershell
+powershell -ExecutionPolicy Bypass -File desktop\scripts\dev.ps1 -Port 35000
 ```
 
 ## 调试技巧
 
-### 1. 查看日志
+### 1. 查看详细日志
 
-开发模式下，日志会输出到终端：
+开发模式会显示详细的构建和运行日志。
 
-```go
-log.Printf("[Desktop-Web] Message: %s", msg)
-```
+### 2. 前端热重载
 
-### 2. 前端调试
+修改 `desktop\frontend\src\` 下的文件会自动触发热重载。
 
-在开发模式下，可以使用浏览器开发者工具：
-- 右键 → 检查元素
-- 或按 F12
+### 3. 后端重启
 
-### 3. Go 调试
+修改 Go 代码后，Wails 会自动重新编译并重启应用。
 
-使用 Delve 调试器：
+### 4. 清理缓存
 
-```bash
-# 安装 Delve
-go install github.com/go-delve/delve/cmd/dlv@latest
+```powershell
+# 清理前端缓存
+Remove-Item desktop\frontend\node_modules -Recurse -Force
+Remove-Item desktop\frontend\dist -Recurse -Force
 
-# 调试
-dlv debug
-```
+# 清理构建缓存
+Remove-Item desktop\build -Recurse -Force
+Remove-Item desktop\.tmp -Recurse -Force
 
-## 常见问题
-
-### 1. 前端依赖安装失败
-
-```bash
-# 清理缓存
-cd frontend
-rm -rf node_modules package-lock.json
+# 重新安装依赖
+cd desktop\frontend
 npm install
 ```
 
-### 2. Wails 绑定未更新
+## 目录结构
 
-```bash
-# 重新生成绑定
-wails generate module
 ```
-
-### 3. 构建失败
-
-```bash
-# 清理构建缓存
-wails build -clean
+awecloud-signaling-server\          # 项目根目录（PowerShell 脚本工作目录）
+├── desktop\                        # Desktop 子项目（Batch 脚本工作目录）
+│   ├── scripts\
+│   │   ├── dev.ps1                # PowerShell 开发脚本（推荐）
+│   │   ├── build.ps1              # PowerShell 构建脚本（推荐）
+│   │   ├── dev.bat                # Batch 开发脚本
+│   │   └── build.bat              # Batch 构建脚本
+│   ├── frontend\                  # Vue 3 前端
+│   ├── internal\                  # Go 后端
+│   ├── build\
+│   │   └── bin\                   # 构建输出
+│   │       ├── wintun.dll         # Wintun 驱动（自动下载）
+│   │       └── *.exe              # 可执行文件
+│   └── .tmp\                      # 临时文件（gitignored）
+└── ...
 ```
-
-### 4. FRP 连接失败
-
-检查：
-- Server 地址是否正确
-- Server-FRP 是否运行在端口 7000
-- 网络连接是否正常
-
-## 测试
-
-### 单元测试
-
-```bash
-# 运行 Go 测试
-go test ./...
-
-# 运行前端测试（需要配置）
-cd frontend
-npm test
-```
-
-### 集成测试
-
-1. 启动 Server
-2. 启动 Agent
-3. 启动 Desktop 应用
-4. 测试完整流程
-
-## 发布流程
-
-### 1. 更新版本号
-
-在 `wails.json` 中更新版本号。
-
-### 2. 构建发布版本
-
-```bash
-# Windows
-wails build -platform windows/amd64 -clean
-
-# 输出: build/bin/signal-desktop.exe
-```
-
-### 3. 打包（可选）
-
-使用 NSIS 或 Inno Setup 创建安装程序。
 
 ## 参考资料
 
-- [Wails 文档](https://wails.io/docs/introduction)
-- [Vue 3 文档](https://vuejs.org/)
-- [Element Plus 文档](https://element-plus.org/)
-- [Pinia 文档](https://pinia.vuejs.org/)
-- [主项目设计文档](../../docs/design_desktop.md)
+- [Wails v3 文档](https://v3alpha.wails.io/)
+- [Wintun 驱动](https://www.wintun.net/)
+- [Tailscale 文档](https://tailscale.com/kb/)

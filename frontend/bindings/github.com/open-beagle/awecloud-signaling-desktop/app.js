@@ -46,6 +46,15 @@ export function ClearCredentials() {
 }
 
 /**
+ * ConnectService 快速连接服务
+ * @param {string} serviceID
+ * @returns {$CancellablePromise<string>}
+ */
+export function ConnectService(serviceID) {
+    return $Call.ByID(1728507696, serviceID);
+}
+
+/**
  * DeleteDevice 删除设备
  * @param {string} deviceToken
  * @returns {$CancellablePromise<void>}
@@ -74,6 +83,37 @@ export function GetDevices() {
 }
 
 /**
+ * GetGRPCStatus 获取 gRPC 连接状态
+ * @returns {$CancellablePromise<$models.GRPCStatus | null>}
+ */
+export function GetGRPCStatus() {
+    return $Call.ByID(2380737917).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType10($result);
+    }));
+}
+
+/**
+ * GetHostServices 获取指定主机的服务列表
+ * @param {string} hostID
+ * @returns {$CancellablePromise<($models.ServiceInfo | null)[]>}
+ */
+export function GetHostServices(hostID) {
+    return $Call.ByID(654294273, hostID).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType13($result);
+    }));
+}
+
+/**
+ * GetHosts 获取已授权主机列表
+ * @returns {$CancellablePromise<($models.HostInfo | null)[]>}
+ */
+export function GetHosts() {
+    return $Call.ByID(4245603774).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType16($result);
+    }));
+}
+
+/**
  * GetLogLevel 获取当前日志级别
  * @returns {$CancellablePromise<string>}
  */
@@ -86,7 +126,7 @@ export function GetLogLevel() {
  */
 export function GetLogs() {
     return $Call.ByID(1743981476).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType9($result);
+        return $$createType17($result);
     }));
 }
 
@@ -95,7 +135,7 @@ export function GetLogs() {
  */
 export function GetServices() {
     return $Call.ByID(839930963).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType12($result);
+        return $$createType13($result);
     }));
 }
 
@@ -105,7 +145,7 @@ export function GetServices() {
  */
 export function GetTunnelStatus() {
     return $Call.ByID(1614806691).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType14($result);
+        return $$createType19($result);
     }));
 }
 
@@ -114,7 +154,7 @@ export function GetTunnelStatus() {
  */
 export function GetVersion() {
     return $Call.ByID(1049863377).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType16($result);
+        return $$createType21($result);
     }));
 }
 
@@ -200,12 +240,11 @@ export function ShowFromTray() {
 
 /**
  * ToggleFavorite 切换服务收藏状态
- * @param {number} instanceID
- * @param {number} desktopID
- * @returns {$CancellablePromise<void>}
+ * @param {string} serviceID
+ * @returns {$CancellablePromise<boolean>}
  */
-export function ToggleFavorite(instanceID, desktopID) {
-    return $Call.ByID(1319626997, instanceID, desktopID);
+export function ToggleFavorite(serviceID) {
+    return $Call.ByID(1319626997, serviceID);
 }
 
 // Private type creation functions
@@ -218,11 +257,16 @@ const $$createType5 = $Create.Nullable($$createType4);
 const $$createType6 = $models.DeviceInfo.createFrom;
 const $$createType7 = $Create.Nullable($$createType6);
 const $$createType8 = $Create.Array($$createType7);
-const $$createType9 = $Create.Array($Create.Any);
-const $$createType10 = $models.ServiceInfo.createFrom;
-const $$createType11 = $Create.Nullable($$createType10);
-const $$createType12 = $Create.Array($$createType11);
-const $$createType13 = $models.TunnelStatus.createFrom;
-const $$createType14 = $Create.Nullable($$createType13);
-const $$createType15 = $models.VersionInfo.createFrom;
-const $$createType16 = $Create.Nullable($$createType15);
+const $$createType9 = $models.GRPCStatus.createFrom;
+const $$createType10 = $Create.Nullable($$createType9);
+const $$createType11 = $models.ServiceInfo.createFrom;
+const $$createType12 = $Create.Nullable($$createType11);
+const $$createType13 = $Create.Array($$createType12);
+const $$createType14 = $models.HostInfo.createFrom;
+const $$createType15 = $Create.Nullable($$createType14);
+const $$createType16 = $Create.Array($$createType15);
+const $$createType17 = $Create.Array($Create.Any);
+const $$createType18 = $models.TunnelStatus.createFrom;
+const $$createType19 = $Create.Nullable($$createType18);
+const $$createType20 = $models.VersionInfo.createFrom;
+const $$createType21 = $Create.Nullable($$createType20);

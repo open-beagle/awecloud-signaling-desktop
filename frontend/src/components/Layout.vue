@@ -6,6 +6,16 @@
         <img src="../assets/logo.png" alt="Logo" class="logo" />
         <span class="app-name">信令桌面</span>
         <span class="server-address" v-if="authStore.serverAddress">{{ authStore.serverAddress }}</span>
+        
+        <!-- gRPC 状态 -->
+        <el-tooltip :content="grpcTooltip" placement="bottom">
+          <div class="status-indicator grpc-status">
+            <el-icon v-if="grpcStatus.connected" class="status-icon connected"><CircleCheck /></el-icon>
+            <el-icon v-else class="status-icon disconnected"><CircleClose /></el-icon>
+            <span class="status-text">gRPC</span>
+          </div>
+        </el-tooltip>
+        
         <!-- 隧道状态 -->
         <el-tooltip :content="tunnelTooltip" placement="bottom">
           <div class="tunnel-status" @click="handleTunnelClick">
@@ -13,6 +23,7 @@
             <el-icon v-else-if="tunnelStatus.connected" class="tunnel-icon connected"><CircleCheck /></el-icon>
             <el-icon v-else class="tunnel-icon disconnected"><CircleClose /></el-icon>
             <span v-if="tunnelStatus.connected" class="tunnel-ip">{{ tunnelStatus.ip }}</span>
+            <span v-else class="tunnel-text">Tunnel</span>
           </div>
         </el-tooltip>
       </div>
@@ -28,28 +39,15 @@
           <span>我的服务</span>
         </div>
         
-        <!-- 我的设备 -->
+        <!-- 我的主机 -->
         <div 
           class="nav-item"
-          :class="{ active: currentRoute === '/devices' }"
-          @click="navigateTo('/devices')"
+          :class="{ active: currentRoute.startsWith('/hosts') }"
+          @click="navigateTo('/hosts')"
         >
           <el-icon><Monitor /></el-icon>
-          <span>我的设备</span>
+          <span>我的主机</span>
         </div>
-        
-        <!-- 查看日志 -->
-        <div 
-          class="nav-item"
-          :class="{ active: currentRoute === '/logs' }"
-          @click="navigateTo('/logs')"
-        >
-          <el-icon><Document /></el-icon>
-          <span>查看日志</span>
-        </div>
-        
-        <!-- 分隔线 -->
-        <div class="nav-divider"></div>
         
         <!-- 用户菜单 -->
         <el-dropdown trigger="hover" @command="handleUserCommand">
@@ -63,6 +61,14 @@
                   <el-icon><User /></el-icon>
                   <span>{{ authStore.clientId }}</span>
                 </div>
+              </el-dropdown-item>
+              <el-dropdown-item divided command="devices">
+                <el-icon><Iphone /></el-icon>
+                <span>我的设备</span>
+              </el-dropdown-item>
+              <el-dropdown-item command="logs">
+                <el-icon><Document /></el-icon>
+                <span>查看日志</span>
               </el-dropdown-item>
               <el-dropdown-item divided command="logout">
                 <el-icon><SwitchButton /></el-icon>
@@ -85,10 +91,10 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Grid, Document, Monitor, User, SwitchButton, CircleCheck, CircleClose, Loading } from '@element-plus/icons-vue'
+import { Grid, Document, Monitor, User, SwitchButton, CircleCheck, CircleClose, Loading, Iphone } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
-import { Logout, GetTunnelStatus, ReconnectTunnel } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import { GetTunnelStatus, ReconnectTunnel, GetGRPCStatus, Logout } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 const router = useRouter()
 const route = useRoute()
@@ -100,12 +106,23 @@ const tunnelStatus = ref({ connected: false, ip: '', error: '' })
 const tunnelLoading = ref(false)
 let tunnelTimer: number | null = null
 
+// gRPC 状态
+const grpcStatus = ref({ connected: false, server_address: '', error: '' })
+let grpcTimer: number | null = null
+
 const tunnelTooltip = computed(() => {
   if (tunnelLoading.value) return '正在连接隧道...'
   if (tunnelStatus.value.connected) {
     return `隧道已连接\n点击可重连`
   }
   return `${tunnelStatus.value.error || '隧道未连接'}\n点击连接`
+})
+
+const grpcTooltip = computed(() => {
+  if (grpcStatus.value.connected) {
+    return `gRPC 已连接\n服务器: ${grpcStatus.value.server_address}`
+  }
+  return `gRPC 未连接\n${grpcStatus.value.error || ''}`
 })
 
 const loadTunnelStatus = async () => {
@@ -120,6 +137,21 @@ const loadTunnelStatus = async () => {
     }
   } catch (error) {
     console.error('Failed to get tunnel status:', error)
+  }
+}
+
+const loadGRPCStatus = async () => {
+  try {
+    const status = await GetGRPCStatus()
+    if (status) {
+      grpcStatus.value = {
+        connected: status.connected,
+        server_address: status.server_address || '',
+        error: status.error || ''
+      }
+    }
+  } catch (error) {
+    console.error('Failed to get gRPC status:', error)
   }
 }
 
@@ -144,12 +176,17 @@ const handleTunnelClick = async () => {
 
 onMounted(() => {
   loadTunnelStatus()
+  loadGRPCStatus()
   tunnelTimer = window.setInterval(loadTunnelStatus, 5000)
+  grpcTimer = window.setInterval(loadGRPCStatus, 5000)
 })
 
 onUnmounted(() => {
   if (tunnelTimer) {
     clearInterval(tunnelTimer)
+  }
+  if (grpcTimer) {
+    clearInterval(grpcTimer)
   }
 })
 
@@ -162,7 +199,11 @@ const navigateTo = (path: string) => {
 }
 
 const handleUserCommand = (command: string) => {
-  if (command === 'logout') {
+  if (command === 'devices') {
+    navigateTo('/devices')
+  } else if (command === 'logs') {
+    navigateTo('/logs')
+  } else if (command === 'logout') {
     Logout()
     authStore.logout()
     servicesStore.clearConnections()
@@ -216,6 +257,37 @@ const handleUserCommand = (command: string) => {
   border-left: 1px solid #e4e7ed;
 }
 
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+
+.grpc-status {
+  cursor: default;
+}
+
+.status-icon {
+  font-size: 14px;
+}
+
+.status-icon.connected {
+  color: #67c23a;
+}
+
+.status-icon.disconnected {
+  color: #f56c6c;
+}
+
+.status-text {
+  font-size: 12px;
+  color: #666;
+  font-weight: 500;
+}
+
 .tunnel-status {
   display: flex;
   align-items: center;
@@ -232,7 +304,7 @@ const handleUserCommand = (command: string) => {
 }
 
 .tunnel-icon {
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .tunnel-icon.connected {
@@ -247,6 +319,12 @@ const handleUserCommand = (command: string) => {
   font-size: 12px;
   color: #67c23a;
   font-family: monospace;
+}
+
+.tunnel-text {
+  font-size: 12px;
+  color: #666;
+  font-weight: 500;
 }
 
 .navbar-right {
@@ -281,13 +359,6 @@ const handleUserCommand = (command: string) => {
 
 .nav-item .el-icon {
   font-size: 18px;
-}
-
-.nav-divider {
-  width: 1px;
-  height: 24px;
-  background: #e4e7ed;
-  margin: 0 8px;
 }
 
 .user-menu {

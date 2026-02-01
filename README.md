@@ -24,6 +24,8 @@ go install github.com/wailsapp/wails/v3/cmd/wails3@latest
 
 ### 开发模式
 
+#### Linux
+
 ```bash
 # 安装前端依赖
 cd frontend && npm install && cd ..
@@ -33,6 +35,43 @@ wails3 dev
 
 # 或使用脚本
 ./scripts/dev.sh
+```
+
+#### Windows
+
+**使用 PowerShell 脚本（从项目根目录运行）：**
+
+```powershell
+# 从项目根目录 awecloud-signaling-server\ 运行
+
+# 开发模式（需要管理员权限）
+Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -File desktop\scripts\dev.ps1 -BuildVersion v0.2.3"
+
+powershell -ExecutionPolicy Bypass -File desktop\scripts\dev.ps1 -BuildVersion v0.2.3
+
+
+# 构建代码
+Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -File desktop\scripts\build.ps1 -BuildVersion v0.2.3 -GoArch amd64"
+
+powershell -ExecutionPolicy Bypass -File desktop\scripts\build.ps1 -BuildVersion v0.2.3 -GoArch amd64
+```
+
+**说明：**
+
+- `Start-Process powershell -Verb RunAs` 类似 Linux 的 `sudo`，显式要求管理员权限
+- VPN 功能需要管理员权限才能正常工作
+
+**或使用传统 Batch 脚本（从 desktop\ 目录运行）：**
+
+```bash
+# 从 desktop\ 目录运行
+cd desktop
+
+# 构建代码
+scripts\build.bat
+
+# 调试代码
+scripts\dev.bat
 ```
 
 ### 构建

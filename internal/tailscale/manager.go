@@ -14,7 +14,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/tailscale/wireguard-go/tun"
 	"tailscale.com/control/controlclient"
 	"tailscale.com/health"
@@ -31,9 +30,9 @@ import (
 	"tailscale.com/util/usermetric"
 	"tailscale.com/wgengine"
 	"tailscale.com/wgengine/router"
-
-	// 导入 osrouter 包以注册平台特定的 router 实现
 	_ "tailscale.com/wgengine/router/osrouter"
+
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 )
 
 // Manager 管理 Desktop 端 Tailscale 客户端 (System-Level VPN)

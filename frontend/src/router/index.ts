@@ -2,6 +2,8 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import Login from '../views/Login.vue'
 import Services from '../views/Services.vue'
+import Hosts from '../views/Hosts.vue'
+import HostServices from '../views/HostServices.vue'
 import Devices from '../views/Devices.vue'
 import Logs from '../views/Logs.vue'
 
@@ -19,6 +21,18 @@ const routes = [
     path: '/services',
     name: 'Services',
     component: Services,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/hosts',
+    name: 'Hosts',
+    component: Hosts,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/hosts/:id/services',
+    name: 'HostServices',
+    component: HostServices,
     meta: { requiresAuth: true }
   },
   {
