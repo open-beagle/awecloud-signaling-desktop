@@ -19,7 +19,8 @@ type AuthResult struct {
 	AuthKey    string
 	ServerURL  string
 	Message    string
-	IsNewLogin bool // 是否是首次登录
+	IsNewLogin bool   // 是否是首次登录
+	DeviceName string // 设备名称（hostname）
 }
 
 // Login 首次登录（使用 Client 凭证）
@@ -95,6 +96,7 @@ func (c *DesktopClient) Login(clientName, clientSecret string) (*AuthResult, err
 		ServerURL:  resp.ServerUrl,
 		Message:    resp.Message,
 		IsNewLogin: true,
+		DeviceName: fingerprint.Hostname,
 	}, nil
 }
 
@@ -153,6 +155,7 @@ func (c *DesktopClient) Authenticate(desktopID uint64, secret string) (*AuthResu
 		ServerURL:  resp.ServerUrl,
 		Message:    resp.Message,
 		IsNewLogin: false,
+		DeviceName: fingerprint.Hostname,
 	}, nil
 }
 

@@ -61,7 +61,6 @@
             :key="host.host_id"
             class="host-card"
             shadow="hover"
-            @click="navigateToHostServices(host)"
           >
             <template #header>
               <div class="card-header">
@@ -76,13 +75,13 @@
 
             <div class="card-body">
               <div class="info-item">
-                <span class="label">隧道IP:</span>
+                <span class="label">隧道 IP:</span>
                 <span class="value tunnel-ip">{{ host.tunnel_ip || '-' }}</span>
               </div>
               
               <div class="info-item">
-                <span class="label">服务数:</span>
-                <span class="value">{{ host.service_count }}</span>
+                <span class="label">SSH 用户:</span>
+                <span class="value ssh-users">{{ formatSshUsers(host.ssh_users) }}</span>
               </div>
 
               <div class="info-item">
@@ -98,12 +97,6 @@
                 <span class="value time-text">{{ formatTime(host.last_seen) }}</span>
               </div>
             </div>
-
-            <template #footer>
-              <el-button type="primary" size="small" @click.stop="navigateToHostServices(host)">
-                查看服务
-              </el-button>
-            </template>
           </el-card>
         </div>
       </div>
@@ -113,19 +106,16 @@
 
 <script setup lang="ts">
 import { onMounted, ref, computed, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Refresh, Search, Monitor } from '@element-plus/icons-vue'
 import Layout from '../components/Layout.vue'
 import { GetHosts } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
-const router = useRouter()
-
 interface Host {
   host_id: string
   host_name: string
   tunnel_ip: string
-  service_count: number
+  ssh_users: string[]
   status: string
   last_seen: string
 }
@@ -187,8 +177,9 @@ const handleRefresh = async () => {
   ElMessage.success('刷新成功')
 }
 
-const navigateToHostServices = (host: Host) => {
-  router.push(`/hosts/${host.host_id}/services`)
+const formatSshUsers = (users: string[]) => {
+  if (!users || users.length === 0) return '-'
+  return users.join(', ')
 }
 
 const formatTime = (timeStr: string) => {
@@ -295,7 +286,6 @@ onMounted(() => {
 }
 
 .host-card {
-  cursor: pointer;
   transition: all 0.3s;
 }
 
@@ -355,6 +345,11 @@ onMounted(() => {
   color: #409eff;
   font-family: monospace;
   font-weight: 500;
+}
+
+.info-item .value.ssh-users {
+  color: #e6a23c;
+  font-family: monospace;
 }
 
 .time-text {

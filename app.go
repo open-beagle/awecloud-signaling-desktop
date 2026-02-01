@@ -172,13 +172,25 @@ func (a *App) initializeTailscale() error {
 
 	a.tsManager = tailscale.NewManager()
 
-	hostname := fmt.Sprintf("desktop-%d", a.authResult.DesktopID)
+	hostname := a.authResult.DeviceName
+	if hostname == "" {
+		// 回退方案：如果没有设备名，使用 desktop-{ID}
+		hostname = fmt.Sprintf("desktop-%d", a.authResult.DesktopID)
+	}
 	if err := a.tsManager.Connect(tsAuth.ControlURL, tsAuth.AuthKey, hostname); err != nil {
 		a.tsManager = nil
 		return fmt.Errorf("连接隧道失败: %w", err)
 	}
 
 	log.Printf("[App] Tunnel connected, IP: %s", a.tsManager.GetIP())
+
+	// 设置隧道状态查询回调（用于心跳重连时获取最新状态）
+	a.desktopClient.SetTunnelStatusCallback(func() (string, bool) {
+		if a.tsManager != nil && a.tsManager.IsConnected() {
+			return a.tsManager.GetIP(), true
+		}
+		return "", false
+	})
 
 	// 更新心跳信息
 	a.desktopClient.UpdateHeartbeat(a.tsManager.GetIP(), true)
@@ -547,12 +559,12 @@ func (a *App) ToggleFavorite(serviceID string) (bool, error) {
 
 // HostInfo 主机信息
 type HostInfo struct {
-	HostID       string `json:"host_id"`
-	HostName     string `json:"host_name"`
-	TunnelIP     string `json:"tunnel_ip"`
-	ServiceCount int    `json:"service_count"`
-	Status       string `json:"status"`
-	LastSeen     string `json:"last_seen"`
+	HostID   string   `json:"host_id"`
+	HostName string   `json:"host_name"`
+	TunnelIP string   `json:"tunnel_ip"`
+	SSHUsers []string `json:"ssh_users"`
+	Status   string   `json:"status"`
+	LastSeen string   `json:"last_seen"`
 }
 
 // GetHosts 获取已授权主机列表
@@ -572,12 +584,12 @@ func (a *App) GetHosts() ([]*HostInfo, error) {
 	hosts := make([]*HostInfo, 0, len(clientHosts))
 	for _, h := range clientHosts {
 		hosts = append(hosts, &HostInfo{
-			HostID:       h.HostID,
-			HostName:     h.HostName,
-			TunnelIP:     h.TunnelIP,
-			ServiceCount: h.ServiceCount,
-			Status:       h.Status,
-			LastSeen:     h.LastSeen,
+			HostID:   h.HostID,
+			HostName: h.HostName,
+			TunnelIP: h.TunnelIP,
+			SSHUsers: h.SSHUsers,
+			Status:   h.Status,
+			LastSeen: h.LastSeen,
 		})
 	}
 

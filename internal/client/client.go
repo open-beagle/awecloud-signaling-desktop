@@ -36,6 +36,14 @@ type DesktopClient struct {
 	heartbeatStream pb.DesktopService_HeartbeatClient
 	heartbeatMutex  sync.Mutex
 
+	// 隧道状态（用于心跳上报）
+	tunnelIP        string
+	tunnelConnected bool
+	tunnelMutex     sync.RWMutex
+
+	// 隧道状态查询回调（用于重连时获取最新状态）
+	getTunnelStatus func() (ip string, connected bool)
+
 	// gRPC 连接状态
 	grpcConnected bool
 	connMutex     sync.RWMutex
@@ -143,6 +151,11 @@ func (c *DesktopClient) SetReconnectCallback(callback func() error) {
 	c.onReconnectNeeded = callback
 }
 
+// SetTunnelStatusCallback 设置隧道状态查询回调
+func (c *DesktopClient) SetTunnelStatusCallback(callback func() (ip string, connected bool)) {
+	c.getTunnelStatus = callback
+}
+
 // GetAuthorizedServices 获取已授权服务列表
 func (c *DesktopClient) GetAuthorizedServices() []*pb.AuthorizedService {
 	c.servicesMutex.RLock()
@@ -154,6 +167,24 @@ func (c *DesktopClient) GetAuthorizedServices() []*pb.AuthorizedService {
 func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) error {
 	c.heartbeatMutex.Lock()
 	defer c.heartbeatMutex.Unlock()
+
+	// 更新隧道状态
+	if tunnelIP != "" {
+		// 传入了有效值，直接使用
+		c.tunnelMutex.Lock()
+		c.tunnelIP = tunnelIP
+		c.tunnelConnected = tunnelConnected
+		c.tunnelMutex.Unlock()
+	} else if c.getTunnelStatus != nil {
+		// 没有传入有效值，尝试通过回调获取最新状态
+		ip, connected := c.getTunnelStatus()
+		if ip != "" {
+			c.tunnelMutex.Lock()
+			c.tunnelIP = ip
+			c.tunnelConnected = connected
+			c.tunnelMutex.Unlock()
+		}
+	}
 
 	// 如果已有心跳流，先关闭
 	if c.heartbeatStream != nil {
@@ -171,11 +202,17 @@ func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) er
 	c.heartbeatStream = stream
 	c.setGRPCConnected(true)
 
+	// 获取当前隧道状态
+	c.tunnelMutex.RLock()
+	currentIP := c.tunnelIP
+	currentConnected := c.tunnelConnected
+	c.tunnelMutex.RUnlock()
+
 	// 发送首次心跳
 	req := &pb.DesktopHeartbeatRequest{
 		DesktopId:       c.desktopID,
-		TunnelIp:        tunnelIP,
-		TunnelConnected: tunnelConnected,
+		TunnelIp:        currentIP,
+		TunnelConnected: currentConnected,
 	}
 
 	if err := stream.Send(req); err != nil {
@@ -183,13 +220,13 @@ func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) er
 		return fmt.Errorf("failed to send initial heartbeat: %w", err)
 	}
 
-	log.Printf("[DesktopClient] Heartbeat started")
+	log.Printf("[DesktopClient] Heartbeat started, tunnelIP=%s", currentIP)
 
 	// 启动接收 goroutine
 	go c.receiveHeartbeat()
 
 	// 启动发送 goroutine
-	go c.sendHeartbeat(tunnelIP, tunnelConnected)
+	go c.sendHeartbeat()
 
 	return nil
 }
@@ -255,7 +292,7 @@ func (c *DesktopClient) receiveHeartbeat() {
 }
 
 // sendHeartbeat 发送心跳
-func (c *DesktopClient) sendHeartbeat(tunnelIP string, tunnelConnected bool) {
+func (c *DesktopClient) sendHeartbeat() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -272,6 +309,12 @@ func (c *DesktopClient) sendHeartbeat(tunnelIP string, tunnelConnected bool) {
 				continue
 			}
 
+			// 获取当前隧道状态
+			c.tunnelMutex.RLock()
+			tunnelIP := c.tunnelIP
+			tunnelConnected := c.tunnelConnected
+			c.tunnelMutex.RUnlock()
+
 			req := &pb.DesktopHeartbeatRequest{
 				DesktopId:       c.desktopID,
 				TunnelIp:        tunnelIP,
@@ -287,6 +330,14 @@ func (c *DesktopClient) sendHeartbeat(tunnelIP string, tunnelConnected bool) {
 
 // UpdateHeartbeat 更新心跳信息（当隧道状态变化时调用）
 func (c *DesktopClient) UpdateHeartbeat(tunnelIP string, tunnelConnected bool) {
+	// 更新隧道状态
+	c.tunnelMutex.Lock()
+	c.tunnelIP = tunnelIP
+	c.tunnelConnected = tunnelConnected
+	c.tunnelMutex.Unlock()
+
+	log.Printf("[DesktopClient] Tunnel status updated: ip=%s, connected=%v", tunnelIP, tunnelConnected)
+
 	c.heartbeatMutex.Lock()
 	stream := c.heartbeatStream
 	c.heartbeatMutex.Unlock()
@@ -299,6 +350,7 @@ func (c *DesktopClient) UpdateHeartbeat(tunnelIP string, tunnelConnected bool) {
 		return
 	}
 
+	// 立即发送一次心跳更新
 	req := &pb.DesktopHeartbeatRequest{
 		DesktopId:       c.desktopID,
 		TunnelIp:        tunnelIP,
@@ -330,12 +382,12 @@ func getSystemInfo() (*pb.DesktopSystemInfo, error) {
 
 // HostInfo 主机信息
 type HostInfo struct {
-	HostID       string `json:"host_id"`
-	HostName     string `json:"host_name"`
-	TunnelIP     string `json:"tunnel_ip"`
-	ServiceCount int    `json:"service_count"`
-	Status       string `json:"status"`
-	LastSeen     string `json:"last_seen"`
+	HostID   string   `json:"host_id"`
+	HostName string   `json:"host_name"`
+	TunnelIP string   `json:"tunnel_ip"`
+	SSHUsers []string `json:"ssh_users"`
+	Status   string   `json:"status"`
+	LastSeen string   `json:"last_seen"`
 }
 
 // GetAuthorizedHosts 获取已授权主机列表
@@ -359,12 +411,12 @@ func (c *DesktopClient) GetAuthorizedHosts() ([]*HostInfo, error) {
 	hosts := make([]*HostInfo, 0, len(resp.Hosts))
 	for _, h := range resp.Hosts {
 		hosts = append(hosts, &HostInfo{
-			HostID:       h.HostId,
-			HostName:     h.HostName,
-			TunnelIP:     h.TunnelIp,
-			ServiceCount: int(h.ServiceCount),
-			Status:       h.Status,
-			LastSeen:     h.LastSeen,
+			HostID:   h.HostId,
+			HostName: h.HostName,
+			TunnelIP: h.TunnelIp,
+			SSHUsers: h.SshUsers,
+			Status:   h.Status,
+			LastSeen: h.LastSeen,
 		})
 	}
 

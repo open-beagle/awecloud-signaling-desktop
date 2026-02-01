@@ -168,12 +168,12 @@ export class HostInfo {
              */
             this["tunnel_ip"] = "";
         }
-        if (!("service_count" in $$source)) {
+        if (!("ssh_users" in $$source)) {
             /**
              * @member
-             * @type {number}
+             * @type {string[]}
              */
-            this["service_count"] = 0;
+            this["ssh_users"] = [];
         }
         if (!("status" in $$source)) {
             /**
