@@ -422,11 +422,18 @@ func (a *App) GetGRPCStatus() *GRPCStatus {
 		return status
 	}
 
-	status.Connected = a.desktopClient.IsAuthenticated()
-	if !status.Connected {
+	// 检查认证状态和 gRPC 连接状态
+	if !a.desktopClient.IsAuthenticated() {
 		status.Error = "未认证"
+		return status
 	}
 
+	if !a.desktopClient.IsGRPCConnected() {
+		status.Error = "gRPC 连接断开"
+		return status
+	}
+
+	status.Connected = true
 	return status
 }
 
@@ -469,7 +476,34 @@ func (a *App) ReconnectTunnel() error {
 		a.tsManager = nil
 	}
 
-	// 重新初始化
+	// 重新认证以获取新的 authKey
+	log.Printf("[App] Re-authenticating to get new authKey...")
+	var authResult *client.AuthResult
+	var err error
+
+	if config.GlobalConfig.HasValidToken() {
+		// 使用保存的凭证重新认证
+		parts := strings.Split(config.GlobalConfig.DeviceToken, ":")
+		if len(parts) == 2 {
+			var desktopID uint64
+			fmt.Sscanf(parts[0], "%d", &desktopID)
+			secret := parts[1]
+			authResult, err = a.desktopClient.Authenticate(desktopID, secret)
+		} else {
+			err = fmt.Errorf("invalid device token format")
+		}
+	} else {
+		return fmt.Errorf("无有效凭证，请重新登录")
+	}
+
+	if err != nil {
+		return fmt.Errorf("重新认证失败: %w", err)
+	}
+
+	// 更新 authResult
+	a.authResult = authResult
+
+	// 重新初始化隧道
 	if err := a.initializeTailscale(); err != nil {
 		return fmt.Errorf("重连失败: %w", err)
 	}

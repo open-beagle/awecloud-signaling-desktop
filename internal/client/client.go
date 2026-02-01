@@ -36,6 +36,13 @@ type DesktopClient struct {
 	heartbeatStream pb.DesktopService_HeartbeatClient
 	heartbeatMutex  sync.Mutex
 
+	// gRPC 连接状态
+	grpcConnected bool
+	connMutex     sync.RWMutex
+
+	// 重连回调（用于通知 App 层重新获取 authKey）
+	onReconnectNeeded func() error
+
 	// 已授权服务列表
 	authorizedServices []*pb.AuthorizedService
 	servicesMutex      sync.RWMutex
@@ -111,7 +118,29 @@ func (c *DesktopClient) Stop() {
 
 // IsAuthenticated 检查是否已认证
 func (c *DesktopClient) IsAuthenticated() bool {
-	return c.desktopID > 0 && c.secret != ""
+	c.mu.RLock()
+	hasCredentials := c.desktopID > 0 && c.secret != ""
+	c.mu.RUnlock()
+	return hasCredentials
+}
+
+// IsGRPCConnected 检查 gRPC 连接是否存活
+func (c *DesktopClient) IsGRPCConnected() bool {
+	c.connMutex.RLock()
+	defer c.connMutex.RUnlock()
+	return c.grpcConnected
+}
+
+// setGRPCConnected 设置 gRPC 连接状态
+func (c *DesktopClient) setGRPCConnected(connected bool) {
+	c.connMutex.Lock()
+	defer c.connMutex.Unlock()
+	c.grpcConnected = connected
+}
+
+// SetReconnectCallback 设置重连回调
+func (c *DesktopClient) SetReconnectCallback(callback func() error) {
+	c.onReconnectNeeded = callback
 }
 
 // GetAuthorizedServices 获取已授权服务列表
@@ -135,10 +164,12 @@ func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) er
 	// 创建心跳流
 	stream, err := c.grpcClient.Heartbeat(c.ctx)
 	if err != nil {
+		c.setGRPCConnected(false)
 		return fmt.Errorf("failed to create heartbeat stream: %w", err)
 	}
 
 	c.heartbeatStream = stream
+	c.setGRPCConnected(true)
 
 	// 发送首次心跳
 	req := &pb.DesktopHeartbeatRequest{
@@ -148,6 +179,7 @@ func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) er
 	}
 
 	if err := stream.Send(req); err != nil {
+		c.setGRPCConnected(false)
 		return fmt.Errorf("failed to send initial heartbeat: %w", err)
 	}
 
@@ -164,6 +196,9 @@ func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) er
 
 // receiveHeartbeat 接收心跳响应
 func (c *DesktopClient) receiveHeartbeat() {
+	backoff := time.Second * 5
+	maxBackoff := time.Minute * 2
+
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -181,9 +216,33 @@ func (c *DesktopClient) receiveHeartbeat() {
 			resp, err := stream.Recv()
 			if err != nil {
 				log.Printf("[DesktopClient] Heartbeat receive error: %v", err)
-				time.Sleep(time.Second * 5)
+				c.setGRPCConnected(false)
+
+				// 尝试重连
+				log.Printf("[DesktopClient] Will retry in %v", backoff)
+				time.Sleep(backoff)
+
+				// 指数退避
+				backoff = backoff * 2
+				if backoff > maxBackoff {
+					backoff = maxBackoff
+				}
+
+				// 尝试重新启动心跳
+				if c.IsAuthenticated() {
+					if err := c.startHeartbeat("", false); err != nil {
+						log.Printf("[DesktopClient] Failed to restart heartbeat: %v", err)
+					} else {
+						log.Printf("[DesktopClient] Heartbeat restarted successfully")
+						backoff = time.Second * 5 // 重置退避时间
+					}
+				}
 				continue
 			}
+
+			// 连接成功，重置退避时间
+			backoff = time.Second * 5
+			c.setGRPCConnected(true)
 
 			// 更新已授权服务列表
 			c.servicesMutex.Lock()
