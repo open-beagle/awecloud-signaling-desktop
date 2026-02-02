@@ -422,13 +422,13 @@ func shouldFilterLog(msg string) bool {
 		"dns: Set:",
 		"dns: Resolvercfg:",
 		"dns: OScfg:",
-		// 其他详细日志
-		"[v1] netmap",
+		// 其他详细日志（保留 netmap 和 peers 用于诊断）
+		// "[v1] netmap",  // 保留 netmap 日志
 		"[v1] authReconfig",
 		"[v1] linkChange",
 		"[v1] initPeerAPIListener",
-		"[v1] wgengine: Reconfig",
-		"wgengine: Reconfig:",
+		// "[v1] wgengine: Reconfig",  // 保留 Reconfig 日志
+		// "wgengine: Reconfig:",  // 保留 Reconfig 日志
 		"tsdial: bart table",
 		// magicsock 相关 - 保留重要的 DERP 日志
 		"magicsock: disco:",
