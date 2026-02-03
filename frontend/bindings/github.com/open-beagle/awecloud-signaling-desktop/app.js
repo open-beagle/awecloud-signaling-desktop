@@ -247,6 +247,37 @@ export function ToggleFavorite(serviceID) {
     return $Call.ByID(1319626997, serviceID);
 }
 
+/**
+ * LoginWithLogto 通过 Logto 登录
+ * @param {string} serverAddr
+ * @param {string} usernameHint
+ * @returns {$CancellablePromise<$models.LogtoLoginResult | null>}
+ */
+export function LoginWithLogto(serverAddr, usernameHint) {
+    return $Call.ByID(4099716341, serverAddr, usernameHint).then(/** @type {($result: any) => any} */(($result) => {
+        return $createType22($result);
+    }));
+}
+
+/**
+ * WaitLogtoLoginResult 等待 Logto 登录结果
+ * @returns {$CancellablePromise<$models.LogtoLoginResult | null>}
+ */
+export function WaitLogtoLoginResult() {
+    return $Call.ByID(870198877).then(/** @type {($result: any) => any} */(($result) => {
+        return $createType22($result);
+    }));
+}
+
+/**
+ * OpenBrowser 打开浏览器
+ * @param {string} url
+ * @returns {$CancellablePromise<void>}
+ */
+export function OpenBrowser(url) {
+    return $Call.ByID(3406234859, url);
+}
+
 // Private type creation functions
 const $$createType0 = $models.SavedCredentials.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
@@ -270,3 +301,5 @@ const $$createType18 = $models.TunnelStatus.createFrom;
 const $$createType19 = $Create.Nullable($$createType18);
 const $$createType20 = $models.VersionInfo.createFrom;
 const $$createType21 = $Create.Nullable($$createType20);
+const $createType22Base = $models.LogtoLoginResult.createFrom;
+const $createType22 = $Create.Nullable($createType22Base);

@@ -820,15 +820,29 @@ func (w *logWriter) Write(p []byte) (n int, err error) {
 
 	message := strings.TrimSuffix(string(p), "\n")
 
-	// 提取日志级别（如果有）
+	// 提取日志级别（如果有）并移除已有的级别标记
 	level := "INFO"
+	cleanMessage := message
 	if strings.Contains(message, "[DEBUG]") {
 		level = "DEBUG"
+		cleanMessage = strings.Replace(cleanMessage, "[DEBUG] ", "", 1)
+		cleanMessage = strings.Replace(cleanMessage, "[DEBUG]", "", 1)
 	} else if strings.Contains(message, "[WARN]") {
 		level = "WARN"
+		cleanMessage = strings.Replace(cleanMessage, "[WARN] ", "", 1)
+		cleanMessage = strings.Replace(cleanMessage, "[WARN]", "", 1)
 	} else if strings.Contains(message, "[ERROR]") {
 		level = "ERROR"
+		cleanMessage = strings.Replace(cleanMessage, "[ERROR] ", "", 1)
+		cleanMessage = strings.Replace(cleanMessage, "[ERROR]", "", 1)
+	} else if strings.Contains(message, "[INFO]") {
+		level = "INFO"
+		cleanMessage = strings.Replace(cleanMessage, "[INFO] ", "", 1)
+		cleanMessage = strings.Replace(cleanMessage, "[INFO]", "", 1)
 	}
+
+	// 清理消息前后空格
+	cleanMessage = strings.TrimSpace(cleanMessage)
 
 	// 检查是否应该输出
 	if !shouldLog(level) {
@@ -836,7 +850,7 @@ func (w *logWriter) Write(p []byte) (n int, err error) {
 	}
 
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
-	logLine := fmt.Sprintf("[%s] [%s] %s", timestamp, level, message)
+	logLine := fmt.Sprintf("[%s] [%s] %s", timestamp, level, cleanMessage)
 
 	logBuffer = append(logBuffer, logLine)
 	if len(logBuffer) > maxLogLines {
@@ -845,6 +859,154 @@ func (w *logWriter) Write(p []byte) (n int, err error) {
 
 	fmt.Println(logLine)
 	return len(p), nil
+}
+
+// LogtoLoginResult Logto 登录结果（用于前端）
+type LogtoLoginResult struct {
+	Success    bool   `json:"success"`
+	DesktopID  uint64 `json:"desktop_id"`
+	AuthKey    string `json:"auth_key"`
+	ServerURL  string `json:"server_url"`
+	Message    string `json:"message"`
+	SessionID  string `json:"session_id"`
+	LoginURL   string `json:"login_url"`
+	UserID     string `json:"user_id"`
+	Username   string `json:"username"`
+	Email      string `json:"email"`
+	DeviceName string `json:"device_name"`
+}
+
+// logtoLoginCallback 用于存储 Logto 登录回调通道
+var logtoLoginCallback chan *LogtoLoginResult
+
+// LoginWithLogto 通过 Logto 登录
+// 返回 login_url，前端需要打开浏览器让用户完成登录
+func (a *App) LoginWithLogto(serverAddr, usernameHint string) (*LogtoLoginResult, error) {
+	log.Printf("[App] LoginWithLogto: serverAddr=%s, usernameHint=%s", serverAddr, usernameHint)
+
+	config.GlobalConfig.ServerAddress = serverAddr
+
+	// 创建客户端
+	log.Printf("[App] Creating Desktop client for Logto login: %s", serverAddr)
+	a.desktopClient = client.NewDesktopClient(serverAddr)
+	if err := a.desktopClient.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start desktop client: %w", err)
+	}
+	log.Printf("[App] Desktop client started successfully")
+
+	// 创建回调通道
+	logtoLoginCallback = make(chan *LogtoLoginResult, 1)
+
+	// 调用 gRPC 流式登录
+	err := a.desktopClient.LoginWithLogto(usernameHint, func(result *client.LogtoLoginResult) {
+		log.Printf("[App] Logto login callback: success=%v, session_id=%s, login_url=%s",
+			result.Success, result.SessionID, result.LoginURL)
+
+		frontendResult := &LogtoLoginResult{
+			Success:    result.Success,
+			DesktopID:  result.DesktopID,
+			AuthKey:    result.AuthKey,
+			ServerURL:  result.ServerURL,
+			Message:    result.Message,
+			SessionID:  result.SessionID,
+			LoginURL:   result.LoginURL,
+			DeviceName: result.DeviceName,
+		}
+
+		if result.UserInfo != nil {
+			frontendResult.UserID = result.UserInfo.UserID
+			frontendResult.Username = result.UserInfo.Username
+			frontendResult.Email = result.UserInfo.Email
+		}
+
+		// 如果登录成功，保存认证结果
+		if result.Success {
+			a.authResult = &client.AuthResult{
+				Success:    true,
+				DesktopID:  result.DesktopID,
+				Secret:     result.Secret,
+				AuthKey:    result.AuthKey,
+				ServerURL:  result.ServerURL,
+				Message:    result.Message,
+				IsNewLogin: true,
+				DeviceName: result.DeviceName,
+			}
+
+			// 保存配置
+			if result.UserInfo != nil {
+				config.GlobalConfig.ClientID = result.UserInfo.Username
+			}
+			config.GlobalConfig.RememberMe = true
+			if err := config.GlobalConfig.Save(); err != nil {
+				log.Printf("[App] Warning: failed to save config: %v", err)
+			}
+		}
+
+		// 发送结果到通道
+		select {
+		case logtoLoginCallback <- frontendResult:
+		default:
+			log.Printf("[App] Warning: logto callback channel full")
+		}
+	})
+
+	if err != nil {
+		a.desktopClient.Stop()
+		a.desktopClient = nil
+		return nil, fmt.Errorf("failed to start logto login: %w", err)
+	}
+
+	// 等待第一个响应（包含 login_url）
+	select {
+	case result := <-logtoLoginCallback:
+		if result.LoginURL != "" {
+			// 返回 login_url，前端需要打开浏览器
+			return result, nil
+		}
+		if result.Success {
+			// 直接成功（不太可能，但处理一下）
+			return result, nil
+		}
+		return nil, fmt.Errorf("logto login failed: %s", result.Message)
+	case <-time.After(30 * time.Second):
+		return nil, fmt.Errorf("logto login timeout")
+	}
+}
+
+// WaitLogtoLoginResult 等待 Logto 登录结果
+// 前端在打开浏览器后调用此方法等待用户完成登录
+func (a *App) WaitLogtoLoginResult() (*LogtoLoginResult, error) {
+	log.Printf("[App] WaitLogtoLoginResult called")
+
+	if logtoLoginCallback == nil {
+		return nil, fmt.Errorf("no logto login in progress")
+	}
+
+	// 等待登录结果（最多等待 5 分钟）
+	select {
+	case result := <-logtoLoginCallback:
+		log.Printf("[App] Logto login result received: success=%v", result.Success)
+
+		if result.Success {
+			// 登录成功后初始化隧道
+			log.Printf("[App] Initializing tunnel after Logto login...")
+			if err := a.initializeTailscale(); err != nil {
+				log.Printf("[App] Warning: Failed to initialize tunnel: %v", err)
+			} else {
+				log.Printf("[App] Tunnel initialized successfully, IP: %s", a.tsManager.GetIP())
+			}
+		}
+
+		return result, nil
+	case <-time.After(5 * time.Minute):
+		return nil, fmt.Errorf("logto login timeout (5 minutes)")
+	}
+}
+
+// OpenBrowser 打开浏览器
+func (a *App) OpenBrowser(url string) error {
+	log.Printf("[App] OpenBrowser: %s", url)
+	return openBrowser(url)
 }
 
 // ConnectService 快速连接服务

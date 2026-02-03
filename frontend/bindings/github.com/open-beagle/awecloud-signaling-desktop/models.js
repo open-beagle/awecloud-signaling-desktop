@@ -535,3 +535,105 @@ export class VersionInfo {
         return new VersionInfo(/** @type {Partial<VersionInfo>} */($$parsedSource));
     }
 }
+
+
+/**
+ * LogtoLoginResult Logto 登录结果
+ */
+export class LogtoLoginResult {
+    /**
+     * Creates a new LogtoLoginResult instance.
+     * @param {Partial<LogtoLoginResult>} [$source = {}] - The source object to create the LogtoLoginResult.
+     */
+    constructor($source = {}) {
+        if (!("success" in $source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["success"] = false;
+        }
+        if (!("desktop_id" in $source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["desktop_id"] = 0;
+        }
+        if (!("auth_key" in $source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["auth_key"] = "";
+        }
+        if (!("server_url" in $source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["server_url"] = "";
+        }
+        if (!("message" in $source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["message"] = "";
+        }
+        if (!("session_id" in $source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["session_id"] = "";
+        }
+        if (!("login_url" in $source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["login_url"] = "";
+        }
+        if (!("user_id" in $source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["user_id"] = "";
+        }
+        if (!("username" in $source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["username"] = "";
+        }
+        if (!("email" in $source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["email"] = "";
+        }
+        if (!("device_name" in $source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["device_name"] = "";
+        }
+
+        Object.assign(this, $source);
+    }
+
+    /**
+     * Creates a new LogtoLoginResult instance from a string or object.
+     * @param {any} [$source = {}]
+     * @returns {LogtoLoginResult}
+     */
+    static createFrom($source = {}) {
+        let $parsedSource = typeof $source === 'string' ? JSON.parse($source) : $source;
+        return new LogtoLoginResult(/** @type {Partial<LogtoLoginResult>} */($parsedSource));
+    }
+}

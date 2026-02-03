@@ -121,6 +121,21 @@
               使用其他账号登录
             </el-button>
           </el-form-item>
+
+          <!-- Logto 登录分隔线 -->
+          <el-divider>或</el-divider>
+
+          <!-- Logto 登录按钮（始终显示） -->
+          <el-form-item label=" " class="button-form-item">
+            <el-button
+              :loading="logtoLoading"
+              @click="handleLogtoLogin"
+              class="full-width-button logto-button"
+            >
+              <el-icon v-if="!logtoLoading" class="logto-icon"><User /></el-icon>
+              {{ logtoLoading ? '正在登录...' : '使用 Logto 登录' }}
+            </el-button>
+          </el-form-item>
         </template>
       </el-form>
     </div>
@@ -131,8 +146,9 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { User } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
-import { Login, GetVersion, CheckSavedCredentials, ClearCredentials } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import { Login, GetVersion, CheckSavedCredentials, ClearCredentials, LoginWithLogto, WaitLogtoLoginResult, OpenBrowser } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 import UpgradeDialog from '../components/UpgradeDialog.vue'
 
 const router = useRouter()
@@ -141,6 +157,7 @@ const appVersion = ref('dev')
 
 const formRef = ref<FormInstance>()
 const loading = ref(false)
+const logtoLoading = ref(false)
 const reconnecting = ref(false)
 const loginMode = ref<'offline' | 'full'>('full')
 const autoFillMode = ref(false)
@@ -248,6 +265,64 @@ const handleClearCredentials = async () => {
     ElMessage.success('已清除保存的凭据')
   } catch (error: any) {
     ElMessage.error('清除凭据失败: ' + (error.message || '未知错误'))
+  }
+}
+
+// Logto 登录处理
+const handleLogtoLogin = async () => {
+  if (!form.server) {
+    ElMessage.warning('请先输入服务器地址')
+    return
+  }
+
+  logtoLoading.value = true
+  try {
+    // 调用后端开始 Logto 登录流程
+    const result = await LoginWithLogto(form.server, form.client || '')
+    
+    if (!result) {
+      ElMessage.error('Logto 登录失败：无响应')
+      return
+    }
+    
+    if (result.login_url) {
+      // 打开浏览器让用户登录
+      ElMessage.info('正在打开浏览器，请在浏览器中完成登录...')
+      await OpenBrowser(result.login_url)
+      
+      // 等待登录结果
+      const loginResult = await WaitLogtoLoginResult()
+      
+      if (!loginResult) {
+        ElMessage.error('登录超时或失败')
+        return
+      }
+      
+      if (loginResult.success) {
+        authStore.setAuthenticated(true)
+        authStore.setServerAddress(form.server)
+        authStore.setClientId(loginResult.username || '')
+        
+        ElMessage.success('登录成功')
+        router.push('/services')
+      } else {
+        ElMessage.error(loginResult.message || '登录失败')
+      }
+    } else if (result.success) {
+      // 直接成功（不太可能）
+      authStore.setAuthenticated(true)
+      authStore.setServerAddress(form.server)
+      authStore.setClientId(result.username || '')
+      
+      ElMessage.success('登录成功')
+      router.push('/services')
+    } else {
+      ElMessage.error(result.message || '登录失败')
+    }
+  } catch (error: any) {
+    ElMessage.error('Logto 登录失败: ' + (error.message || '未知错误'))
+  } finally {
+    logtoLoading.value = false
   }
 }
 
@@ -470,5 +545,19 @@ onMounted(async () => {
 
 .button-form-item :deep(.el-form-item__content) {
   margin-left: 0 !important;
+}
+
+.logto-button {
+  background: linear-gradient(135deg, #5c6bc0 0%, #7e57c2 100%);
+  border: none;
+  color: white;
+}
+
+.logto-button:hover {
+  background: linear-gradient(135deg, #7986cb 0%, #9575cd 100%);
+}
+
+.logto-icon {
+  margin-right: 8px;
 }
 </style>
