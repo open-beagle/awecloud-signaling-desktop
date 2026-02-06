@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -21,6 +24,8 @@ type App struct {
 	desktopClient *client.DesktopClient
 	tsManager     *tailscale.Manager
 	authResult    *client.AuthResult
+	loginWindow   *application.WebviewWindow // 登录窗口引用（指针）
+	loginMutex    sync.Mutex                 // 保护登录窗口的并发访问
 }
 
 // NewApp creates a new App application struct
@@ -201,6 +206,7 @@ func (a *App) initializeTailscale() error {
 func (a *App) Logout() {
 	log.Printf("[App] Logout called")
 
+	// 停止客户端和隧道
 	if a.desktopClient != nil {
 		a.desktopClient.Stop()
 		a.desktopClient = nil
@@ -212,11 +218,16 @@ func (a *App) Logout() {
 
 	a.authResult = nil
 
-	// 清除配置
-	if err := config.Delete(); err != nil {
-		log.Printf("[App] Failed to delete config after logout: %v", err)
+	// 清除所有配置（包括 DeviceToken）
+	config.GlobalConfig.ClearToken()
+	config.GlobalConfig.ClientID = ""
+	config.GlobalConfig.ServerAddress = ""
+	config.GlobalConfig.RememberMe = false
+
+	if err := config.GlobalConfig.Save(); err != nil {
+		log.Printf("[App] Failed to save config after logout: %v", err)
 	} else {
-		log.Printf("[App] Config deleted")
+		log.Printf("[App] Config cleared and saved")
 	}
 }
 
@@ -861,152 +872,103 @@ func (w *logWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// LogtoLoginResult Logto 登录结果（用于前端）
-type LogtoLoginResult struct {
-	Success    bool   `json:"success"`
-	DesktopID  uint64 `json:"desktop_id"`
-	AuthKey    string `json:"auth_key"`
-	ServerURL  string `json:"server_url"`
-	Message    string `json:"message"`
-	SessionID  string `json:"session_id"`
-	LoginURL   string `json:"login_url"`
-	UserID     string `json:"user_id"`
-	Username   string `json:"username"`
-	Email      string `json:"email"`
-	DeviceName string `json:"device_name"`
-}
+// GetLoginURL 获取登录页面 URL
+// 调用 Server 的 REST API 获取登录 URL
+func (a *App) GetLoginURL(serverAddr, usernameHint string) (string, error) {
+	log.Printf("[App] GetLoginURL: serverAddr=%s, usernameHint=%s", serverAddr, usernameHint)
 
-// logtoLoginCallback 用于存储 Logto 登录回调通道
-var logtoLoginCallback chan *LogtoLoginResult
-
-// LoginWithLogto 通过 Logto 登录
-// 返回 login_url，前端需要打开浏览器让用户完成登录
-func (a *App) LoginWithLogto(serverAddr, usernameHint string) (*LogtoLoginResult, error) {
-	log.Printf("[App] LoginWithLogto: serverAddr=%s, usernameHint=%s", serverAddr, usernameHint)
-
-	config.GlobalConfig.ServerAddress = serverAddr
-
-	// 创建客户端
-	log.Printf("[App] Creating Desktop client for Logto login: %s", serverAddr)
-	a.desktopClient = client.NewDesktopClient(serverAddr)
-	if err := a.desktopClient.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start desktop client: %w", err)
+	// 调用 Server 的 REST API 获取登录 URL
+	// 例如：GET /api/v1/auth/desktop/login-url?username_hint=xxx
+	client := &http.Client{
+		Timeout: 10 * time.Second,
 	}
-	log.Printf("[App] Desktop client started successfully")
 
-	// 创建回调通道
-	logtoLoginCallback = make(chan *LogtoLoginResult, 1)
+	url := fmt.Sprintf("%s/api/v1/auth/desktop/login-url", serverAddr)
+	if usernameHint != "" {
+		url += "?username_hint=" + usernameHint
+	}
 
-	// 调用 gRPC 流式登录
-	err := a.desktopClient.LoginWithLogto(usernameHint, func(result *client.LogtoLoginResult) {
-		log.Printf("[App] Logto login callback: success=%v, session_id=%s, login_url=%s",
-			result.Success, result.SessionID, result.LoginURL)
-
-		frontendResult := &LogtoLoginResult{
-			Success:    result.Success,
-			DesktopID:  result.DesktopID,
-			AuthKey:    result.AuthKey,
-			ServerURL:  result.ServerURL,
-			Message:    result.Message,
-			SessionID:  result.SessionID,
-			LoginURL:   result.LoginURL,
-			DeviceName: result.DeviceName,
-		}
-
-		if result.UserInfo != nil {
-			frontendResult.UserID = result.UserInfo.UserID
-			frontendResult.Username = result.UserInfo.Username
-			frontendResult.Email = result.UserInfo.Email
-		}
-
-		// 如果登录成功，保存认证结果
-		if result.Success {
-			a.authResult = &client.AuthResult{
-				Success:    true,
-				DesktopID:  result.DesktopID,
-				Secret:     result.Secret,
-				AuthKey:    result.AuthKey,
-				ServerURL:  result.ServerURL,
-				Message:    result.Message,
-				IsNewLogin: true,
-				DeviceName: result.DeviceName,
-			}
-
-			// 保存配置
-			if result.UserInfo != nil {
-				config.GlobalConfig.ClientID = result.UserInfo.Username
-			}
-			config.GlobalConfig.RememberMe = true
-			if err := config.GlobalConfig.Save(); err != nil {
-				log.Printf("[App] Warning: failed to save config: %v", err)
-			}
-		}
-
-		// 发送结果到通道
-		select {
-		case logtoLoginCallback <- frontendResult:
-		default:
-			log.Printf("[App] Warning: logto callback channel full")
-		}
-	})
-
+	resp, err := client.Get(url)
 	if err != nil {
-		a.desktopClient.Stop()
-		a.desktopClient = nil
-		return nil, fmt.Errorf("failed to start logto login: %w", err)
+		return "", fmt.Errorf("failed to get login url: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("server returned status %d", resp.StatusCode)
 	}
 
-	// 等待第一个响应（包含 login_url）
-	select {
-	case result := <-logtoLoginCallback:
-		if result.LoginURL != "" {
-			// 返回 login_url，前端需要打开浏览器
-			return result, nil
-		}
-		if result.Success {
-			// 直接成功（不太可能，但处理一下）
-			return result, nil
-		}
-		return nil, fmt.Errorf("logto login failed: %s", result.Message)
-	case <-time.After(30 * time.Second):
-		return nil, fmt.Errorf("logto login timeout")
-	}
-}
-
-// WaitLogtoLoginResult 等待 Logto 登录结果
-// 前端在打开浏览器后调用此方法等待用户完成登录
-func (a *App) WaitLogtoLoginResult() (*LogtoLoginResult, error) {
-	log.Printf("[App] WaitLogtoLoginResult called")
-
-	if logtoLoginCallback == nil {
-		return nil, fmt.Errorf("no logto login in progress")
+	var result struct {
+		LoginURL string `json:"login_url"`
+		Message  string `json:"message"`
 	}
 
-	// 等待登录结果（最多等待 5 分钟）
-	select {
-	case result := <-logtoLoginCallback:
-		log.Printf("[App] Logto login result received: success=%v", result.Success)
-
-		if result.Success {
-			// 登录成功后初始化隧道
-			log.Printf("[App] Initializing tunnel after Logto login...")
-			if err := a.initializeTailscale(); err != nil {
-				log.Printf("[App] Warning: Failed to initialize tunnel: %v", err)
-			} else {
-				log.Printf("[App] Tunnel initialized successfully, IP: %s", a.tsManager.GetIP())
-			}
-		}
-
-		return result, nil
-	case <-time.After(5 * time.Minute):
-		return nil, fmt.Errorf("logto login timeout (5 minutes)")
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode response: %w", err)
 	}
+
+	if result.LoginURL == "" {
+		return "", fmt.Errorf("no login url returned: %s", result.Message)
+	}
+
+	log.Printf("[App] Got login URL: %s", result.LoginURL)
+	return result.LoginURL, nil
 }
 
 // OpenBrowser 打开浏览器
 func (a *App) OpenBrowser(url string) error {
 	log.Printf("[App] OpenBrowser: %s", url)
 	return openBrowser(url)
+}
+
+// OpenLoginWindow 打开登录窗口（在 Desktop 内部的 WebView 中）
+// 用于 Logto 登录流程
+func (a *App) OpenLoginWindow(loginURL string) error {
+	log.Printf("[App] OpenLoginWindow: %s", loginURL)
+
+	if mainApp == nil {
+		return fmt.Errorf("mainApp is nil")
+	}
+
+	// 创建新的 WebView 窗口用于登录
+	loginWindow := mainApp.Window.NewWithOptions(application.WebviewWindowOptions{
+		Title:     "登录 - Signaling Desktop",
+		Width:     600,
+		Height:    700,
+		MinWidth:  600,
+		MinHeight: 700,
+		URL:       loginURL,
+		BackgroundColour: application.RGBA{
+			Red: 255, Green: 255, Blue: 255, Alpha: 255,
+		},
+	})
+
+	// 保存窗口引用
+	a.loginMutex.Lock()
+	a.loginWindow = loginWindow
+	a.loginMutex.Unlock()
+
+	// 显示窗口
+	loginWindow.Show()
+
+	log.Printf("[App] Login window opened")
+	return nil
+}
+
+// CloseLoginWindow 关闭登录窗口
+func (a *App) CloseLoginWindow() error {
+	log.Printf("[App] CloseLoginWindow")
+
+	a.loginMutex.Lock()
+	defer a.loginMutex.Unlock()
+
+	if a.loginWindow != nil {
+		a.loginWindow.Close()
+		a.loginWindow = nil
+		log.Printf("[App] Login window closed")
+	}
+
+	return nil
 }
 
 // ConnectService 快速连接服务
@@ -1073,4 +1035,174 @@ func (a *App) ConnectService(serviceID string) (string, error) {
 
 	log.Printf("[App] Generated connection command: %s", command)
 	return command, nil
+}
+
+// CheckCertificateTrust 检查服务器证书是否被信任
+func (a *App) CheckCertificateTrust(serverURL string) (bool, string) {
+	log.Printf("[App] CheckCertificateTrust: %s", serverURL)
+
+	// Linux 环境已设置环境变量，无需检查
+	if runtime.GOOS == "linux" {
+		log.Printf("[App] Linux environment, certificate check skipped")
+		return true, ""
+	}
+
+	// 尝试连接服务器
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
+	resp, err := client.Get(serverURL)
+	if err != nil {
+		// 检查是否是证书错误
+		if strings.Contains(err.Error(), "certificate") ||
+			strings.Contains(err.Error(), "x509") ||
+			strings.Contains(err.Error(), "tls") {
+			log.Printf("[App] Certificate error detected: %v", err)
+			return false, err.Error()
+		}
+		log.Printf("[App] Connection error (not certificate): %v", err)
+		return false, err.Error()
+	}
+	defer resp.Body.Close()
+
+	log.Printf("[App] Certificate is trusted")
+	return true, ""
+}
+
+// GetCertificateInstallInstructions 获取证书安装说明
+func (a *App) GetCertificateInstallInstructions() string {
+	switch runtime.GOOS {
+	case "windows":
+		return `请按以下步骤安装证书：
+
+方法一：图形界面
+1. 下载服务器证书文件（.crt 或 .pem）
+2. 右键点击证书文件，选择"安装证书"
+3. 选择"本地计算机"（需要管理员权限）
+4. 选择"将所有的证书都放入下列存储"
+5. 浏览并选择"受信任的根证书颁发机构"
+6. 点击"完成"
+
+方法二：命令行（管理员权限）
+certutil -addstore -f "ROOT" server.crt
+
+安装完成后，请重启 Desktop 应用。`
+
+	case "darwin":
+		return `请按以下步骤安装证书：
+
+方法一：图形界面
+1. 下载服务器证书文件（.crt 或 .pem）
+2. 双击证书文件
+3. 在钥匙串访问中，将证书拖到"系统"钥匙串
+4. 双击证书，展开"信任"部分
+5. 将"使用此证书时"设置为"始终信任"
+6. 关闭窗口，输入管理员密码
+
+方法二：命令行
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain server.crt
+
+安装完成后，请重启 Desktop 应用。`
+
+	case "linux":
+		return `Linux 环境已自动配置跳过证书验证，无需手动操作。
+
+如需手动安装证书到系统信任列表：
+
+Ubuntu/Debian:
+sudo cp server.crt /usr/local/share/ca-certificates/
+sudo update-ca-certificates
+
+CentOS/RHEL:
+sudo cp server.crt /etc/pki/ca-trust/source/anchors/
+sudo update-ca-trust`
+
+	default:
+		return "不支持的操作系统"
+	}
+}
+
+
+// WaitForLoginResultGRPC 通过 gRPC 双向流等待登录结果
+// 此方法建立 gRPC 连接，等待 Server 推送登录结果
+// 返回登录成功的凭证信息
+type LoginResultGRPC struct {
+	Success     bool
+	Message     string
+	DesktopID   uint64
+	DeviceToken string
+	AuthKey     string
+	ServerURL   string
+	Username    string
+}
+
+func (a *App) WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint string) (*LoginResultGRPC, error) {
+	log.Printf("[App] WaitForLoginResultGRPC: serverAddr=%s, sessionID=%s", serverAddr, sessionID)
+
+	// 创建 Desktop 客户端（用于 gRPC 连接）
+	desktopClient := client.NewDesktopClient(serverAddr)
+	if err := desktopClient.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start desktop client: %w", err)
+	}
+	// 注意：不要在这里 defer Stop()，因为我们需要保留这个客户端用于后续的 API 调用
+
+	// 调用 gRPC 方法 WaitForLoginResult
+	// 这是一个双向流，我们发送 sessionID，Server 推送登录结果
+	result, err := desktopClient.WaitForLoginResult(sessionID, deviceFingerprint)
+	if err != nil {
+		log.Printf("[App] WaitForLoginResult failed: %v", err)
+		desktopClient.Stop()
+		return nil, fmt.Errorf("wait for login result failed: %w", err)
+	}
+
+	if !result.Success {
+		log.Printf("[App] Login failed: %s", result.Message)
+		desktopClient.Stop()
+		return &LoginResultGRPC{
+			Success: false,
+			Message: result.Message,
+		}, nil
+	}
+
+	log.Printf("[App] Login successful: desktopID=%d, username=%s", result.DesktopID, result.Username)
+
+	// 关闭登录窗口
+	if err := a.CloseLoginWindow(); err != nil {
+		log.Printf("[App] Failed to close login window: %v", err)
+	}
+
+	// 使用新获得的凭证在客户端上进行认证
+	authResult, err := desktopClient.Authenticate(result.DesktopID, result.DeviceToken)
+	if err != nil {
+		log.Printf("[App] Failed to authenticate with new credentials: %v", err)
+		desktopClient.Stop()
+		return nil, fmt.Errorf("authentication failed: %w", err)
+	}
+
+	log.Printf("[App] Authentication successful with new credentials")
+
+	// 保存 Desktop 客户端（重要：用于后续的 API 调用）
+	a.desktopClient = desktopClient
+
+	// 设置认证结果（重要：这样后续的 API 调用才能识别已登录状态）
+	a.authResult = authResult
+
+	// 保存凭证
+	config.GlobalConfig.ServerAddress = serverAddr
+	config.GlobalConfig.ClientID = result.Username
+	config.GlobalConfig.DeviceToken = fmt.Sprintf("%d:%s", result.DesktopID, result.DeviceToken)
+	if err := config.GlobalConfig.Save(); err != nil {
+		log.Printf("[App] Failed to save config: %v", err)
+	}
+
+	return &LoginResultGRPC{
+		Success:     true,
+		Message:     result.Message,
+		DesktopID:   result.DesktopID,
+		DeviceToken: result.DeviceToken,
+		AuthKey:     result.AuthKey,
+		ServerURL:   result.ServerURL,
+		Username:    result.Username,
+	}, nil
 }

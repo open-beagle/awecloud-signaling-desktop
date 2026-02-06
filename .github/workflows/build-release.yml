@@ -6,13 +6,26 @@ on:
       - main
   workflow_dispatch: # 允许手动触发
 
-env:
-  BUILD_VERSION: v0.2.3
-
 jobs:
+  read-version:
+    name: Read Version
+    runs-on: ubuntu-latest
+    outputs:
+      BUILD_VERSION: ${{ steps.version.outputs.BUILD_VERSION }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read version from file
+        id: version
+        run: echo "BUILD_VERSION=$(cat desktop/version)" >> $GITHUB_OUTPUT
+
   build-desktop:
     name: Build Desktop (Linux/Windows)
     runs-on: ubuntu-latest
+    needs: read-version
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -44,7 +57,7 @@ jobs:
       - name: Build Desktop Applications (Linux and Windows)
         run: |
           PLATFORMS=linux/amd64,windows/amd64 \
-          BUILD_VERSION=${{ env.BUILD_VERSION }} \
+          BUILD_VERSION=${{ needs.read-version.outputs.BUILD_VERSION }} \
           BUILD_ADDRESS=${{ secrets.SIGNALING_ADDRESS }} \
           bash ./scripts/build.sh
 
@@ -58,6 +71,7 @@ jobs:
   build-desktop-mac:
     name: Build Desktop (macOS)
     runs-on: macos-latest
+    needs: read-version
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -80,7 +94,7 @@ jobs:
       - name: Build Desktop Application (macOS)
         run: |
           PLATFORMS=darwin/arm64,darwin/amd64 \
-          BUILD_VERSION=${{ env.BUILD_VERSION }} \
+          BUILD_VERSION=${{ needs.read-version.outputs.BUILD_VERSION }} \
           BUILD_ADDRESS=${{ secrets.SIGNALING_ADDRESS }} \
           bash ./scripts/build.sh
 
@@ -94,7 +108,7 @@ jobs:
   upload-to-s3:
     name: Upload to S3
     runs-on: ubuntu-latest
-    needs: [build-desktop, build-desktop-mac]
+    needs: [read-version, build-desktop, build-desktop-mac]
     steps:
       - name: Download Linux/Windows artifacts
         uses: actions/download-artifact@v4
@@ -119,7 +133,7 @@ jobs:
           mc alias set aliyun --api=S3v4 https://cache.ali.wodcloud.com \
             ${{ secrets.S3_ACCESS_KEY_ALIYUN }} ${{ secrets.S3_SECRET_KEY_ALIYUN }}
           
-          VERSION="${{ env.BUILD_VERSION }}"
+          VERSION="${{ needs.read-version.outputs.BUILD_VERSION }}"
           
           # 上传所有构建产物
           for file in artifacts/*; do

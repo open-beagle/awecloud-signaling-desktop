@@ -217,19 +217,15 @@ checkMacOSDeps() {
 
 # 安装前端依赖
 echo -e "${YELLOW}Installing frontend dependencies...${NC}"
-cd frontend
-if [ ! -d "node_modules" ]; then
-    npm install
+if [ ! -d "frontend/node_modules" ]; then
+    npm install --prefix frontend
 else
     echo "Frontend dependencies already installed, skipping..."
 fi
-cd ..
 
 # 构建前端
 echo -e "${YELLOW}Building frontend...${NC}"
-cd frontend
-npm run build
-cd ..
+npm run build --prefix frontend
 
 # 生成绑定（如果 wails3 可用且绑定目录不存在）
 if [ "$WAILS3_AVAILABLE" = true ]; then
@@ -385,9 +381,10 @@ EOF
             echo -e "${YELLOW}Applying ad-hoc signature...${NC}"
             codesign --force --deep --sign - "${OUTPUT_DIR}/${APP_BUNDLE_NAME}"
 
-            cd "${OUTPUT_DIR}"
+            # 使用 pushd/popd 替代 cd 来避免目录切换问题
+            pushd "${OUTPUT_DIR}" > /dev/null
             zip -r "${ZIP_NAME}" "${APP_BUNDLE_NAME}"
-            cd - > /dev/null
+            popd > /dev/null
             
             # 清理 .app 目录和原始二进制文件
             rm -rf "${OUTPUT_DIR}/${APP_BUNDLE_NAME}"

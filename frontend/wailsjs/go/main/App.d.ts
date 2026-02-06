@@ -21,6 +21,8 @@ export function GetConfig():Promise<config.Config>;
 
 export function GetDevices():Promise<Array<main.DeviceInfo>>;
 
+export function GetLoginURL(arg1:string,arg2:string):Promise<string>;
+
 export function GetLogs():Promise<Array<string>>;
 
 export function GetServices():Promise<Array<models.ServiceInfo>>;
@@ -38,6 +40,8 @@ export function Login(arg1:string,arg2:string,arg3:string,arg4:boolean):Promise<
 export function Logout():Promise<void>;
 
 export function OfflineDevice(arg1:string):Promise<void>;
+
+export function OpenLoginWindow(arg1:string):Promise<void>;
 
 export function QuitApp():Promise<void>;
 

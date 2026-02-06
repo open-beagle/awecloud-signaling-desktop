@@ -95,6 +95,14 @@ export class Config {
              */
             this["port_preferences"] = {};
         }
+        if (!("telemetry" in $$source)) {
+            /**
+             * OpenTelemetry 配置
+             * @member
+             * @type {TelemetryConfig}
+             */
+            this["telemetry"] = (new TelemetryConfig());
+        }
 
         Object.assign(this, $$source);
     }
@@ -106,13 +114,74 @@ export class Config {
      */
     static createFrom($$source = {}) {
         const $$createField9_0 = $$createType0;
+        const $$createField10_0 = $$createType1;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("port_preferences" in $$parsedSource) {
             $$parsedSource["port_preferences"] = $$createField9_0($$parsedSource["port_preferences"]);
+        }
+        if ("telemetry" in $$parsedSource) {
+            $$parsedSource["telemetry"] = $$createField10_0($$parsedSource["telemetry"]);
         }
         return new Config(/** @type {Partial<Config>} */($$parsedSource));
     }
 }
 
+/**
+ * TelemetryConfig OpenTelemetry 配置
+ */
+export class TelemetryConfig {
+    /**
+     * Creates a new TelemetryConfig instance.
+     * @param {Partial<TelemetryConfig>} [$$source = {}] - The source object to create the TelemetryConfig.
+     */
+    constructor($$source = {}) {
+        if (!("endpoint" in $$source)) {
+            /**
+             * OTLP Endpoint，设置后自动启用
+             * @member
+             * @type {string}
+             */
+            this["endpoint"] = "";
+        }
+        if (!("name" in $$source)) {
+            /**
+             * 服务名称
+             * @member
+             * @type {string}
+             */
+            this["name"] = "";
+        }
+        if (!("namespace" in $$source)) {
+            /**
+             * 服务命名空间
+             * @member
+             * @type {string}
+             */
+            this["namespace"] = "";
+        }
+        if (!("cluster" in $$source)) {
+            /**
+             * 集群标识
+             * @member
+             * @type {string}
+             */
+            this["cluster"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new TelemetryConfig instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {TelemetryConfig}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new TelemetryConfig(/** @type {Partial<TelemetryConfig>} */($$parsedSource));
+    }
+}
+
 // Private type creation functions
 const $$createType0 = $Create.Map($Create.Any, $Create.Any);
+const $$createType1 = TelemetryConfig.createFrom;

@@ -1,14 +1,20 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"log"
 	"os"
+	"runtime"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/singleton"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/telemetry"
+	appVersion "github.com/open-beagle/awecloud-signaling-desktop/internal/version"
 )
 
 //go:embed frontend/dist
@@ -24,12 +30,59 @@ var (
 )
 
 func main() {
+	// Linux 环境下设置环境变量，跳过 WebView 的 TLS 证书验证
+	if runtime.GOOS == "linux" {
+		os.Setenv("WEBKIT_IGNORE_TLS_ERRORS", "1")
+		log.Printf("[Main] Set WEBKIT_IGNORE_TLS_ERRORS=1 for Linux WebView")
+	}
+
 	// 单实例检查
 	if !singleton.CheckSingleInstance() {
 		log.Println("应用已在运行中，退出当前实例")
 		os.Exit(0)
 	}
 	defer singleton.ReleaseSingleInstance()
+
+	// 加载配置
+	cfg, err := config.Load()
+	if err != nil {
+		log.Printf("Failed to load config: %v", err)
+		cfg = &config.Config{
+			Telemetry: config.TelemetryConfig{
+				Name:      "signaling-desktop",
+				Namespace: "default",
+				Cluster:   "default",
+			},
+		}
+	}
+
+	// 设置 telemetry 日志记录器
+	telemetry.SetLogger(&telemetryLogger{})
+
+	// 初始化 OpenTelemetry
+	if err := telemetry.Init(telemetry.Config{
+		Endpoint:    cfg.Telemetry.Endpoint,
+		ServiceName: cfg.Telemetry.Name,
+		Namespace:   cfg.Telemetry.Namespace,
+		Cluster:     cfg.Telemetry.Cluster,
+	}, &telemetry.BuildInfo{
+		Version:   appVersion.Version,
+		GitCommit: appVersion.GitCommit,
+		BuildDate: appVersion.BuildTime,
+		GoVersion: "go1.25+",
+	}, &telemetry.ProcessAttributes{
+		User: cfg.ClientID, // 使用 ClientID 作为用户标识
+	}); err != nil {
+		log.Printf("Warning: Failed to initialize OpenTelemetry: %v", err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := telemetry.Shutdown(ctx); err != nil {
+			log.Printf("Warning: Failed to shutdown OpenTelemetry: %v", err)
+		}
+	}()
+
 	// 创建应用实例
 	app := NewApp()
 
@@ -79,8 +132,27 @@ func main() {
 	app.startup()
 
 	// 运行应用
-	err := mainApp.Run()
+	err = mainApp.Run()
 	if err != nil {
 		log.Fatal("Error:", err.Error())
 	}
+}
+
+// telemetryLogger 实现 telemetry.Logger 接口
+type telemetryLogger struct{}
+
+func (l *telemetryLogger) Info(args ...interface{}) {
+	log.Println(args...)
+}
+
+func (l *telemetryLogger) Infof(format string, args ...interface{}) {
+	log.Printf(format, args...)
+}
+
+func (l *telemetryLogger) Warn(args ...interface{}) {
+	log.Println(args...)
+}
+
+func (l *telemetryLogger) Warnf(format string, args ...interface{}) {
+	log.Printf(format, args...)
 }

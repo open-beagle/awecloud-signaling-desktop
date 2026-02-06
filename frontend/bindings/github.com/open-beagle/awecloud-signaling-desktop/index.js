@@ -11,6 +11,7 @@ export {
     DeviceInfo,
     GRPCStatus,
     HostInfo,
+    LoginResultGRPC,
     SavedCredentials,
     ServiceInfo,
     TunnelStatus,

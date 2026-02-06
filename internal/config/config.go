@@ -25,6 +25,15 @@ type Config struct {
 	TunnelServer    string        `json:"tunnel_server"`    // 隧道服务器地址
 	TunnelPort      int           `json:"tunnel_port"`      // 隧道服务器端口
 	PortPreferences map[int64]int `json:"port_preferences"` // 服务 ID -> 本地端口映射
+	Telemetry       TelemetryConfig `json:"telemetry"`      // OpenTelemetry 配置
+}
+
+// TelemetryConfig OpenTelemetry 配置
+type TelemetryConfig struct {
+	Endpoint  string `json:"endpoint"`  // OTLP Endpoint，设置后自动启用
+	Name      string `json:"name"`      // 服务名称
+	Namespace string `json:"namespace"` // 服务命名空间
+	Cluster   string `json:"cluster"`   // 集群标识
 }
 
 // LocalConfig 是保存到本地文件的配置（精简版）

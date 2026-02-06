@@ -20,6 +20,15 @@ import * as config$0 from "./internal/config/models.js";
 import * as $models from "./models.js";
 
 /**
+ * CheckCertificateTrust 检查服务器证书是否被信任
+ * @param {string} serverURL
+ * @returns {$CancellablePromise<[boolean, string]>}
+ */
+export function CheckCertificateTrust(serverURL) {
+    return $Call.ByID(3667919868, serverURL);
+}
+
+/**
  * @returns {$CancellablePromise<$models.SavedCredentials | null>}
  */
 export function CheckSavedCredentials() {
@@ -46,6 +55,14 @@ export function ClearCredentials() {
 }
 
 /**
+ * CloseLoginWindow 关闭登录窗口
+ * @returns {$CancellablePromise<void>}
+ */
+export function CloseLoginWindow() {
+    return $Call.ByID(3455875844);
+}
+
+/**
  * ConnectService 快速连接服务
  * @param {string} serviceID
  * @returns {$CancellablePromise<string>}
@@ -61,6 +78,14 @@ export function ConnectService(serviceID) {
  */
 export function DeleteDevice(deviceToken) {
     return $Call.ByID(2539306500, deviceToken);
+}
+
+/**
+ * GetCertificateInstallInstructions 获取证书安装说明
+ * @returns {$CancellablePromise<string>}
+ */
+export function GetCertificateInstallInstructions() {
+    return $Call.ByID(3559300036);
 }
 
 /**
@@ -119,6 +144,17 @@ export function GetHosts() {
  */
 export function GetLogLevel() {
     return $Call.ByID(2884930143);
+}
+
+/**
+ * GetLoginURL 获取登录页面 URL
+ * 调用 Server 的 REST API 获取登录 URL
+ * @param {string} serverAddr
+ * @param {string} usernameHint
+ * @returns {$CancellablePromise<string>}
+ */
+export function GetLoginURL(serverAddr, usernameHint) {
+    return $Call.ByID(2745696765, serverAddr, usernameHint);
 }
 
 /**
@@ -208,6 +244,25 @@ export function OfflineDevice(deviceToken) {
 }
 
 /**
+ * OpenBrowser 打开浏览器
+ * @param {string} url
+ * @returns {$CancellablePromise<void>}
+ */
+export function OpenBrowser(url) {
+    return $Call.ByID(3406234859, url);
+}
+
+/**
+ * OpenLoginWindow 打开登录窗口（在 Desktop 内部的 WebView 中）
+ * 用于 Logto 登录流程
+ * @param {string} loginURL
+ * @returns {$CancellablePromise<void>}
+ */
+export function OpenLoginWindow(loginURL) {
+    return $Call.ByID(3869977658, loginURL);
+}
+
+/**
  * @returns {$CancellablePromise<void>}
  */
 export function QuitApp() {
@@ -248,34 +303,15 @@ export function ToggleFavorite(serviceID) {
 }
 
 /**
- * LoginWithLogto 通过 Logto 登录
  * @param {string} serverAddr
- * @param {string} usernameHint
- * @returns {$CancellablePromise<$models.LogtoLoginResult | null>}
+ * @param {string} sessionID
+ * @param {string} deviceFingerprint
+ * @returns {$CancellablePromise<$models.LoginResultGRPC | null>}
  */
-export function LoginWithLogto(serverAddr, usernameHint) {
-    return $Call.ByID(4099716341, serverAddr, usernameHint).then(/** @type {($result: any) => any} */(($result) => {
-        return $createType22($result);
+export function WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint) {
+    return $Call.ByID(1518366997, serverAddr, sessionID, deviceFingerprint).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType23($result);
     }));
-}
-
-/**
- * WaitLogtoLoginResult 等待 Logto 登录结果
- * @returns {$CancellablePromise<$models.LogtoLoginResult | null>}
- */
-export function WaitLogtoLoginResult() {
-    return $Call.ByID(870198877).then(/** @type {($result: any) => any} */(($result) => {
-        return $createType22($result);
-    }));
-}
-
-/**
- * OpenBrowser 打开浏览器
- * @param {string} url
- * @returns {$CancellablePromise<void>}
- */
-export function OpenBrowser(url) {
-    return $Call.ByID(3406234859, url);
 }
 
 // Private type creation functions
@@ -301,5 +337,5 @@ const $$createType18 = $models.TunnelStatus.createFrom;
 const $$createType19 = $Create.Nullable($$createType18);
 const $$createType20 = $models.VersionInfo.createFrom;
 const $$createType21 = $Create.Nullable($$createType20);
-const $createType22Base = $models.LogtoLoginResult.createFrom;
-const $createType22 = $Create.Nullable($createType22Base);
+const $$createType22 = $models.LoginResultGRPC.createFrom;
+const $$createType23 = $Create.Nullable($$createType22);

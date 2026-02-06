@@ -34,6 +34,10 @@ export function GetDevices() {
   return window['go']['main']['App']['GetDevices']();
 }
 
+export function GetLoginURL(arg1, arg2) {
+  return window['go']['main']['App']['GetLoginURL'](arg1, arg2);
+}
+
 export function GetLogs() {
   return window['go']['main']['App']['GetLogs']();
 }
@@ -68,6 +72,10 @@ export function Logout() {
 
 export function OfflineDevice(arg1) {
   return window['go']['main']['App']['OfflineDevice'](arg1);
+}
+
+export function OpenLoginWindow(arg1) {
+  return window['go']['main']['App']['OpenLoginWindow'](arg1);
 }
 
 export function QuitApp() {

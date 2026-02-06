@@ -596,3 +596,75 @@ func (c *DesktopClient) GetFavoriteServices() ([]string, error) {
 
 	return resp.ServiceIds, nil
 }
+
+// LoginResultFromGRPC gRPC 登录结果
+type LoginResultFromGRPC struct {
+	Success     bool
+	Message     string
+	DesktopID   uint64
+	DeviceToken string
+	AuthKey     string
+	ServerURL   string
+	Username    string
+}
+
+// WaitForLoginResult 通过 gRPC 双向流等待登录结果
+// 此方法建立 gRPC 连接，发送 sessionID，等待 Server 推送登录结果
+func (c *DesktopClient) WaitForLoginResult(sessionID, deviceFingerprint string) (*LoginResultFromGRPC, error) {
+	log.Printf("[Client] WaitForLoginResult: sessionID=%s", sessionID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// 建立双向流
+	stream, err := c.grpcClient.WaitForLoginResult(ctx)
+	if err != nil {
+		log.Printf("[Client] Failed to create WaitForLoginResult stream: %v", err)
+		return nil, fmt.Errorf("failed to create stream: %w", err)
+	}
+
+	// 发送请求
+	req := &pb.WaitForLoginResultRequest{
+		SessionId:         sessionID,
+		DeviceFingerprint: deviceFingerprint,
+	}
+
+	if err := stream.Send(req); err != nil {
+		log.Printf("[Client] Failed to send WaitForLoginResult request: %v", err)
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+
+	log.Printf("[Client] Sent WaitForLoginResult request, waiting for response...")
+
+	// 接收响应
+	resp, err := stream.Recv()
+	if err != nil {
+		log.Printf("[Client] Failed to receive WaitForLoginResult response: %v", err)
+		return nil, fmt.Errorf("failed to receive response: %w", err)
+	}
+
+	log.Printf("[Client] Received WaitForLoginResult response: status=%v, message=%s", resp.Status, resp.Message)
+
+	// 检查状态
+	if resp.Status != pb.WaitForLoginResultStatus_WAIT_FOR_LOGIN_RESULT_STATUS_SUCCESS {
+		return &LoginResultFromGRPC{
+			Success: false,
+			Message: resp.Message,
+		}, nil
+	}
+
+	// 登录成功
+	result := &LoginResultFromGRPC{
+		Success:     true,
+		Message:     resp.Message,
+		DesktopID:   resp.DesktopId,
+		DeviceToken: resp.DeviceToken,
+		AuthKey:     resp.AuthKey,
+		ServerURL:   resp.ServerUrl,
+		Username:    resp.Username,
+	}
+
+	log.Printf("[Client] Login successful: desktopID=%d, username=%s", result.DesktopID, result.Username)
+
+	return result, nil
+}

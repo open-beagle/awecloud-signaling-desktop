@@ -199,8 +199,87 @@ export class HostInfo {
      * @returns {HostInfo}
      */
     static createFrom($$source = {}) {
+        const $$createField3_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("ssh_users" in $$parsedSource) {
+            $$parsedSource["ssh_users"] = $$createField3_0($$parsedSource["ssh_users"]);
+        }
         return new HostInfo(/** @type {Partial<HostInfo>} */($$parsedSource));
+    }
+}
+
+/**
+ * WaitForLoginResultGRPC 通过 gRPC 双向流等待登录结果
+ * 此方法建立 gRPC 连接，等待 Server 推送登录结果
+ * 返回登录成功的凭证信息
+ */
+export class LoginResultGRPC {
+    /**
+     * Creates a new LoginResultGRPC instance.
+     * @param {Partial<LoginResultGRPC>} [$$source = {}] - The source object to create the LoginResultGRPC.
+     */
+    constructor($$source = {}) {
+        if (!("Success" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["Success"] = false;
+        }
+        if (!("Message" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["Message"] = "";
+        }
+        if (!("DesktopID" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["DesktopID"] = 0;
+        }
+        if (!("DeviceToken" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["DeviceToken"] = "";
+        }
+        if (!("AuthKey" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["AuthKey"] = "";
+        }
+        if (!("ServerURL" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["ServerURL"] = "";
+        }
+        if (!("Username" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["Username"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new LoginResultGRPC instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {LoginResultGRPC}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new LoginResultGRPC(/** @type {Partial<LoginResultGRPC>} */($$parsedSource));
     }
 }
 
@@ -536,104 +615,5 @@ export class VersionInfo {
     }
 }
 
-
-/**
- * LogtoLoginResult Logto 登录结果
- */
-export class LogtoLoginResult {
-    /**
-     * Creates a new LogtoLoginResult instance.
-     * @param {Partial<LogtoLoginResult>} [$source = {}] - The source object to create the LogtoLoginResult.
-     */
-    constructor($source = {}) {
-        if (!("success" in $source)) {
-            /**
-             * @member
-             * @type {boolean}
-             */
-            this["success"] = false;
-        }
-        if (!("desktop_id" in $source)) {
-            /**
-             * @member
-             * @type {number}
-             */
-            this["desktop_id"] = 0;
-        }
-        if (!("auth_key" in $source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["auth_key"] = "";
-        }
-        if (!("server_url" in $source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["server_url"] = "";
-        }
-        if (!("message" in $source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["message"] = "";
-        }
-        if (!("session_id" in $source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["session_id"] = "";
-        }
-        if (!("login_url" in $source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["login_url"] = "";
-        }
-        if (!("user_id" in $source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["user_id"] = "";
-        }
-        if (!("username" in $source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["username"] = "";
-        }
-        if (!("email" in $source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["email"] = "";
-        }
-        if (!("device_name" in $source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["device_name"] = "";
-        }
-
-        Object.assign(this, $source);
-    }
-
-    /**
-     * Creates a new LogtoLoginResult instance from a string or object.
-     * @param {any} [$source = {}]
-     * @returns {LogtoLoginResult}
-     */
-    static createFrom($source = {}) {
-        let $parsedSource = typeof $source === 'string' ? JSON.parse($source) : $source;
-        return new LogtoLoginResult(/** @type {Partial<LogtoLoginResult>} */($parsedSource));
-    }
-}
+// Private type creation functions
+const $$createType0 = $Create.Array($Create.Any);

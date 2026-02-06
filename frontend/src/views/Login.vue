@@ -9,32 +9,25 @@
       </div>
       <h1 class="title">Signaling Desktop</h1>
       <p class="version">{{ appVersion }}</p>
-      <p class="subtitle">{{ isAutoLogging ? '正在自动登录' + loadingDots : '连接到您的远程服务' }}</p>
+      <p class="subtitle">{{ getSubtitle() }}</p>
 
-      <!-- 离线模式提示 -->
+      <!-- 自动登录状态 -->
       <el-alert
-        v-if="loginMode === 'offline'"
-        type="warning"
+        v-if="isAutoLogging"
+        type="info"
         :closable="false"
         show-icon
-        class="offline-alert"
+        class="status-alert"
       >
-        <template #title>
-          服务器离线
-        </template>
-        <p>无法连接到服务器，您可以查看缓存的服务但无法连接新服务。</p>
-        <p class="offline-info">
-          <strong>服务器：</strong>{{ form.server }}<br />
-          <strong>用户：</strong>{{ form.client }}
-        </p>
+        欢迎回来！正在使用保存的凭据登录...
       </el-alert>
 
       <!-- 登录提示 -->
       <el-alert
-        v-if="loginMode === 'full' && loginHint && !isAutoLogging"
+        v-if="loginHint && !isAutoLogging"
         type="info"
         :closable="false"
-        class="login-hint"
+        class="status-alert"
       >
         {{ loginHint }}
       </el-alert>
@@ -46,97 +39,54 @@
         label-width="100px"
         class="login-form"
       >
-        <!-- 模式1：离线模式 - 只读显示 -->
-        <template v-if="loginMode === 'offline'">
-          <el-form-item label=" " class="button-form-item">
-            <el-button
-              type="primary"
-              :loading="reconnecting"
-              @click="handleReconnect"
-              class="full-width-button"
-            >
-              {{ reconnecting ? '重新连接中...' : '重新连接' }}
-            </el-button>
-          </el-form-item>
-          <el-form-item label=" " class="button-form-item">
-            <el-button
-              @click="handleSwitchAccount"
-              class="full-width-button"
-            >
-              切换账号
-            </el-button>
-          </el-form-item>
-        </template>
+        <!-- 服务器地址 -->
+        <el-form-item label="服务器地址" prop="server">
+          <el-input
+            v-model="form.server"
+            placeholder="例如: https://signal.wodcloud.com"
+            :disabled="isAutoLogging || logtoLoading"
+          />
+        </el-form-item>
 
-        <!-- 模式2：完整登录表单 -->
-        <template v-else>
-          <el-form-item label="服务器地址" prop="server">
-            <el-input
-              v-model="form.server"
-              placeholder="例如: localhost:8080"
-              :disabled="loading || autoFillMode"
-            />
-          </el-form-item>
+        <!-- 用户名提示（可选） -->
+        <el-form-item label="用户名提示" prop="usernameHint">
+          <el-input
+            v-model="form.usernameHint"
+            placeholder="可选，用于自动填充"
+            :disabled="isAutoLogging || logtoLoading"
+          />
+        </el-form-item>
 
-          <el-form-item label="Client ID" prop="client">
-            <el-input
-              v-model="form.client"
-              placeholder="用户名或邮箱"
-              :disabled="loading || autoFillMode"
-            />
-          </el-form-item>
+        <!-- 记住登录 -->
+        <el-form-item label=" ">
+          <el-checkbox v-model="form.rememberMe" :disabled="isAutoLogging || logtoLoading">
+            记住登录
+          </el-checkbox>
+        </el-form-item>
 
-          <el-form-item label="Client Secret" prop="clientSecret">
-            <el-input
-              v-model="form.clientSecret"
-              type="password"
-              placeholder="请输入密钥"
-              :disabled="loading"
-              show-password
-            />
-          </el-form-item>
+        <!-- 登录按钮 -->
+        <el-form-item label=" " class="button-form-item">
+          <el-button
+            type="primary"
+            :loading="logtoLoading"
+            @click="handleLogin"
+            class="full-width-button"
+            :disabled="isAutoLogging"
+          >
+            {{ logtoLoading ? '登录中...' : '登录' }}
+          </el-button>
+        </el-form-item>
 
-          <el-form-item label=" ">
-            <el-checkbox v-model="form.rememberMe" :disabled="loading">
-              记住登录
-            </el-checkbox>
-          </el-form-item>
-
-          <el-form-item label=" " class="button-form-item">
-            <el-button
-              type="primary"
-              :loading="loading"
-              @click="handleLogin"
-              class="full-width-button"
-            >
-              {{ loading ? '登录中...' : '登录' }}
-            </el-button>
-          </el-form-item>
-
-          <el-form-item v-if="autoFillMode" label=" " class="button-form-item">
-            <el-button
-              @click="handleClearCredentials"
-              class="full-width-button"
-            >
-              使用其他账号登录
-            </el-button>
-          </el-form-item>
-
-          <!-- Logto 登录分隔线 -->
-          <el-divider>或</el-divider>
-
-          <!-- Logto 登录按钮（始终显示） -->
-          <el-form-item label=" " class="button-form-item">
-            <el-button
-              :loading="logtoLoading"
-              @click="handleLogtoLogin"
-              class="full-width-button logto-button"
-            >
-              <el-icon v-if="!logtoLoading" class="logto-icon"><User /></el-icon>
-              {{ logtoLoading ? '正在登录...' : '使用 Logto 登录' }}
-            </el-button>
-          </el-form-item>
-        </template>
+        <!-- 切换账号按钮（仅在 saved 模式显示） -->
+        <el-form-item v-if="loginMode === 'saved'" label=" " class="button-form-item">
+          <el-button
+            @click="handleSwitchAccount"
+            class="full-width-button"
+            :disabled="isAutoLogging || logtoLoading"
+          >
+            使用其他账号登录
+          </el-button>
+        </el-form-item>
       </el-form>
     </div>
   </div>
@@ -146,121 +96,181 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
-import { User } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
-import { Login, GetVersion, CheckSavedCredentials, ClearCredentials, LoginWithLogto, WaitLogtoLoginResult, OpenBrowser } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import { App } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop'
 import UpgradeDialog from '../components/UpgradeDialog.vue'
+
+const { Login, GetVersion, CheckSavedCredentials, ClearCredentials, GetLoginURL, OpenLoginWindow, WaitForLoginResultGRPC } = App
 
 const router = useRouter()
 const authStore = useAuthStore()
 const appVersion = ref('dev')
 
 const formRef = ref<FormInstance>()
-const loading = ref(false)
 const logtoLoading = ref(false)
-const reconnecting = ref(false)
-const loginMode = ref<'offline' | 'full'>('full')
-const autoFillMode = ref(false)
+const loginMode = ref<'auto' | 'saved' | 'new'>('new')
 const loginHint = ref('')
 const isAutoLogging = ref(false)
-const loadingDots = ref('')
 const upgradeDialogRef = ref<InstanceType<typeof UpgradeDialog>>()
+const sessionId = ref('')
 
 const form = reactive({
-  server: authStore.serverAddress || 'localhost:8080',
-  client: '',
-  clientSecret: '',
+  server: '',
+  usernameHint: '',
   rememberMe: true
 })
 
 const rules: FormRules = {
   server: [
     { required: true, message: '请输入服务器地址', trigger: 'blur' }
-  ],
-  client: [
-    { required: true, message: '请输入 Client ID', trigger: 'blur' }
-  ],
-  clientSecret: [
-    { required: true, message: '请输入 Client Secret', trigger: 'blur' }
   ]
 }
 
+// 获取副标题文本
+const getSubtitle = () => {
+  if (isAutoLogging.value) {
+    return '正在自动登录...'
+  }
+  if (loginMode.value === 'saved') {
+    return `欢迎回来，${form.usernameHint}！`
+  }
+  return '连接到您的远程服务'
+}
+
+// 登录处理
 const handleLogin = async () => {
   if (!formRef.value) return
 
   await formRef.value.validate(async (valid) => {
     if (!valid) return
 
-    loading.value = true
+    if (!form.server) {
+      ElMessage.warning('请输入服务器地址')
+      return
+    }
+
+    logtoLoading.value = true
     try {
-      await Login(
-        form.server,
-        form.client,
-        form.clientSecret,
-        form.rememberMe
-      )
+      // 第一步：从 Server 获取登录 URL
+      const loginURLResponse = await fetch(`${form.server}/api/v1/auth/desktop/login-url?username_hint=${encodeURIComponent(form.usernameHint || '')}`)
+      
+      if (!loginURLResponse.ok) {
+        ElMessage.error('获取登录地址失败')
+        logtoLoading.value = false
+        return
+      }
 
-      authStore.setAuthenticated(true)
-      authStore.setServerAddress(form.server)
-      authStore.setClientId(form.client)
+      const loginURLData = await loginURLResponse.json()
+      const loginURL = loginURLData.login_url
+      const sessionIdFromResponse = loginURLData.session_id
+      
+      if (!loginURL) {
+        ElMessage.error('获取登录地址失败: ' + (loginURLData.message || '未知错误'))
+        logtoLoading.value = false
+        return
+      }
 
-      ElMessage.success('登录成功')
-      router.push('/services')
+      // 保存 session_id
+      if (sessionIdFromResponse) {
+        sessionId.value = sessionIdFromResponse
+      }
+
+      // 第二步：在 Desktop 内部的 WebView 窗口中打开登录页面
+      ElMessage.info('正在打开登录窗口...')
+      const fullLoginURL = form.server + loginURL
+      await OpenLoginWindow(fullLoginURL)
+
+      // 第三步：通过 gRPC 双向流等待登录完成（5 分钟超时）
+      ElMessage.info('等待登录完成...')
+      const loginResult = await WaitForLoginResultGRPC(form.server, sessionIdFromResponse, '')
+
+      if (!loginResult) {
+        ElMessage.error('登录超时，请重试')
+        logtoLoading.value = false
+        // 超时后返回登录界面，用户可以重新尝试
+        return
+      }
+
+      if (loginResult.Success) {
+        // 先设置状态
+        authStore.setServerAddress(form.server)
+        authStore.setClientId(loginResult.Username || form.usernameHint || '')
+        
+        // 最后设置认证状态，触发路由守卫
+        authStore.setAuthenticated(true)
+
+        ElMessage.success('登录成功')
+        
+        // 延迟导航，确保状态已更新
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
+        // 导航到服务页面
+        await router.push('/services')
+      } else {
+        ElMessage.error(loginResult.Message || '登录失败')
+        logtoLoading.value = false
+      }
     } catch (error: any) {
-      ElMessage.error(error.message || '登录失败')
-    } finally {
-      loading.value = false
+      ElMessage.error('登录失败: ' + (error.message || '未知错误'))
+      logtoLoading.value = false
     }
   })
 }
 
-const handleReconnect = async () => {
-  reconnecting.value = true
-  isAutoLogging.value = true
-  startLoadingDots()
-  
-  try {
-    // 尝试使用保存的Token重新连接
-    await Login(
-      form.server,
-      form.client,
-      '', // 使用Token登录不需要Secret
-      true
-    )
+// 等待登录完成（带超时）
+const waitForLoginCompletion = async (serverAddr: string, timeoutMs: number) => {
+  const startTime = Date.now()
+  const pollInterval = 500 // 每 500ms 轮询一次
 
-    authStore.setAuthenticated(true)
-    authStore.setServerAddress(form.server)
-    authStore.setClientId(form.client)
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      // 调用 Server 的 API 来检查登录状态
+      const response = await fetch(`${serverAddr}/api/v1/auth/desktop/login-result?session_id=${sessionId.value}`)
+      
+      if (!response.ok) {
+        // 继续轮询
+        await new Promise(resolve => setTimeout(resolve, pollInterval))
+        continue
+      }
 
-    ElMessage.success('重新连接成功')
-    router.push('/services')
-  } catch (error: any) {
-    ElMessage.error('重新连接失败: ' + (error.message || '未知错误'))
-    // 切换到完整登录模式
-    loginMode.value = 'full'
-    autoFillMode.value = true
-  } finally {
-    reconnecting.value = false
-    isAutoLogging.value = false
-    stopLoadingDots()
+      const result = await response.json()
+      
+      if (result.success) {
+        return {
+          success: true,
+          username: result.username || form.usernameHint || '',
+          message: result.message || '登录成功'
+        }
+      } else if (result.message && result.message.includes('未完成')) {
+        // 登录还未完成，继续轮询
+        await new Promise(resolve => setTimeout(resolve, pollInterval))
+        continue
+      } else {
+        // 登录失败
+        return {
+          success: false,
+          message: result.message || '登录失败'
+        }
+      }
+    } catch (error: any) {
+      // 网络错误，继续轮询
+      await new Promise(resolve => setTimeout(resolve, pollInterval))
+      continue
+    }
   }
+
+  // 超时 - 返回 null，前端会显示超时提示并返回登录界面
+  return null
 }
 
-const handleSwitchAccount = () => {
-  loginMode.value = 'full'
-  autoFillMode.value = false
-  form.clientSecret = ''
-  loginHint.value = '请输入您的凭据以登录'
-}
-
-const handleClearCredentials = async () => {
+// 切换账号
+const handleSwitchAccount = async () => {
   try {
     await ClearCredentials()
-    form.server = 'localhost:8080'
-    form.client = ''
-    form.clientSecret = ''
+    form.server = ''
+    form.usernameHint = ''
     form.rememberMe = true
-    autoFillMode.value = false
+    loginMode.value = 'new'
     loginHint.value = ''
     ElMessage.success('已清除保存的凭据')
   } catch (error: any) {
@@ -268,151 +278,84 @@ const handleClearCredentials = async () => {
   }
 }
 
-// Logto 登录处理
-const handleLogtoLogin = async () => {
-  if (!form.server) {
-    ElMessage.warning('请先输入服务器地址')
-    return
-  }
-
-  logtoLoading.value = true
+// 自动登录
+const handleAutoLogin = async () => {
   try {
-    // 调用后端开始 Logto 登录流程
-    const result = await LoginWithLogto(form.server, form.client || '')
+    // 尝试使用保存的Token自动登录
+    await Login(
+      form.server,
+      form.usernameHint,
+      '', // 使用Token登录不需要Secret
+      true
+    )
+
+    // 先设置状态
+    authStore.setServerAddress(form.server)
+    authStore.setClientId(form.usernameHint)
     
-    if (!result) {
-      ElMessage.error('Logto 登录失败：无响应')
-      return
-    }
+    // 最后设置认证状态，触发路由守卫
+    authStore.setAuthenticated(true)
+
+    ElMessage.success('自动登录成功')
     
-    if (result.login_url) {
-      // 打开浏览器让用户登录
-      ElMessage.info('正在打开浏览器，请在浏览器中完成登录...')
-      await OpenBrowser(result.login_url)
-      
-      // 等待登录结果
-      const loginResult = await WaitLogtoLoginResult()
-      
-      if (!loginResult) {
-        ElMessage.error('登录超时或失败')
-        return
-      }
-      
-      if (loginResult.success) {
-        authStore.setAuthenticated(true)
-        authStore.setServerAddress(form.server)
-        authStore.setClientId(loginResult.username || '')
-        
-        ElMessage.success('登录成功')
-        router.push('/services')
-      } else {
-        ElMessage.error(loginResult.message || '登录失败')
-      }
-    } else if (result.success) {
-      // 直接成功（不太可能）
-      authStore.setAuthenticated(true)
-      authStore.setServerAddress(form.server)
-      authStore.setClientId(result.username || '')
-      
-      ElMessage.success('登录成功')
-      router.push('/services')
-    } else {
-      ElMessage.error(result.message || '登录失败')
-    }
+    // 延迟导航，确保状态已更新
+    await new Promise(resolve => setTimeout(resolve, 100))
+    
+    // 导航到服务页面
+    await router.push('/services')
   } catch (error: any) {
-    ElMessage.error('Logto 登录失败: ' + (error.message || '未知错误'))
-  } finally {
-    logtoLoading.value = false
+    console.error('Auto login failed:', error)
+    // 自动登录失败，切换到 saved 模式
+    isAutoLogging.value = false
+    loginMode.value = 'saved'
+    loginHint.value = '自动登录失败，请点击"登录"按钮重新登录'
   }
 }
 
-let dotsInterval: number | null = null
-
-const startLoadingDots = () => {
-  let count = 0
-  loadingDots.value = ''
-  dotsInterval = window.setInterval(() => {
-    count = (count + 1) % 4
-    loadingDots.value = '.'.repeat(count)
-  }, 500)
-}
-
-const stopLoadingDots = () => {
-  if (dotsInterval) {
-    clearInterval(dotsInterval)
-    dotsInterval = null
-  }
-  loadingDots.value = ''
-}
-
+// 判断登录模式
 const determineLoginMode = (savedCreds: any) => {
   if (!savedCreds) {
-    loginMode.value = 'full'
-    autoFillMode.value = false
-    loginHint.value = '请输入您的凭据以登录'
+    loginMode.value = 'new'
+    loginHint.value = ''
     return
   }
 
-  // 设置服务器地址（始终从后端获取，包括默认地址）
-  form.server = savedCreds.server_address || 'localhost:8080'
-  
-  // 如果没有保存的用户信息，显示完整登录表单
+  // 设置服务器地址
+  form.server = savedCreds.server_address || ''
+
+  // 如果没有保存的用户信息，显示新登录界面
   if (!savedCreds.client_id) {
-    loginMode.value = 'full'
-    autoFillMode.value = false
-    loginHint.value = '请输入您的凭据以登录'
+    loginMode.value = 'new'
+    loginHint.value = ''
     return
   }
 
   // 有保存的凭据
-  form.client = savedCreds.client_id
+  form.usernameHint = savedCreds.client_id
   form.rememberMe = savedCreds.remember_me
 
   // 检查是否有有效Token，有则尝试自动登录
   if (savedCreds.has_token) {
-    loginMode.value = 'full'
-    autoFillMode.value = true
+    loginMode.value = 'auto'
     isAutoLogging.value = true
-    startLoadingDots()
     // 自动登录
     setTimeout(() => {
       handleAutoLogin()
     }, 500)
   } else {
-    // 没有Token，显示完整登录表单（自动填充用户名）
-    loginMode.value = 'full'
-    autoFillMode.value = true
-    loginHint.value = '欢迎回来！请输入密码以继续'
-  }
-}
-
-const handleAutoLogin = async () => {
-  try {
-    // 尝试使用保存的Token自动登录（不传密码）
-    await Login(
-      form.server,
-      form.client,
-      '', // 使用Token登录不需要Secret
-      true
-    )
-
-    authStore.setAuthenticated(true)
-    authStore.setServerAddress(form.server)
-    authStore.setClientId(form.client)
-
-    ElMessage.success('自动登录成功')
-    router.push('/services')
-  } catch (error: any) {
-    console.error('Auto login failed:', error)
-    // 自动登录失败，切换到手动登录模式
-    isAutoLogging.value = false
-    stopLoadingDots()
-    autoFillMode.value = true
-    loginHint.value = '自动登录失败，请输入密码重新登录'
+    // 没有Token，显示 saved 模式
+    loginMode.value = 'saved'
+    loginHint.value = '请点击"登录"按钮继续'
   }
 }
 
 onMounted(async () => {
+  // 如果已认证，直接导航到服务页面
+  if (authStore.isAuthenticated) {
+    await router.push('/services')
+    return
+  }
+
   try {
     const versionInfo = await GetVersion()
     appVersion.value = versionInfo?.version || 'dev'
@@ -425,8 +368,7 @@ onMounted(async () => {
     determineLoginMode(savedCreds)
   } catch (error) {
     console.error('Failed to check saved credentials:', error)
-    loginMode.value = 'full'
-    autoFillMode.value = false
+    loginMode.value = 'new'
   }
 })
 </script>
@@ -519,17 +461,7 @@ onMounted(async () => {
   width: 100%;
 }
 
-.offline-alert {
-  margin-bottom: 20px;
-}
-
-.offline-info {
-  margin-top: 10px;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.login-hint {
+.status-alert {
   margin-bottom: 20px;
 }
 
@@ -545,19 +477,5 @@ onMounted(async () => {
 
 .button-form-item :deep(.el-form-item__content) {
   margin-left: 0 !important;
-}
-
-.logto-button {
-  background: linear-gradient(135deg, #5c6bc0 0%, #7e57c2 100%);
-  border: none;
-  color: white;
-}
-
-.logto-button:hover {
-  background: linear-gradient(135deg, #7986cb 0%, #9575cd 100%);
-}
-
-.logto-icon {
-  margin-right: 8px;
 }
 </style>
