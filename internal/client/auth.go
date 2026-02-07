@@ -6,7 +6,6 @@ import (
 	"log"
 	"time"
 
-	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/device"
 	pb "github.com/open-beagle/awecloud-signaling-desktop/pkg/proto"
 )
@@ -21,83 +20,6 @@ type AuthResult struct {
 	Message    string
 	IsNewLogin bool   // 是否是首次登录
 	DeviceName string // 设备名称（hostname）
-}
-
-// Login 首次登录（使用 Client 凭证）
-func (c *DesktopClient) Login(clientName, clientSecret string) (*AuthResult, error) {
-	// 获取设备指纹
-	fingerprint, err := device.GetFingerprint()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get device fingerprint: %w", err)
-	}
-
-	// 获取系统信息
-	systemInfo, err := getSystemInfo()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get system info: %w", err)
-	}
-
-	log.Printf("[DesktopClient] Login: client_name=%s, device=%s", clientName, fingerprint.Hash)
-
-	// 调用 gRPC Login
-	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
-	defer cancel()
-
-	req := &pb.DesktopLoginRequest{
-		ClientName:        clientName,
-		ClientSecret:      clientSecret,
-		DeviceName:        fingerprint.Hostname,
-		DeviceFingerprint: fingerprint.Hash,
-		SystemInfo:        systemInfo,
-	}
-
-	resp, err := c.grpcClient.Login(ctx, req)
-	if err != nil {
-		return nil, fmt.Errorf("login failed: %w", err)
-	}
-
-	if !resp.Success {
-		return nil, fmt.Errorf("login failed: %s", resp.Message)
-	}
-
-	log.Printf("[DesktopClient] Login successful: desktop_id=%d", resp.DesktopId)
-
-	// 保存认证信息
-	c.desktopID = resp.DesktopId
-	c.secret = resp.Secret
-	c.clientID = clientName
-
-	// 保存到配置文件
-	config.GlobalConfig.ClientID = clientName
-	// 密码登录时 Server 总是返回 secret
-	if resp.Secret != "" {
-		config.GlobalConfig.DeviceToken = fmt.Sprintf("%d:%s", resp.DesktopId, resp.Secret)
-		log.Printf("[DesktopClient] DeviceToken saved: desktop_id=%d", resp.DesktopId)
-	} else {
-		log.Printf("[WARN] [DesktopClient] No secret returned from server")
-	}
-	config.GlobalConfig.RememberMe = true
-	if err := config.GlobalConfig.Save(); err != nil {
-		log.Printf("[DesktopClient] Warning: failed to save config: %v", err)
-	} else {
-		log.Printf("[DesktopClient] Config saved successfully")
-	}
-
-	// 启动心跳（初始状态：隧道未连接）
-	if err := c.startHeartbeat("", false); err != nil {
-		log.Printf("[DesktopClient] Warning: failed to start heartbeat: %v", err)
-	}
-
-	return &AuthResult{
-		Success:    true,
-		DesktopID:  resp.DesktopId,
-		Secret:     resp.Secret,
-		AuthKey:    resp.AuthKey,
-		ServerURL:  resp.ServerUrl,
-		Message:    resp.Message,
-		IsNewLogin: true,
-		DeviceName: fingerprint.Hostname,
-	}, nil
 }
 
 // Authenticate 认证（使用 Desktop 凭证）
@@ -171,4 +93,50 @@ func (c *DesktopClient) GetTailscaleAuth(authResult *AuthResult) *TailscaleAuthI
 		ControlURL: authResult.ServerURL,
 		AuthKey:    authResult.AuthKey,
 	}
+}
+
+// CreateLoginSessionResult 创建登录会话结果
+type CreateLoginSessionResult struct {
+	Success   bool
+	Message   string
+	SessionID string
+	LoginURL  string // 相对路径 /auth/desktop/{session_id}
+}
+
+// CreateLoginSession 通过 gRPC 创建登录会话
+func (c *DesktopClient) CreateLoginSession(usernameHint string) (*CreateLoginSessionResult, error) {
+	// 获取设备指纹
+	fingerprint, err := device.GetFingerprint()
+	if err != nil {
+		return nil, fmt.Errorf("获取设备指纹失败: %w", err)
+	}
+
+	log.Printf("[Client] CreateLoginSession: usernameHint=%s", usernameHint)
+
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	defer cancel()
+
+	req := &pb.CreateLoginSessionRequest{
+		UsernameHint:      usernameHint,
+		DeviceFingerprint: fingerprint.Hash,
+		DeviceName:        fingerprint.Hostname,
+	}
+
+	resp, err := c.grpcClient.CreateLoginSession(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("创建登录会话失败: %w", err)
+	}
+
+	if !resp.Success {
+		return nil, fmt.Errorf("创建登录会话失败: %s", resp.Message)
+	}
+
+	log.Printf("[Client] CreateLoginSession 成功: sessionID=%s, loginURL=%s", resp.SessionId, resp.LoginUrl)
+
+	return &CreateLoginSessionResult{
+		Success:   true,
+		Message:   resp.Message,
+		SessionID: resp.SessionId,
+		LoginURL:  resp.LoginUrl,
+	}, nil
 }

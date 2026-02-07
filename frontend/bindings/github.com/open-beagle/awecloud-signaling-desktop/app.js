@@ -20,15 +20,6 @@ import * as config$0 from "./internal/config/models.js";
 import * as $models from "./models.js";
 
 /**
- * CheckCertificateTrust 检查服务器证书是否被信任
- * @param {string} serverURL
- * @returns {$CancellablePromise<[boolean, string]>}
- */
-export function CheckCertificateTrust(serverURL) {
-    return $Call.ByID(3667919868, serverURL);
-}
-
-/**
  * @returns {$CancellablePromise<$models.SavedCredentials | null>}
  */
 export function CheckSavedCredentials() {
@@ -72,6 +63,19 @@ export function ConnectService(serviceID) {
 }
 
 /**
+ * CreateLoginSession 通过 gRPC 创建登录会话
+ * 返回 session_id 和 login_url（相对路径），前端拼接 server 地址后打开 WebView
+ * @param {string} serverAddr
+ * @param {string} usernameHint
+ * @returns {$CancellablePromise<$models.CreateLoginSessionResult | null>}
+ */
+export function CreateLoginSession(serverAddr, usernameHint) {
+    return $Call.ByID(1906094454, serverAddr, usernameHint).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType5($result);
+    }));
+}
+
+/**
  * DeleteDevice 删除设备
  * @param {string} deviceToken
  * @returns {$CancellablePromise<void>}
@@ -81,19 +85,11 @@ export function DeleteDevice(deviceToken) {
 }
 
 /**
- * GetCertificateInstallInstructions 获取证书安装说明
- * @returns {$CancellablePromise<string>}
- */
-export function GetCertificateInstallInstructions() {
-    return $Call.ByID(3559300036);
-}
-
-/**
  * @returns {$CancellablePromise<config$0.Config | null>}
  */
 export function GetConfig() {
     return $Call.ByID(1200034045).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType5($result);
+        return $$createType7($result);
     }));
 }
 
@@ -103,7 +99,7 @@ export function GetConfig() {
  */
 export function GetDevices() {
     return $Call.ByID(2647233474).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType8($result);
+        return $$createType10($result);
     }));
 }
 
@@ -113,7 +109,7 @@ export function GetDevices() {
  */
 export function GetGRPCStatus() {
     return $Call.ByID(2380737917).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType10($result);
+        return $$createType12($result);
     }));
 }
 
@@ -124,7 +120,7 @@ export function GetGRPCStatus() {
  */
 export function GetHostServices(hostID) {
     return $Call.ByID(654294273, hostID).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType13($result);
+        return $$createType15($result);
     }));
 }
 
@@ -134,7 +130,7 @@ export function GetHostServices(hostID) {
  */
 export function GetHosts() {
     return $Call.ByID(4245603774).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType16($result);
+        return $$createType18($result);
     }));
 }
 
@@ -147,22 +143,11 @@ export function GetLogLevel() {
 }
 
 /**
- * GetLoginURL 获取登录页面 URL
- * 调用 Server 的 REST API 获取登录 URL
- * @param {string} serverAddr
- * @param {string} usernameHint
- * @returns {$CancellablePromise<string>}
- */
-export function GetLoginURL(serverAddr, usernameHint) {
-    return $Call.ByID(2745696765, serverAddr, usernameHint);
-}
-
-/**
  * @returns {$CancellablePromise<string[]>}
  */
 export function GetLogs() {
     return $Call.ByID(1743981476).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType17($result);
+        return $$createType19($result);
     }));
 }
 
@@ -171,7 +156,7 @@ export function GetLogs() {
  */
 export function GetServices() {
     return $Call.ByID(839930963).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType13($result);
+        return $$createType15($result);
     }));
 }
 
@@ -181,7 +166,7 @@ export function GetServices() {
  */
 export function GetTunnelStatus() {
     return $Call.ByID(1614806691).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType19($result);
+        return $$createType21($result);
     }));
 }
 
@@ -190,7 +175,7 @@ export function GetTunnelStatus() {
  */
 export function GetVersion() {
     return $Call.ByID(1049863377).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType21($result);
+        return $$createType23($result);
     }));
 }
 
@@ -216,7 +201,7 @@ export function IsAuthenticated() {
 }
 
 /**
- * Login 登录（首次登录或密码登录）
+ * Login 使用已保存的凭证自动认证
  * @param {string} serverAddr
  * @param {string} clientName
  * @param {string} clientSecret
@@ -310,7 +295,7 @@ export function ToggleFavorite(serviceID) {
  */
 export function WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint) {
     return $Call.ByID(1518366997, serverAddr, sessionID, deviceFingerprint).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType23($result);
+        return $$createType25($result);
     }));
 }
 
@@ -319,23 +304,25 @@ const $$createType0 = $models.SavedCredentials.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
 const $$createType2 = $models.VersionCheckResult.createFrom;
 const $$createType3 = $Create.Nullable($$createType2);
-const $$createType4 = config$0.Config.createFrom;
+const $$createType4 = $models.CreateLoginSessionResult.createFrom;
 const $$createType5 = $Create.Nullable($$createType4);
-const $$createType6 = $models.DeviceInfo.createFrom;
+const $$createType6 = config$0.Config.createFrom;
 const $$createType7 = $Create.Nullable($$createType6);
-const $$createType8 = $Create.Array($$createType7);
-const $$createType9 = $models.GRPCStatus.createFrom;
-const $$createType10 = $Create.Nullable($$createType9);
-const $$createType11 = $models.ServiceInfo.createFrom;
+const $$createType8 = $models.DeviceInfo.createFrom;
+const $$createType9 = $Create.Nullable($$createType8);
+const $$createType10 = $Create.Array($$createType9);
+const $$createType11 = $models.GRPCStatus.createFrom;
 const $$createType12 = $Create.Nullable($$createType11);
-const $$createType13 = $Create.Array($$createType12);
-const $$createType14 = $models.HostInfo.createFrom;
-const $$createType15 = $Create.Nullable($$createType14);
-const $$createType16 = $Create.Array($$createType15);
-const $$createType17 = $Create.Array($Create.Any);
-const $$createType18 = $models.TunnelStatus.createFrom;
-const $$createType19 = $Create.Nullable($$createType18);
-const $$createType20 = $models.VersionInfo.createFrom;
+const $$createType13 = $models.ServiceInfo.createFrom;
+const $$createType14 = $Create.Nullable($$createType13);
+const $$createType15 = $Create.Array($$createType14);
+const $$createType16 = $models.HostInfo.createFrom;
+const $$createType17 = $Create.Nullable($$createType16);
+const $$createType18 = $Create.Array($$createType17);
+const $$createType19 = $Create.Array($Create.Any);
+const $$createType20 = $models.TunnelStatus.createFrom;
 const $$createType21 = $Create.Nullable($$createType20);
-const $$createType22 = $models.LoginResultGRPC.createFrom;
+const $$createType22 = $models.VersionInfo.createFrom;
 const $$createType23 = $Create.Nullable($$createType22);
+const $$createType24 = $models.LoginResultGRPC.createFrom;
+const $$createType25 = $Create.Nullable($$createType24);

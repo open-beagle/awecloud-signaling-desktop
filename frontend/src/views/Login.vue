@@ -100,7 +100,7 @@ import { useAuthStore } from '../stores/auth'
 import { App } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop'
 import UpgradeDialog from '../components/UpgradeDialog.vue'
 
-const { Login, GetVersion, CheckSavedCredentials, ClearCredentials, GetLoginURL, OpenLoginWindow, WaitForLoginResultGRPC } = App
+const { Login, GetVersion, CheckSavedCredentials, ClearCredentials, CreateLoginSession, OpenLoginWindow, WaitForLoginResultGRPC } = App
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -151,29 +151,20 @@ const handleLogin = async () => {
 
     logtoLoading.value = true
     try {
-      // 第一步：从 Server 获取登录 URL
-      const loginURLResponse = await fetch(`${form.server}/api/v1/auth/desktop/login-url?username_hint=${encodeURIComponent(form.usernameHint || '')}`)
+      // 第一步：通过 gRPC 创建登录会话
+      const sessionResult = await CreateLoginSession(form.server, form.usernameHint || '')
       
-      if (!loginURLResponse.ok) {
-        ElMessage.error('获取登录地址失败')
+      if (!sessionResult || !sessionResult.session_id) {
+        ElMessage.error('创建登录会话失败')
         logtoLoading.value = false
         return
       }
 
-      const loginURLData = await loginURLResponse.json()
-      const loginURL = loginURLData.login_url
-      const sessionIdFromResponse = loginURLData.session_id
-      
-      if (!loginURL) {
-        ElMessage.error('获取登录地址失败: ' + (loginURLData.message || '未知错误'))
-        logtoLoading.value = false
-        return
-      }
+      const sessionIdFromResponse = sessionResult.session_id
+      const loginURL = sessionResult.login_url
 
       // 保存 session_id
-      if (sessionIdFromResponse) {
-        sessionId.value = sessionIdFromResponse
-      }
+      sessionId.value = sessionIdFromResponse
 
       // 第二步：在 Desktop 内部的 WebView 窗口中打开登录页面
       ElMessage.info('正在打开登录窗口...')
@@ -192,9 +183,18 @@ const handleLogin = async () => {
       }
 
       if (loginResult.Success) {
-        // 先设置状态
+        // 登录成功，保存凭证
+        // 注意：不需要调用 Authenticate，因为 Server 已经在 WaitForLoginResult 中验证了凭证
+        // 我们只需要保存凭证并设置认证状态
+        
         authStore.setServerAddress(form.server)
         authStore.setClientId(loginResult.Username || form.usernameHint || '')
+        
+        // 保存 Desktop 凭证（用于后续重连）
+        if (form.rememberMe) {
+          // 保存凭证到本地存储或配置文件
+          // 这由后端的 WaitForLoginResultGRPC 方法已经处理了
+        }
         
         // 最后设置认证状态，触发路由守卫
         authStore.setAuthenticated(true)
@@ -215,52 +215,6 @@ const handleLogin = async () => {
       logtoLoading.value = false
     }
   })
-}
-
-// 等待登录完成（带超时）
-const waitForLoginCompletion = async (serverAddr: string, timeoutMs: number) => {
-  const startTime = Date.now()
-  const pollInterval = 500 // 每 500ms 轮询一次
-
-  while (Date.now() - startTime < timeoutMs) {
-    try {
-      // 调用 Server 的 API 来检查登录状态
-      const response = await fetch(`${serverAddr}/api/v1/auth/desktop/login-result?session_id=${sessionId.value}`)
-      
-      if (!response.ok) {
-        // 继续轮询
-        await new Promise(resolve => setTimeout(resolve, pollInterval))
-        continue
-      }
-
-      const result = await response.json()
-      
-      if (result.success) {
-        return {
-          success: true,
-          username: result.username || form.usernameHint || '',
-          message: result.message || '登录成功'
-        }
-      } else if (result.message && result.message.includes('未完成')) {
-        // 登录还未完成，继续轮询
-        await new Promise(resolve => setTimeout(resolve, pollInterval))
-        continue
-      } else {
-        // 登录失败
-        return {
-          success: false,
-          message: result.message || '登录失败'
-        }
-      }
-    } catch (error: any) {
-      // 网络错误，继续轮询
-      await new Promise(resolve => setTimeout(resolve, pollInterval))
-      continue
-    }
-  }
-
-  // 超时 - 返回 null，前端会显示超时提示并返回登录界面
-  return null
 }
 
 // 切换账号

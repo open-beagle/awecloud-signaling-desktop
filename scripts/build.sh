@@ -223,11 +223,7 @@ else
     echo "Frontend dependencies already installed, skipping..."
 fi
 
-# 构建前端
-echo -e "${YELLOW}Building frontend...${NC}"
-npm run build --prefix frontend
-
-# 生成绑定（如果 wails3 可用且绑定目录不存在）
+# 生成绑定（必须在前端构建之前，确保方法 ID 正确）
 if [ "$WAILS3_AVAILABLE" = true ]; then
     echo -e "${YELLOW}Generating bindings...${NC}"
     wails3 generate bindings
@@ -238,6 +234,10 @@ else
     echo "Please install wails3 or ensure frontend/bindings directory exists"
     exit 1
 fi
+
+# 构建前端（在 bindings 生成之后）
+echo -e "${YELLOW}Building frontend...${NC}"
+npm run build --prefix frontend
 
 # 创建输出目录
 mkdir -p "${OUTPUT_DIR}"

@@ -1,11 +1,8 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -98,7 +95,7 @@ func (a *App) shutdown() {
 	log.Printf("Desktop app shutdown")
 }
 
-// Login 登录（首次登录或密码登录）
+// Login 使用已保存的凭证自动认证
 func (a *App) Login(serverAddr, clientName, clientSecret string, rememberMe bool) error {
 	log.Printf("[App] Login: serverAddr=%s, clientName=%s, rememberMe=%v", serverAddr, clientName, rememberMe)
 
@@ -114,27 +111,27 @@ func (a *App) Login(serverAddr, clientName, clientSecret string, rememberMe bool
 	}
 	log.Printf("[App] Desktop client started successfully")
 
-	var authResult *client.AuthResult
-	var err error
-
-	// 检查是否有保存的凭证
-	if clientSecret == "" && config.GlobalConfig.HasValidToken() {
-		log.Printf("Attempting authentication with saved credentials...")
-		// 解析 desktop_id 和 secret
-		parts := strings.Split(config.GlobalConfig.DeviceToken, ":")
-		if len(parts) == 2 {
-			var desktopID uint64
-			fmt.Sscanf(parts[0], "%d", &desktopID)
-			secret := parts[1]
-			authResult, err = a.desktopClient.Authenticate(desktopID, secret)
-		} else {
-			err = fmt.Errorf("invalid device token format")
-		}
-	} else {
-		log.Printf("Attempting login with client credentials...")
-		authResult, err = a.desktopClient.Login(clientName, clientSecret)
+	// 必须有保存的凭证才能使用此方法
+	if !config.GlobalConfig.HasValidToken() {
+		a.desktopClient.Stop()
+		a.desktopClient = nil
+		return fmt.Errorf("无有效凭证，请使用 Logto 登录")
 	}
 
+	log.Printf("Attempting authentication with saved credentials...")
+	// 解析 desktop_id 和 secret
+	parts := strings.Split(config.GlobalConfig.DeviceToken, ":")
+	if len(parts) != 2 {
+		a.desktopClient.Stop()
+		a.desktopClient = nil
+		return fmt.Errorf("invalid device token format")
+	}
+
+	var desktopID uint64
+	fmt.Sscanf(parts[0], "%d", &desktopID)
+	secret := parts[1]
+
+	authResult, err := a.desktopClient.Authenticate(desktopID, secret)
 	if err != nil {
 		a.desktopClient.Stop()
 		a.desktopClient = nil
@@ -206,14 +203,40 @@ func (a *App) initializeTailscale() error {
 func (a *App) Logout() {
 	log.Printf("[App] Logout called")
 
-	// 停止客户端和隧道
+	// 先调用 Server gRPC 注销（安全离场）
+	// 在 goroutine 中执行，最多等 3 秒，避免阻塞前端
+	if a.desktopClient != nil {
+		done := make(chan struct{})
+		go func() {
+			a.desktopClient.Logout()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			log.Printf("[App] gRPC Logout 超时，跳过")
+		}
+	}
+
+	// 断开隧道（也加超时保护）
+	if a.tsManager != nil {
+		done := make(chan struct{})
+		go func() {
+			a.tsManager.Disconnect()
+			close(done)
+		}()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			log.Printf("[App] Tunnel disconnect 超时，跳过")
+		}
+		a.tsManager = nil
+	}
+
+	// 停止 gRPC 客户端
 	if a.desktopClient != nil {
 		a.desktopClient.Stop()
 		a.desktopClient = nil
-	}
-	if a.tsManager != nil {
-		a.tsManager.Disconnect()
-		a.tsManager = nil
 	}
 
 	a.authResult = nil
@@ -695,6 +718,7 @@ func (a *App) GetDevices() ([]*DeviceInfo, error) {
 			LastUsedAt:  d.LastUsedAt,
 			CreatedAt:   d.CreatedAt,
 			IsCurrent:   d.IsCurrent,
+			IP:          d.IP,
 		})
 	}
 
@@ -746,6 +770,7 @@ type DeviceInfo struct {
 	LastUsedAt  string `json:"last_used_at"`
 	CreatedAt   string `json:"created_at"`
 	IsCurrent   bool   `json:"is_current"`
+	IP          string `json:"ip"`
 }
 
 // VersionCheckResult 版本检查结果
@@ -872,47 +897,36 @@ func (w *logWriter) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
-// GetLoginURL 获取登录页面 URL
-// 调用 Server 的 REST API 获取登录 URL
-func (a *App) GetLoginURL(serverAddr, usernameHint string) (string, error) {
-	log.Printf("[App] GetLoginURL: serverAddr=%s, usernameHint=%s", serverAddr, usernameHint)
+// CreateLoginSessionResult 创建登录会话结果（暴露给前端）
+type CreateLoginSessionResult struct {
+	SessionID string `json:"session_id"`
+	LoginURL  string `json:"login_url"`
+}
 
-	// 调用 Server 的 REST API 获取登录 URL
-	// 例如：GET /api/v1/auth/desktop/login-url?username_hint=xxx
-	client := &http.Client{
-		Timeout: 10 * time.Second,
+// CreateLoginSession 通过 gRPC 创建登录会话
+// 返回 session_id 和 login_url（相对路径），前端拼接 server 地址后打开 WebView
+func (a *App) CreateLoginSession(serverAddr, usernameHint string) (*CreateLoginSessionResult, error) {
+	log.Printf("[App] CreateLoginSession: serverAddr=%s, usernameHint=%s", serverAddr, usernameHint)
+
+	// 创建临时 gRPC 客户端
+	tempClient := client.NewDesktopClient(serverAddr)
+	if err := tempClient.Start(); err != nil {
+		return nil, fmt.Errorf("连接服务器失败: %w", err)
 	}
+	defer tempClient.Stop()
 
-	url := fmt.Sprintf("%s/api/v1/auth/desktop/login-url", serverAddr)
-	if usernameHint != "" {
-		url += "?username_hint=" + usernameHint
-	}
-
-	resp, err := client.Get(url)
+	// 调用 gRPC CreateLoginSession
+	result, err := tempClient.CreateLoginSession(usernameHint)
 	if err != nil {
-		return "", fmt.Errorf("failed to get login url: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("server returned status %d", resp.StatusCode)
+		return nil, fmt.Errorf("创建登录会话失败: %w", err)
 	}
 
-	var result struct {
-		LoginURL string `json:"login_url"`
-		Message  string `json:"message"`
-	}
+	log.Printf("[App] CreateLoginSession 成功: sessionID=%s, loginURL=%s", result.SessionID, result.LoginURL)
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if result.LoginURL == "" {
-		return "", fmt.Errorf("no login url returned: %s", result.Message)
-	}
-
-	log.Printf("[App] Got login URL: %s", result.LoginURL)
-	return result.LoginURL, nil
+	return &CreateLoginSessionResult{
+		SessionID: result.SessionID,
+		LoginURL:  result.LoginURL,
+	}, nil
 }
 
 // OpenBrowser 打开浏览器
@@ -1037,93 +1051,6 @@ func (a *App) ConnectService(serviceID string) (string, error) {
 	return command, nil
 }
 
-// CheckCertificateTrust 检查服务器证书是否被信任
-func (a *App) CheckCertificateTrust(serverURL string) (bool, string) {
-	log.Printf("[App] CheckCertificateTrust: %s", serverURL)
-
-	// Linux 环境已设置环境变量，无需检查
-	if runtime.GOOS == "linux" {
-		log.Printf("[App] Linux environment, certificate check skipped")
-		return true, ""
-	}
-
-	// 尝试连接服务器
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-	}
-
-	resp, err := client.Get(serverURL)
-	if err != nil {
-		// 检查是否是证书错误
-		if strings.Contains(err.Error(), "certificate") ||
-			strings.Contains(err.Error(), "x509") ||
-			strings.Contains(err.Error(), "tls") {
-			log.Printf("[App] Certificate error detected: %v", err)
-			return false, err.Error()
-		}
-		log.Printf("[App] Connection error (not certificate): %v", err)
-		return false, err.Error()
-	}
-	defer resp.Body.Close()
-
-	log.Printf("[App] Certificate is trusted")
-	return true, ""
-}
-
-// GetCertificateInstallInstructions 获取证书安装说明
-func (a *App) GetCertificateInstallInstructions() string {
-	switch runtime.GOOS {
-	case "windows":
-		return `请按以下步骤安装证书：
-
-方法一：图形界面
-1. 下载服务器证书文件（.crt 或 .pem）
-2. 右键点击证书文件，选择"安装证书"
-3. 选择"本地计算机"（需要管理员权限）
-4. 选择"将所有的证书都放入下列存储"
-5. 浏览并选择"受信任的根证书颁发机构"
-6. 点击"完成"
-
-方法二：命令行（管理员权限）
-certutil -addstore -f "ROOT" server.crt
-
-安装完成后，请重启 Desktop 应用。`
-
-	case "darwin":
-		return `请按以下步骤安装证书：
-
-方法一：图形界面
-1. 下载服务器证书文件（.crt 或 .pem）
-2. 双击证书文件
-3. 在钥匙串访问中，将证书拖到"系统"钥匙串
-4. 双击证书，展开"信任"部分
-5. 将"使用此证书时"设置为"始终信任"
-6. 关闭窗口，输入管理员密码
-
-方法二：命令行
-sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain server.crt
-
-安装完成后，请重启 Desktop 应用。`
-
-	case "linux":
-		return `Linux 环境已自动配置跳过证书验证，无需手动操作。
-
-如需手动安装证书到系统信任列表：
-
-Ubuntu/Debian:
-sudo cp server.crt /usr/local/share/ca-certificates/
-sudo update-ca-certificates
-
-CentOS/RHEL:
-sudo cp server.crt /etc/pki/ca-trust/source/anchors/
-sudo update-ca-trust`
-
-	default:
-		return "不支持的操作系统"
-	}
-}
-
-
 // WaitForLoginResultGRPC 通过 gRPC 双向流等待登录结果
 // 此方法建立 gRPC 连接，等待 Server 推送登录结果
 // 返回登录成功的凭证信息
@@ -1194,6 +1121,15 @@ func (a *App) WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint st
 	config.GlobalConfig.DeviceToken = fmt.Sprintf("%d:%s", result.DesktopID, result.DeviceToken)
 	if err := config.GlobalConfig.Save(); err != nil {
 		log.Printf("[App] Failed to save config: %v", err)
+	}
+
+	// 登录成功后自动初始化隧道
+	log.Printf("[App] Initializing tunnel after login...")
+	if err := a.initializeTailscale(); err != nil {
+		log.Printf("[App] Warning: Failed to initialize tunnel: %v", err)
+		// 不返回错误，允许用户继续使用，后续可以重试
+	} else {
+		log.Printf("[App] Tunnel initialized successfully, IP: %s", a.tsManager.GetIP())
 	}
 
 	return &LoginResultGRPC{

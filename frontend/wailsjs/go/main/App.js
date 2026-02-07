@@ -18,6 +18,10 @@ export function ConnectService(arg1, arg2) {
   return window['go']['main']['App']['ConnectService'](arg1, arg2);
 }
 
+export function CreateLoginSession(arg1, arg2) {
+  return window['go']['main']['App']['CreateLoginSession'](arg1, arg2);
+}
+
 export function DeleteDevice(arg1) {
   return window['go']['main']['App']['DeleteDevice'](arg1);
 }
@@ -32,10 +36,6 @@ export function GetConfig() {
 
 export function GetDevices() {
   return window['go']['main']['App']['GetDevices']();
-}
-
-export function GetLoginURL(arg1, arg2) {
-  return window['go']['main']['App']['GetLoginURL'](arg1, arg2);
 }
 
 export function GetLogs() {

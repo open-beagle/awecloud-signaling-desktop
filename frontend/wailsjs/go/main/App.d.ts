@@ -13,6 +13,8 @@ export function ClearCredentials():Promise<void>;
 
 export function ConnectService(arg1:number,arg2:number):Promise<void>;
 
+export function CreateLoginSession(arg1:string,arg2:string):Promise<main.CreateLoginSessionResult>;
+
 export function DeleteDevice(arg1:string):Promise<void>;
 
 export function DisconnectService(arg1:number):Promise<void>;
@@ -20,8 +22,6 @@ export function DisconnectService(arg1:number):Promise<void>;
 export function GetConfig():Promise<config.Config>;
 
 export function GetDevices():Promise<Array<main.DeviceInfo>>;
-
-export function GetLoginURL(arg1:string,arg2:string):Promise<string>;
 
 export function GetLogs():Promise<Array<string>>;
 

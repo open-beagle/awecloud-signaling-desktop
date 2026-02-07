@@ -60,6 +60,20 @@ export namespace config {
 
 export namespace main {
 	
+	export class CreateLoginSessionResult {
+	    session_id: string;
+	    login_url: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CreateLoginSessionResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.session_id = source["session_id"];
+	        this.login_url = source["login_url"];
+	    }
+	}
 	export class DeviceInfo {
 	    device_token: string;
 	    device_name: string;

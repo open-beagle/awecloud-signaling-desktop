@@ -35,6 +35,7 @@ type DesktopClient struct {
 	// 心跳流
 	heartbeatStream pb.DesktopService_HeartbeatClient
 	heartbeatMutex  sync.Mutex
+	heartbeatStopCh chan struct{} // 用于停止旧的 receiveHeartbeat goroutine
 
 	// 隧道状态（用于心跳上报）
 	tunnelIP        string
@@ -170,13 +171,11 @@ func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) er
 
 	// 更新隧道状态
 	if tunnelIP != "" {
-		// 传入了有效值，直接使用
 		c.tunnelMutex.Lock()
 		c.tunnelIP = tunnelIP
 		c.tunnelConnected = tunnelConnected
 		c.tunnelMutex.Unlock()
 	} else if c.getTunnelStatus != nil {
-		// 没有传入有效值，尝试通过回调获取最新状态
 		ip, connected := c.getTunnelStatus()
 		if ip != "" {
 			c.tunnelMutex.Lock()
@@ -185,6 +184,12 @@ func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) er
 			c.tunnelMutex.Unlock()
 		}
 	}
+
+	// 停止旧的 receiveHeartbeat/sendHeartbeat goroutine
+	if c.heartbeatStopCh != nil {
+		close(c.heartbeatStopCh)
+	}
+	c.heartbeatStopCh = make(chan struct{})
 
 	// 如果已有心跳流，先关闭
 	if c.heartbeatStream != nil {
@@ -222,17 +227,16 @@ func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) er
 
 	log.Printf("[DesktopClient] Heartbeat started, tunnelIP=%s", currentIP)
 
-	// 启动接收 goroutine
-	go c.receiveHeartbeat()
-
-	// 启动发送 goroutine
-	go c.sendHeartbeat()
+	// 启动接收和发送 goroutine（使用 stopCh 控制生命周期）
+	stopCh := c.heartbeatStopCh
+	go c.receiveHeartbeat(stopCh)
+	go c.sendHeartbeat(stopCh)
 
 	return nil
 }
 
-// receiveHeartbeat 接收心跳响应
-func (c *DesktopClient) receiveHeartbeat() {
+// receiveHeartbeat 接收心跳响应（通过 stopCh 控制退出）
+func (c *DesktopClient) receiveHeartbeat(stopCh <-chan struct{}) {
 	backoff := time.Second * 5
 	maxBackoff := time.Minute * 2
 
@@ -240,65 +244,112 @@ func (c *DesktopClient) receiveHeartbeat() {
 		select {
 		case <-c.ctx.Done():
 			return
+		case <-stopCh:
+			return
 		default:
-			c.heartbeatMutex.Lock()
-			stream := c.heartbeatStream
-			c.heartbeatMutex.Unlock()
-
-			if stream == nil {
-				time.Sleep(time.Second)
-				continue
-			}
-
-			resp, err := stream.Recv()
-			if err != nil {
-				log.Printf("[DesktopClient] Heartbeat receive error: %v", err)
-				c.setGRPCConnected(false)
-
-				// 尝试重连
-				log.Printf("[DesktopClient] Will retry in %v", backoff)
-				time.Sleep(backoff)
-
-				// 指数退避
-				backoff = backoff * 2
-				if backoff > maxBackoff {
-					backoff = maxBackoff
-				}
-
-				// 尝试重新启动心跳
-				if c.IsAuthenticated() {
-					if err := c.startHeartbeat("", false); err != nil {
-						log.Printf("[DesktopClient] Failed to restart heartbeat: %v", err)
-					} else {
-						log.Printf("[DesktopClient] Heartbeat restarted successfully")
-						backoff = time.Second * 5 // 重置退避时间
-					}
-				}
-				continue
-			}
-
-			// 连接成功，重置退避时间
-			backoff = time.Second * 5
-			c.setGRPCConnected(true)
-
-			// 更新已授权服务列表
-			c.servicesMutex.Lock()
-			c.authorizedServices = resp.AuthorizedServices
-			c.servicesMutex.Unlock()
-
-			log.Printf("[DEBUG] [DesktopClient] Heartbeat received, authorized services: %d", len(resp.AuthorizedServices))
 		}
+
+		c.heartbeatMutex.Lock()
+		stream := c.heartbeatStream
+		c.heartbeatMutex.Unlock()
+
+		if stream == nil {
+			select {
+			case <-time.After(time.Second):
+			case <-stopCh:
+				return
+			case <-c.ctx.Done():
+				return
+			}
+			continue
+		}
+
+		resp, err := stream.Recv()
+		if err != nil {
+			log.Printf("[DesktopClient] Heartbeat receive error: %v", err)
+			c.setGRPCConnected(false)
+
+			// 检查是否已被停止
+			select {
+			case <-stopCh:
+				return
+			case <-c.ctx.Done():
+				return
+			default:
+			}
+
+			log.Printf("[DesktopClient] Will retry in %v", backoff)
+			select {
+			case <-time.After(backoff):
+			case <-c.ctx.Done():
+				return
+			case <-stopCh:
+				return
+			}
+
+			backoff = min(backoff*2, maxBackoff)
+
+			// reconnect 会调用 startHeartbeat，启动新 goroutine 并 close 当前 stopCh
+			if c.IsAuthenticated() {
+				if err := c.reconnect(); err != nil {
+					log.Printf("[DesktopClient] Reconnect failed: %v", err)
+				} else {
+					log.Printf("[DesktopClient] Reconnected successfully")
+					return // 新 goroutine 已启动，当前退出
+				}
+			}
+			continue
+		}
+
+		backoff = time.Second * 5
+		c.setGRPCConnected(true)
+
+		c.servicesMutex.Lock()
+		c.authorizedServices = resp.AuthorizedServices
+		c.servicesMutex.Unlock()
+
+		log.Printf("[DEBUG] [DesktopClient] Heartbeat received, authorized services: %d", len(resp.AuthorizedServices))
 	}
 }
 
-// sendHeartbeat 发送心跳
-func (c *DesktopClient) sendHeartbeat() {
+// reconnect 重连：重新 Authenticate 并启动心跳
+func (c *DesktopClient) reconnect() error {
+	c.mu.RLock()
+	desktopID := c.desktopID
+	secret := c.secret
+	c.mu.RUnlock()
+
+	if desktopID == 0 || secret == "" {
+		return fmt.Errorf("no credentials")
+	}
+
+	// 重新 Authenticate
+	log.Printf("[DesktopClient] Re-authenticating: desktopID=%d", desktopID)
+	_, err := c.Authenticate(desktopID, secret)
+	if err != nil {
+		log.Printf("[DesktopClient] Re-authenticate failed: %v", err)
+		// 凭证无效，触发重连回调（通知 App 层）
+		if c.onReconnectNeeded != nil {
+			if cbErr := c.onReconnectNeeded(); cbErr != nil {
+				log.Printf("[DesktopClient] Reconnect callback failed: %v", cbErr)
+			}
+		}
+		return err
+	}
+
+	return nil
+}
+
+// sendHeartbeat 发送心跳（通过 stopCh 控制退出）
+func (c *DesktopClient) sendHeartbeat(stopCh <-chan struct{}) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-c.ctx.Done():
+			return
+		case <-stopCh:
 			return
 		case <-ticker.C:
 			c.heartbeatMutex.Lock()
@@ -456,6 +507,7 @@ type DeviceInfo struct {
 	LastUsedAt  string `json:"last_used_at"`
 	CreatedAt   string `json:"created_at"`
 	IsCurrent   bool   `json:"is_current"`
+	IP          string `json:"ip"`
 }
 
 // GetMyDevices 获取我的设备列表
@@ -488,6 +540,7 @@ func (c *DesktopClient) GetMyDevices() ([]*DeviceInfo, error) {
 			LastUsedAt:  d.LastUsedAt,
 			CreatedAt:   d.CreatedAt,
 			IsCurrent:   d.IsCurrent,
+			IP:          d.Ip,
 		})
 	}
 
@@ -667,4 +720,30 @@ func (c *DesktopClient) WaitForLoginResult(sessionID, deviceFingerprint string) 
 	log.Printf("[Client] Login successful: desktopID=%d, username=%s", result.DesktopID, result.Username)
 
 	return result, nil
+}
+
+// Logout 调用 Server gRPC 注销（安全离场）
+func (c *DesktopClient) Logout() error {
+	c.mu.RLock()
+	desktopID := c.desktopID
+	c.mu.RUnlock()
+
+	if desktopID == 0 {
+		return nil // 未认证，无需注销
+	}
+
+	// 带超时调用，最多等 5 秒
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	resp, err := c.grpcClient.Logout(ctx, &pb.DesktopLogoutRequest{
+		DesktopId: desktopID,
+	})
+	if err != nil {
+		log.Printf("[DesktopClient] Logout gRPC 调用失败（忽略）: %v", err)
+		return nil // 静默忽略，继续本地清理
+	}
+
+	log.Printf("[DesktopClient] Logout 响应: success=%v, message=%s", resp.Success, resp.Message)
+	return nil
 }

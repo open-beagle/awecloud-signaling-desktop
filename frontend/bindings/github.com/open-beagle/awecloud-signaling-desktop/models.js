@@ -7,6 +7,44 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
+ * CreateLoginSessionResult 创建登录会话结果（暴露给前端）
+ */
+export class CreateLoginSessionResult {
+    /**
+     * Creates a new CreateLoginSessionResult instance.
+     * @param {Partial<CreateLoginSessionResult>} [$$source = {}] - The source object to create the CreateLoginSessionResult.
+     */
+    constructor($$source = {}) {
+        if (!("session_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["session_id"] = "";
+        }
+        if (!("login_url" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["login_url"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new CreateLoginSessionResult instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {CreateLoginSessionResult}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new CreateLoginSessionResult(/** @type {Partial<CreateLoginSessionResult>} */($$parsedSource));
+    }
+}
+
+/**
  * DeviceInfo 设备信息
  */
 export class DeviceInfo {
@@ -77,6 +115,13 @@ export class DeviceInfo {
              * @type {boolean}
              */
             this["is_current"] = false;
+        }
+        if (!("ip" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["ip"] = "";
         }
 
         Object.assign(this, $$source);

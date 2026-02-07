@@ -5,12 +5,12 @@
       <div class="navbar-left">
         <img src="../assets/logo.png" alt="Logo" class="logo" />
         <span class="app-name">信令桌面</span>
-        <span class="server-address" v-if="authStore.serverAddress">{{ authStore.serverAddress }}</span>
         
         <!-- gRPC 状态 -->
         <el-tooltip :content="grpcTooltip" placement="bottom">
           <div class="status-indicator grpc-status">
             <el-icon v-if="grpcStatus.connected" class="status-icon connected"><CircleCheck /></el-icon>
+            <el-icon v-else-if="grpcReconnecting" class="status-icon reconnecting is-loading"><Loading /></el-icon>
             <el-icon v-else class="status-icon disconnected"><CircleClose /></el-icon>
             <span class="status-text">gRPC</span>
           </div>
@@ -109,6 +109,11 @@ let tunnelTimer: number | null = null
 // gRPC 状态
 const grpcStatus = ref({ connected: false, server_address: '', error: '' })
 let grpcTimer: number | null = null
+// gRPC 重连中状态：之前连接过但现在断开
+const grpcWasConnected = ref(false)
+const grpcReconnecting = computed(() => {
+  return grpcWasConnected.value && !grpcStatus.value.connected
+})
 
 const tunnelTooltip = computed(() => {
   if (tunnelLoading.value) return '正在连接隧道...'
@@ -121,6 +126,9 @@ const tunnelTooltip = computed(() => {
 const grpcTooltip = computed(() => {
   if (grpcStatus.value.connected) {
     return `gRPC 已连接\n服务器: ${grpcStatus.value.server_address}`
+  }
+  if (grpcReconnecting.value) {
+    return `gRPC 重连中...\n${grpcStatus.value.error || ''}`
   }
   return `gRPC 未连接\n${grpcStatus.value.error || ''}`
 })
@@ -144,6 +152,9 @@ const loadGRPCStatus = async () => {
   try {
     const status = await GetGRPCStatus()
     if (status) {
+      if (status.connected) {
+        grpcWasConnected.value = true
+      }
       grpcStatus.value = {
         connected: status.connected,
         server_address: status.server_address || '',
@@ -250,13 +261,6 @@ const handleUserCommand = (command: string) => {
   color: #333;
 }
 
-.server-address {
-  font-size: 13px;
-  color: #909399;
-  padding-left: 12px;
-  border-left: 1px solid #e4e7ed;
-}
-
 .status-indicator {
   display: flex;
   align-items: center;
@@ -280,6 +284,10 @@ const handleUserCommand = (command: string) => {
 
 .status-icon.disconnected {
   color: #f56c6c;
+}
+
+.status-icon.reconnecting {
+  color: #e6a23c;
 }
 
 .status-text {
