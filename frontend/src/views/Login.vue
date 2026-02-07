@@ -43,7 +43,7 @@
         <el-form-item label="服务器地址" prop="server">
           <el-input
             v-model="form.server"
-            placeholder="例如: https://signal.wodcloud.com"
+            placeholder="例如: https://signal.example.com"
             :disabled="isAutoLogging || logtoLoading"
           />
         </el-form-item>

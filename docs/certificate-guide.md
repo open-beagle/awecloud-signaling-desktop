@@ -76,7 +76,7 @@ bash desktop/scripts/install-cert.sh /path/to/server.crt
 安装证书后，请按以下步骤验证：
 
 1. 重启 Desktop 应用
-2. 输入服务器地址（例如：`https://signal.wodcloud.com`）
+2. 输入服务器地址（例如：`https://signal.example.com`）
 3. 点击"登录"
 4. 如果能正常打开登录页面，说明证书已成功安装
 
