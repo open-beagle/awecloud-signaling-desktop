@@ -1058,6 +1058,7 @@ func (a *App) ConnectService(serviceID string) (string, error) {
 type LoginResultGRPC struct {
 	Success     bool
 	Message     string
+	IsDisabled  bool // 用户已禁用/待审批
 	DesktopID   uint64
 	DeviceToken string
 	AuthKey     string
@@ -1085,8 +1086,18 @@ func (a *App) WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint st
 	}
 
 	if !result.Success {
-		log.Printf("[App] Login failed: %s", result.Message)
+		log.Printf("[App] Login failed: %s (isDisabled=%v)", result.Message, result.IsDisabled)
 		desktopClient.Stop()
+
+		// 用户被禁用/待审批
+		if result.IsDisabled {
+			return &LoginResultGRPC{
+				Success:    false,
+				IsDisabled: true,
+				Message:    result.Message,
+			}, nil
+		}
+
 		return &LoginResultGRPC{
 			Success: false,
 			Message: result.Message,

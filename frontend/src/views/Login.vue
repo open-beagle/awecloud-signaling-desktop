@@ -183,29 +183,19 @@ const handleLogin = async () => {
       }
 
       if (loginResult.Success) {
-        // 登录成功，保存凭证
-        // 注意：不需要调用 Authenticate，因为 Server 已经在 WaitForLoginResult 中验证了凭证
-        // 我们只需要保存凭证并设置认证状态
-        
+        // 登录成功，保存凭证并设置认证状态
         authStore.setServerAddress(form.server)
         authStore.setClientId(loginResult.Username || form.usernameHint || '')
-        
-        // 保存 Desktop 凭证（用于后续重连）
-        if (form.rememberMe) {
-          // 保存凭证到本地存储或配置文件
-          // 这由后端的 WaitForLoginResultGRPC 方法已经处理了
-        }
-        
-        // 最后设置认证状态，触发路由守卫
         authStore.setAuthenticated(true)
 
         ElMessage.success('登录成功')
-        
-        // 延迟导航，确保状态已更新
         await new Promise(resolve => setTimeout(resolve, 100))
-        
-        // 导航到服务页面
         await router.push('/services')
+      } else if (loginResult.IsDisabled) {
+        // 用户被禁用/待审批
+        ElMessage.warning(loginResult.Message || '用户未注册或已禁用，请联系管理员审批')
+        loginHint.value = loginResult.Message || '用户未注册或已禁用，请联系管理员审批'
+        logtoLoading.value = false
       } else {
         ElMessage.error(loginResult.Message || '登录失败')
         logtoLoading.value = false

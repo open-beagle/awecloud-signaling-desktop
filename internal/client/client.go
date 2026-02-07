@@ -739,6 +739,7 @@ func (c *DesktopClient) GetFavoriteServices() ([]string, error) {
 type LoginResultFromGRPC struct {
 	Success     bool
 	Message     string
+	IsDisabled  bool // 用户已禁用/待审批
 	DesktopID   uint64
 	DeviceToken string
 	AuthKey     string
@@ -784,6 +785,14 @@ func (c *DesktopClient) WaitForLoginResult(sessionID, deviceFingerprint string) 
 	log.Printf("[Client] Received WaitForLoginResult response: status=%v, message=%s", resp.Status, resp.Message)
 
 	// 检查状态
+	if resp.Status == pb.WaitForLoginResultStatus_WAIT_FOR_LOGIN_RESULT_STATUS_DISABLED {
+		return &LoginResultFromGRPC{
+			Success:    false,
+			IsDisabled: true,
+			Message:    resp.Message,
+		}, nil
+	}
+
 	if resp.Status != pb.WaitForLoginResultStatus_WAIT_FOR_LOGIN_RESULT_STATUS_SUCCESS {
 		return &LoginResultFromGRPC{
 			Success: false,

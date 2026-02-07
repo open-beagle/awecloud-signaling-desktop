@@ -278,6 +278,14 @@ export class LoginResultGRPC {
              */
             this["Message"] = "";
         }
+        if (!("IsDisabled" in $$source)) {
+            /**
+             * 用户已禁用/待审批
+             * @member
+             * @type {boolean}
+             */
+            this["IsDisabled"] = false;
+        }
         if (!("DesktopID" in $$source)) {
             /**
              * @member

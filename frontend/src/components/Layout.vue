@@ -74,6 +74,10 @@
                 <el-icon><SwitchButton /></el-icon>
                 <span>注销</span>
               </el-dropdown-item>
+              <el-dropdown-item command="switchUser">
+                <el-icon><User /></el-icon>
+                <span>切换用户</span>
+              </el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
@@ -94,7 +98,7 @@ import { ElMessage } from 'element-plus'
 import { Grid, Document, Monitor, User, SwitchButton, CircleCheck, CircleClose, Loading, Iphone } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
-import { GetTunnelStatus, ReconnectTunnel, GetGRPCStatus, Logout } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import { GetTunnelStatus, ReconnectTunnel, GetGRPCStatus, Logout, ClearCredentials } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 const router = useRouter()
 const route = useRoute()
@@ -214,6 +218,14 @@ const handleUserCommand = async (command: string) => {
     navigateTo('/devices')
   } else if (command === 'logs') {
     navigateTo('/logs')
+  } else if (command === 'switchUser') {
+    // 切换用户：注销 + 清除所有凭据，强制重新走完整登录流程
+    await Logout()
+    await ClearCredentials()
+    authStore.logout()
+    servicesStore.clearConnections()
+    router.push('/login')
+    ElMessage.success('已清除登录状态，请使用其他账号登录')
   } else if (command === 'logout') {
     await Logout()
     authStore.logout()
