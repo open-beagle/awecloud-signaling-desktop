@@ -808,13 +808,14 @@ func (c *DesktopClient) WaitForLoginResult(sessionID, deviceFingerprint string) 
 }
 
 // Logout 调用 Server gRPC 注销（安全离场）
-func (c *DesktopClient) Logout() error {
+// 返回 Logto 注销 URL（需要浏览器访问以清除 cookie），空字符串表示无需浏览器注销
+func (c *DesktopClient) Logout() string {
 	c.mu.RLock()
 	desktopID := c.desktopID
 	c.mu.RUnlock()
 
 	if desktopID == 0 {
-		return nil // 未认证，无需注销
+		return "" // 未认证，无需注销
 	}
 
 	// 带超时调用，最多等 5 秒
@@ -826,11 +827,11 @@ func (c *DesktopClient) Logout() error {
 	})
 	if err != nil {
 		log.Printf("[DesktopClient] Logout gRPC 调用失败（忽略）: %v", err)
-		return nil // 静默忽略，继续本地清理
+		return "" // 静默忽略，继续本地清理
 	}
 
-	log.Printf("[DesktopClient] Logout 响应: success=%v, message=%s", resp.Success, resp.Message)
-	return nil
+	log.Printf("[DesktopClient] Logout 响应: success=%v, message=%s, logoutUrl=%s", resp.Success, resp.Message, resp.LogoutUrl)
+	return resp.LogoutUrl
 }
 
 // startDataStream 启动数据流

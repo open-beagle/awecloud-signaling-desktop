@@ -209,13 +209,13 @@ const navigateTo = (path: string) => {
   }
 }
 
-const handleUserCommand = (command: string) => {
+const handleUserCommand = async (command: string) => {
   if (command === 'devices') {
     navigateTo('/devices')
   } else if (command === 'logs') {
     navigateTo('/logs')
   } else if (command === 'logout') {
-    Logout()
+    await Logout()
     authStore.logout()
     servicesStore.clearConnections()
     router.push('/login')

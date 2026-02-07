@@ -241,10 +241,9 @@ func (a *App) Logout() {
 
 	a.authResult = nil
 
-	// 清除所有配置（包括 DeviceToken）
+	// 清除认证信息（保留服务器地址）
 	config.GlobalConfig.ClearToken()
 	config.GlobalConfig.ClientID = ""
-	config.GlobalConfig.ServerAddress = ""
 	config.GlobalConfig.RememberMe = false
 
 	if err := config.GlobalConfig.Save(); err != nil {
@@ -252,6 +251,8 @@ func (a *App) Logout() {
 	} else {
 		log.Printf("[App] Config cleared and saved")
 	}
+
+	log.Printf("[App] Logout completed")
 }
 
 // ServiceInfo 服务信息（用于前端显示）
