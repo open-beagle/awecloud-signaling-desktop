@@ -37,6 +37,11 @@ type DesktopClient struct {
 	heartbeatMutex  sync.Mutex
 	heartbeatStopCh chan struct{} // 用于停止旧的 receiveHeartbeat goroutine
 
+	// 数据流
+	dataStream     pb.DesktopService_DataStreamClient
+	dataStreamMutex sync.Mutex
+	dataStreamStopCh chan struct{} // 用于停止旧的 receiveDataStream goroutine
+
 	// 隧道状态（用于心跳上报）
 	tunnelIP        string
 	tunnelConnected bool
@@ -56,6 +61,13 @@ type DesktopClient struct {
 	authorizedServices []*pb.AuthorizedService
 	servicesMutex      sync.RWMutex
 
+	// 数据缓存（gRPC 断开时返回缓存数据）
+	cachedHosts        []*HostInfo              // 主机列表缓存
+	cachedHostServices map[string][]*pb.AuthorizedService // 主机服务缓存（key: hostID）
+	cachedDevices      []*DeviceInfo            // 设备列表缓存
+	cachedFavorites    []string                 // 收藏列表缓存
+	cacheMutex         sync.RWMutex             // 保护所有缓存字段
+
 	// 上下文
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -68,6 +80,7 @@ func NewDesktopClient(serverAddr string) *DesktopClient {
 		serverAddr:         serverAddr,
 		serverURL:          serverAddr,
 		authorizedServices: make([]*pb.AuthorizedService, 0),
+		cachedHostServices: make(map[string][]*pb.AuthorizedService),
 		ctx:                ctx,
 		cancel:             cancel,
 	}
@@ -120,6 +133,23 @@ func (c *DesktopClient) Start() error {
 // Stop 停止客户端
 func (c *DesktopClient) Stop() {
 	c.cancel()
+
+	// 停止心跳 goroutine
+	c.heartbeatMutex.Lock()
+	if c.heartbeatStopCh != nil {
+		close(c.heartbeatStopCh)
+		c.heartbeatStopCh = nil
+	}
+	c.heartbeatMutex.Unlock()
+
+	// 停止数据流 goroutine
+	c.dataStreamMutex.Lock()
+	if c.dataStreamStopCh != nil {
+		close(c.dataStreamStopCh)
+		c.dataStreamStopCh = nil
+	}
+	c.dataStreamMutex.Unlock()
+
 	if c.grpcConn != nil {
 		c.grpcConn.Close()
 	}
@@ -166,6 +196,13 @@ func (c *DesktopClient) GetAuthorizedServices() []*pb.AuthorizedService {
 
 // startHeartbeat 启动心跳
 func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) error {
+	// 检查 ctx 是否已取消（客户端正在停止）
+	select {
+	case <-c.ctx.Done():
+		return fmt.Errorf("client stopped")
+	default:
+	}
+
 	c.heartbeatMutex.Lock()
 	defer c.heartbeatMutex.Unlock()
 
@@ -264,7 +301,7 @@ func (c *DesktopClient) receiveHeartbeat(stopCh <-chan struct{}) {
 			continue
 		}
 
-		resp, err := stream.Recv()
+		_, err := stream.Recv()
 		if err != nil {
 			log.Printf("[DesktopClient] Heartbeat receive error: %v", err)
 			c.setGRPCConnected(false)
@@ -304,11 +341,7 @@ func (c *DesktopClient) receiveHeartbeat(stopCh <-chan struct{}) {
 		backoff = time.Second * 5
 		c.setGRPCConnected(true)
 
-		c.servicesMutex.Lock()
-		c.authorizedServices = resp.AuthorizedServices
-		c.servicesMutex.Unlock()
-
-		log.Printf("[DEBUG] [DesktopClient] Heartbeat received, authorized services: %d", len(resp.AuthorizedServices))
+		log.Printf("[DEBUG] [DesktopClient] Heartbeat received")
 	}
 }
 
@@ -456,6 +489,14 @@ func (c *DesktopClient) GetAuthorizedHosts() ([]*HostInfo, error) {
 
 	resp, err := c.grpcClient.GetAuthorizedHosts(ctx, req)
 	if err != nil {
+		// gRPC 失败，返回缓存数据
+		log.Printf("[DesktopClient] 获取主机列表失败，使用缓存: %v", err)
+		c.cacheMutex.RLock()
+		cached := c.cachedHosts
+		c.cacheMutex.RUnlock()
+		if cached != nil {
+			return cached, nil
+		}
 		return nil, fmt.Errorf("获取主机列表失败: %w", err)
 	}
 
@@ -470,6 +511,11 @@ func (c *DesktopClient) GetAuthorizedHosts() ([]*HostInfo, error) {
 			LastSeen: h.LastSeen,
 		})
 	}
+
+	// 更新缓存
+	c.cacheMutex.Lock()
+	c.cachedHosts = hosts
+	c.cacheMutex.Unlock()
 
 	return hosts, nil
 }
@@ -490,8 +536,21 @@ func (c *DesktopClient) GetHostServices(hostID string) ([]*pb.AuthorizedService,
 
 	resp, err := c.grpcClient.GetHostServices(ctx, req)
 	if err != nil {
+		// gRPC 失败，返回缓存数据
+		log.Printf("[DesktopClient] 获取主机服务失败，使用缓存: %v", err)
+		c.cacheMutex.RLock()
+		cached := c.cachedHostServices[hostID]
+		c.cacheMutex.RUnlock()
+		if cached != nil {
+			return cached, nil
+		}
 		return nil, fmt.Errorf("获取主机服务失败: %w", err)
 	}
+
+	// 更新缓存
+	c.cacheMutex.Lock()
+	c.cachedHostServices[hostID] = resp.Services
+	c.cacheMutex.Unlock()
 
 	return resp.Services, nil
 }
@@ -525,6 +584,14 @@ func (c *DesktopClient) GetMyDevices() ([]*DeviceInfo, error) {
 
 	resp, err := c.grpcClient.GetMyDevices(ctx, req)
 	if err != nil {
+		// gRPC 失败，返回缓存数据
+		log.Printf("[DesktopClient] 获取设备列表失败，使用缓存: %v", err)
+		c.cacheMutex.RLock()
+		cached := c.cachedDevices
+		c.cacheMutex.RUnlock()
+		if cached != nil {
+			return cached, nil
+		}
 		return nil, fmt.Errorf("获取设备列表失败: %w", err)
 	}
 
@@ -543,6 +610,11 @@ func (c *DesktopClient) GetMyDevices() ([]*DeviceInfo, error) {
 			IP:          d.Ip,
 		})
 	}
+
+	// 更新缓存
+	c.cacheMutex.Lock()
+	c.cachedDevices = devices
+	c.cacheMutex.Unlock()
 
 	return devices, nil
 }
@@ -644,8 +716,21 @@ func (c *DesktopClient) GetFavoriteServices() ([]string, error) {
 		DesktopId: desktopID,
 	})
 	if err != nil {
+		// gRPC 失败，返回缓存数据
+		log.Printf("[DesktopClient] 获取收藏列表失败，使用缓存: %v", err)
+		c.cacheMutex.RLock()
+		cached := c.cachedFavorites
+		c.cacheMutex.RUnlock()
+		if cached != nil {
+			return cached, nil
+		}
 		return nil, fmt.Errorf("获取收藏列表失败: %w", err)
 	}
+
+	// 更新缓存
+	c.cacheMutex.Lock()
+	c.cachedFavorites = resp.ServiceIds
+	c.cacheMutex.Unlock()
 
 	return resp.ServiceIds, nil
 }
@@ -746,4 +831,216 @@ func (c *DesktopClient) Logout() error {
 
 	log.Printf("[DesktopClient] Logout 响应: success=%v, message=%s", resp.Success, resp.Message)
 	return nil
+}
+
+// startDataStream 启动数据流
+func (c *DesktopClient) startDataStream() error {
+	// 检查 ctx 是否已取消（客户端正在停止）
+	select {
+	case <-c.ctx.Done():
+		return fmt.Errorf("client stopped")
+	default:
+	}
+
+	c.dataStreamMutex.Lock()
+	defer c.dataStreamMutex.Unlock()
+
+	// 停止旧的 receiveDataStream goroutine
+	if c.dataStreamStopCh != nil {
+		close(c.dataStreamStopCh)
+	}
+	c.dataStreamStopCh = make(chan struct{})
+
+	// 如果已有数据流，先关闭
+	if c.dataStream != nil {
+		c.dataStream.CloseSend()
+		c.dataStream = nil
+	}
+
+	// 创建数据流
+	stream, err := c.grpcClient.DataStream(c.ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create data stream: %w", err)
+	}
+
+	c.dataStream = stream
+
+	// 发送首条消息，携带 desktop_id
+	req := &pb.DesktopDataRequest{
+		DesktopId:   c.desktopID,
+		RefreshType: pb.DesktopDataType_DESKTOP_DATA_TYPE_ALL,
+	}
+	if err := stream.Send(req); err != nil {
+		return fmt.Errorf("failed to send initial data request: %w", err)
+	}
+
+	log.Printf("[DesktopClient] DataStream started")
+
+	// 启动接收 goroutine
+	stopCh := c.dataStreamStopCh
+	go c.receiveDataStream(stopCh)
+
+	return nil
+}
+
+// receiveDataStream 接收数据流推送（通过 stopCh 控制退出）
+func (c *DesktopClient) receiveDataStream(stopCh <-chan struct{}) {
+	backoff := time.Second * 5
+	maxBackoff := time.Minute * 2
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-stopCh:
+			return
+		default:
+		}
+
+		c.dataStreamMutex.Lock()
+		stream := c.dataStream
+		c.dataStreamMutex.Unlock()
+
+		if stream == nil {
+			select {
+			case <-time.After(time.Second):
+			case <-stopCh:
+				return
+			case <-c.ctx.Done():
+				return
+			}
+			continue
+		}
+
+		resp, err := stream.Recv()
+		if err != nil {
+			log.Printf("[DesktopClient] DataStream receive error: %v", err)
+
+			// 检查是否已被停止
+			select {
+			case <-stopCh:
+				return
+			case <-c.ctx.Done():
+				return
+			default:
+			}
+
+			log.Printf("[DesktopClient] DataStream will retry in %v", backoff)
+			select {
+			case <-time.After(backoff):
+			case <-c.ctx.Done():
+				return
+			case <-stopCh:
+				return
+			}
+
+			backoff = min(backoff*2, maxBackoff)
+
+			// 尝试重新建立数据流
+			if c.IsAuthenticated() {
+				if err := c.startDataStream(); err != nil {
+					log.Printf("[DesktopClient] DataStream reconnect failed: %v", err)
+				} else {
+					log.Printf("[DesktopClient] DataStream reconnected")
+					return // 新 goroutine 已启动，当前退出
+				}
+			}
+			continue
+		}
+
+		backoff = time.Second * 5
+
+		// 根据数据类型更新缓存
+		c.handleDataStreamResponse(resp)
+	}
+}
+
+// handleDataStreamResponse 处理数据流推送，更新本地缓存
+func (c *DesktopClient) handleDataStreamResponse(resp *pb.DesktopDataResponse) {
+	switch resp.Type {
+	case pb.DesktopDataType_DESKTOP_DATA_TYPE_ALL:
+		// 全量更新
+		c.updateServicesCache(resp.Services)
+		c.updateHostsCache(resp.Hosts)
+		c.updateDevicesCache(resp.Devices)
+		c.updateFavoritesCache(resp.FavoriteServiceIds)
+		log.Printf("[DesktopClient] DataStream ALL: services=%d, hosts=%d, devices=%d, favorites=%d",
+			len(resp.Services), len(resp.Hosts), len(resp.Devices), len(resp.FavoriteServiceIds))
+
+	case pb.DesktopDataType_DESKTOP_DATA_TYPE_SERVICES:
+		c.updateServicesCache(resp.Services)
+		log.Printf("[DesktopClient] DataStream SERVICES: %d", len(resp.Services))
+
+	case pb.DesktopDataType_DESKTOP_DATA_TYPE_HOSTS:
+		c.updateHostsCache(resp.Hosts)
+		log.Printf("[DesktopClient] DataStream HOSTS: %d", len(resp.Hosts))
+
+	case pb.DesktopDataType_DESKTOP_DATA_TYPE_DEVICES:
+		c.updateDevicesCache(resp.Devices)
+		log.Printf("[DesktopClient] DataStream DEVICES: %d", len(resp.Devices))
+
+	case pb.DesktopDataType_DESKTOP_DATA_TYPE_FAVORITES:
+		c.updateFavoritesCache(resp.FavoriteServiceIds)
+		log.Printf("[DesktopClient] DataStream FAVORITES: %d", len(resp.FavoriteServiceIds))
+	}
+}
+
+// updateServicesCache 更新服务列表缓存
+func (c *DesktopClient) updateServicesCache(services []*pb.AuthorizedService) {
+	c.servicesMutex.Lock()
+	c.authorizedServices = services
+	c.servicesMutex.Unlock()
+}
+
+// updateHostsCache 更新主机列表缓存
+func (c *DesktopClient) updateHostsCache(hosts []*pb.AuthorizedHost) {
+	if hosts == nil {
+		return
+	}
+	result := make([]*HostInfo, 0, len(hosts))
+	for _, h := range hosts {
+		result = append(result, &HostInfo{
+			HostID:   h.HostId,
+			HostName: h.HostName,
+			TunnelIP: h.TunnelIp,
+			SSHUsers: h.SshUsers,
+			Status:   h.Status,
+			LastSeen: h.LastSeen,
+		})
+	}
+	c.cacheMutex.Lock()
+	c.cachedHosts = result
+	c.cacheMutex.Unlock()
+}
+
+// updateDevicesCache 更新设备列表缓存
+func (c *DesktopClient) updateDevicesCache(devices []*pb.DeviceInfo) {
+	if devices == nil {
+		return
+	}
+	result := make([]*DeviceInfo, 0, len(devices))
+	for _, d := range devices {
+		result = append(result, &DeviceInfo{
+			DeviceToken: d.DeviceToken,
+			DeviceName:  d.DeviceName,
+			OS:          d.Os,
+			Arch:        d.Arch,
+			Hostname:    d.Hostname,
+			Status:      d.Status,
+			LastUsedAt:  d.LastUsedAt,
+			CreatedAt:   d.CreatedAt,
+			IsCurrent:   d.IsCurrent,
+			IP:          d.Ip,
+		})
+	}
+	c.cacheMutex.Lock()
+	c.cachedDevices = result
+	c.cacheMutex.Unlock()
+}
+
+// updateFavoritesCache 更新收藏列表缓存
+func (c *DesktopClient) updateFavoritesCache(favoriteIDs []string) {
+	c.cacheMutex.Lock()
+	c.cachedFavorites = favoriteIDs
+	c.cacheMutex.Unlock()
 }

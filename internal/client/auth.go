@@ -69,6 +69,11 @@ func (c *DesktopClient) Authenticate(desktopID uint64, secret string) (*AuthResu
 		log.Printf("[DesktopClient] Warning: failed to start heartbeat: %v", err)
 	}
 
+	// 启动数据流（接收 Server 推送的业务数据）
+	if err := c.startDataStream(); err != nil {
+		log.Printf("[DesktopClient] Warning: failed to start data stream: %v", err)
+	}
+
 	return &AuthResult{
 		Success:    true,
 		DesktopID:  desktopID,
