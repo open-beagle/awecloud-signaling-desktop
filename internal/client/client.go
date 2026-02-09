@@ -639,7 +639,7 @@ func (c *DesktopClient) OfflineDevice(deviceToken string) error {
 	}
 
 	if !resp.Success {
-		return fmt.Errorf(resp.Message)
+		return fmt.Errorf("%s", resp.Message)
 	}
 
 	return nil
@@ -665,7 +665,7 @@ func (c *DesktopClient) DeleteDevice(deviceToken string) error {
 	}
 
 	if !resp.Success {
-		return fmt.Errorf(resp.Message)
+		return fmt.Errorf("%s", resp.Message)
 	}
 
 	return nil
@@ -693,7 +693,7 @@ func (c *DesktopClient) ToggleFavorite(serviceID string) (bool, error) {
 	}
 
 	if !resp.Success {
-		return false, fmt.Errorf(resp.Message)
+		return false, fmt.Errorf("%s", resp.Message)
 	}
 
 	return resp.IsFavorite, nil
@@ -1053,4 +1053,43 @@ func (c *DesktopClient) updateFavoritesCache(favoriteIDs []string) {
 	c.cacheMutex.Lock()
 	c.cachedFavorites = favoriteIDs
 	c.cacheMutex.Unlock()
+}
+
+// DomainResolveResult 域名解析结果
+type DomainResolveResult struct {
+	Domain     string
+	AgentIP    string
+	TargetPort int
+	AgentName  string
+	DomainType string
+}
+
+// ResolveDomain 通过 gRPC 解析 .k8s 域名
+func (c *DesktopClient) ResolveDomain(domain string) (*DomainResolveResult, error) {
+	if !c.IsAuthenticated() {
+		return nil, fmt.Errorf("未认证")
+	}
+
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	defer cancel()
+
+	resp, err := c.grpcClient.ResolveDomain(ctx, &pb.ResolveDomainRequest{
+		DesktopId: c.desktopID,
+		Domain:    domain,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("域名解析失败: %w", err)
+	}
+
+	if !resp.Success {
+		return nil, fmt.Errorf("%s", resp.Message)
+	}
+
+	return &DomainResolveResult{
+		Domain:     resp.Domain,
+		AgentIP:    resp.AgentIp,
+		TargetPort: int(resp.TargetPort),
+		AgentName:  resp.AgentName,
+		DomainType: resp.DomainType,
+	}, nil
 }

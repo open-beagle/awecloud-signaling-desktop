@@ -12,8 +12,11 @@ import (
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/banner"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/client"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/dns"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/proxy"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/tailscale"
 	appVersion "github.com/open-beagle/awecloud-signaling-desktop/internal/version"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/vip"
 )
 
 // App struct
@@ -23,6 +26,11 @@ type App struct {
 	authResult    *client.AuthResult
 	loginWindow   *application.WebviewWindow // 登录窗口引用（指针）
 	loginMutex    sync.Mutex                 // 保护登录窗口的并发访问
+
+	// ZTNA: DNS 劫持 + VIP 分配 + 本地代理
+	dnsServer    *dns.Server
+	vipAllocator *vip.Allocator
+	proxyManager *proxy.Manager
 }
 
 // NewApp creates a new App application struct
@@ -86,6 +94,9 @@ func (a *App) setupSystemTray() {
 }
 
 func (a *App) shutdown() {
+	// 清理 ZTNA 网络栈
+	a.cleanupZTNA()
+
 	if a.desktopClient != nil {
 		a.desktopClient.Stop()
 	}
@@ -93,6 +104,29 @@ func (a *App) shutdown() {
 		a.tsManager.Disconnect()
 	}
 	log.Printf("Desktop app shutdown")
+}
+
+// cleanupZTNA 清理 ZTNA 网络栈
+func (a *App) cleanupZTNA() {
+	// 清理系统 DNS 配置
+	if err := dns.CleanupSystemDNS(); err != nil {
+		log.Printf("[App] 清理系统 DNS 失败: %v", err)
+	}
+
+	// 停止 DNS 服务器
+	if a.dnsServer != nil {
+		a.dnsServer.Stop()
+		a.dnsServer = nil
+	}
+
+	// 停止所有代理
+	if a.proxyManager != nil {
+		a.proxyManager.StopAll()
+		a.proxyManager = nil
+	}
+
+	// 清空 VIP 分配器
+	a.vipAllocator = nil
 }
 
 // Login 使用已保存的凭证自动认证
@@ -197,7 +231,83 @@ func (a *App) initializeTailscale() error {
 	// 更新心跳信息
 	a.desktopClient.UpdateHeartbeat(a.tsManager.GetIP(), true)
 
+	// 初始化 ZTNA 网络栈（DNS + VIP + Proxy）
+	if err := a.initializeZTNA(); err != nil {
+		log.Printf("[App] Warning: ZTNA 初始化失败: %v", err)
+		// 不返回错误，基础隧道已连接，ZTNA 是增强功能
+	}
+
 	return nil
+}
+
+// initializeZTNA 初始化 ZTNA 网络栈（DNS 劫持 + VIP 分配 + 本地代理）
+func (a *App) initializeZTNA() error {
+	log.Printf("[App] 初始化 ZTNA 网络栈...")
+
+	// 1. 创建 VIP 分配器
+	a.vipAllocator = vip.NewAllocator()
+
+	// 2. 创建本地代理管理器（使用 tsnet Dial）
+	a.proxyManager = proxy.NewManager(a.tsManager.Dial)
+
+	// 3. 创建并启动本地 DNS 服务器
+	a.dnsServer = dns.NewServer("127.0.0.1:15353", a.resolveDomain)
+	if err := a.dnsServer.Start(); err != nil {
+		return fmt.Errorf("启动 DNS 服务器失败: %w", err)
+	}
+
+	// 4. 配置系统 DNS（将 .k8s 域名指向本地 DNS）
+	if err := dns.ConfigureSystemDNS(15353); err != nil {
+		log.Printf("[App] Warning: 系统 DNS 配置失败: %v", err)
+		// 不返回错误，用户可以手动配置
+	}
+
+	log.Printf("[App] ZTNA 网络栈已就绪（DNS=127.0.0.1:15353）")
+	return nil
+}
+
+// resolveDomain DNS 解析回调：查询 Server → 分配 VIP → 启动代理
+func (a *App) resolveDomain(domain string) (string, bool) {
+	// 先检查是否已有 VIP 映射
+	if existingVIP, ok := a.vipAllocator.GetVIP(domain); ok {
+		return existingVIP, true
+	}
+
+	// 查询 Server 域名解析
+	if a.desktopClient == nil {
+		log.Printf("[App] DNS 解析失败: 未登录")
+		return "", false
+	}
+
+	result, err := a.desktopClient.ResolveDomain(domain)
+	if err != nil {
+		log.Printf("[App] DNS 解析失败 (%s): %v", domain, err)
+		return "", false
+	}
+
+	// 分配 VIP
+	vipAddr, err := a.vipAllocator.Allocate(domain)
+	if err != nil {
+		log.Printf("[App] VIP 分配失败 (%s): %v", domain, err)
+		return "", false
+	}
+
+	// 启动本地代理：VIP:端口 → tsnet → Agent IP:端口
+	remoteAddr := fmt.Sprintf("%s:%d", result.AgentIP, result.TargetPort)
+	target := proxy.Target{
+		Domain:     domain,
+		VIP:        vipAddr,
+		RemoteAddr: remoteAddr,
+		Port:       result.TargetPort,
+	}
+	if err := a.proxyManager.StartProxy(target); err != nil {
+		log.Printf("[App] 代理启动失败 (%s → %s): %v", domain, remoteAddr, err)
+		// VIP 已分配但代理失败，仍返回 VIP（下次 DNS 查询会重试代理）
+	} else {
+		log.Printf("[App] 代理已启动: %s:%d → %s (domain=%s)", vipAddr, result.TargetPort, remoteAddr, domain)
+	}
+
+	return vipAddr, true
 }
 
 func (a *App) Logout() {
@@ -217,6 +327,9 @@ func (a *App) Logout() {
 			log.Printf("[App] gRPC Logout 超时，跳过")
 		}
 	}
+
+	// 清理 ZTNA 网络栈
+	a.cleanupZTNA()
 
 	// 断开隧道（也加超时保护）
 	if a.tsManager != nil {
