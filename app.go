@@ -251,18 +251,22 @@ func (a *App) initializeZTNA() error {
 	a.proxyManager = proxy.NewManager(a.tsManager.Dial)
 
 	// 3. 创建并启动本地 DNS 服务器
-	a.dnsServer = dns.NewServer("127.0.0.1:15353", a.resolveDomain)
+	// 使用平台推荐端口：Windows 需要 53（NRPT 限制），macOS/Linux 用 15353
+	dnsPort := dns.RecommendedPort()
+	dnsAddr := fmt.Sprintf("127.0.0.2:%d", dnsPort)
+
+	a.dnsServer = dns.NewServer(dnsAddr, a.resolveDomain)
 	if err := a.dnsServer.Start(); err != nil {
 		return fmt.Errorf("启动 DNS 服务器失败: %w", err)
 	}
 
-	// 4. 配置系统 DNS（将 .k8s 域名指向本地 DNS）
-	if err := dns.ConfigureSystemDNS(15353); err != nil {
+	// 4. 配置系统 DNS（将 .beagle 域名指向本地 DNS）
+	if err := dns.ConfigureSystemDNS(dnsPort); err != nil {
 		log.Printf("[App] Warning: 系统 DNS 配置失败: %v", err)
 		// 不返回错误，用户可以手动配置
 	}
 
-	log.Printf("[App] ZTNA 网络栈已就绪（DNS=127.0.0.1:15353）")
+	log.Printf("[App] ZTNA 网络栈已就绪（DNS=%s）", dnsAddr)
 	return nil
 }
 

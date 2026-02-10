@@ -12,10 +12,15 @@ import (
 const resolverDir = "/etc/resolver"
 const resolverFile = "beagle" // 域名后缀
 
+// RecommendedPort 返回 macOS 平台推荐的 DNS 监听端口
+func RecommendedPort() int {
+	return 53
+}
+
 // ConfigureSystemDNS 配置系统 DNS，将 .beagle 域名指向本地 DNS 服务器
 // macOS: 创建 /etc/resolver/beagle 文件
 func ConfigureSystemDNS(port int) error {
-	content := fmt.Sprintf("nameserver 127.0.0.1\nport %d\n", port)
+	content := fmt.Sprintf("nameserver 127.0.0.2\nport %d\n", port)
 
 	// 创建 /etc/resolver 目录（需要 sudo 权限）
 	if err := os.MkdirAll(resolverDir, 0755); err != nil {
