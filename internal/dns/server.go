@@ -1,6 +1,6 @@
-// Package dns 提供本地 DNS 服务器，拦截 .k8s 域名解析
-// 监听 127.0.0.1:15353，将 .k8s 域名解析为 VIP 地址（127.1.x.x）
-// 非 .k8s 域名转发到上游 DNS
+// Package dns 提供本地 DNS 服务器，拦截 .beagle 域名解析
+// 监听 127.0.0.1:15353，将 .beagle 域名解析为 VIP 地址（127.1.x.x）
+// 非 .beagle 域名转发到上游 DNS
 package dns
 
 import (
@@ -110,8 +110,8 @@ func (s *Server) handleQuery(packet []byte, remoteAddr *net.UDPAddr) {
 	// 去掉末尾的点
 	domain = strings.TrimSuffix(domain, ".")
 
-	// 检查是否是 .k8s 域名
-	if strings.HasSuffix(domain, ".k8s") && qtype == 1 { // A 记录
+	// 检查是否是 .beagle 域名
+	if strings.HasSuffix(domain, ".beagle") && qtype == 1 { // A 记录
 		vip, ok := s.resolve(domain)
 		if ok {
 			resp := buildDNSResponse(packet, vip)
@@ -126,7 +126,7 @@ func (s *Server) handleQuery(packet []byte, remoteAddr *net.UDPAddr) {
 		return
 	}
 
-	// 非 .k8s 域名，转发到上游 DNS
+	// 非 .beagle 域名，转发到上游 DNS
 	resp, err := s.forwardToUpstream(packet)
 	if err != nil {
 		log.Printf("[DNS] 转发到上游失败: %v", err)

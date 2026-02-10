@@ -10,9 +10,10 @@ import (
 )
 
 const resolverDir = "/etc/resolver"
+const resolverFile = "beagle" // 域名后缀
 
-// ConfigureSystemDNS 配置系统 DNS，将 .k8s 域名指向本地 DNS 服务器
-// macOS: 创建 /etc/resolver/k8s 文件
+// ConfigureSystemDNS 配置系统 DNS，将 .beagle 域名指向本地 DNS 服务器
+// macOS: 创建 /etc/resolver/beagle 文件
 func ConfigureSystemDNS(port int) error {
 	content := fmt.Sprintf("nameserver 127.0.0.1\nport %d\n", port)
 
@@ -21,20 +22,20 @@ func ConfigureSystemDNS(port int) error {
 		return fmt.Errorf("创建 %s 目录失败（可能需要 sudo 权限）: %w", resolverDir, err)
 	}
 
-	resolverFile := filepath.Join(resolverDir, "k8s")
-	if err := os.WriteFile(resolverFile, []byte(content), 0644); err != nil {
-		return fmt.Errorf("写入 %s 失败（可能需要 sudo 权限）: %w", resolverFile, err)
+	resolverPath := filepath.Join(resolverDir, resolverFile)
+	if err := os.WriteFile(resolverPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("写入 %s 失败（可能需要 sudo 权限）: %w", resolverPath, err)
 	}
 
-	log.Printf("[DNS] macOS DNS 配置已写入: %s", resolverFile)
+	log.Printf("[DNS] macOS DNS 配置已写入: %s", resolverPath)
 	return nil
 }
 
 // CleanupSystemDNS 清理系统 DNS 配置
 func CleanupSystemDNS() error {
-	resolverFile := filepath.Join(resolverDir, "k8s")
-	if err := os.Remove(resolverFile); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("删除 %s 失败: %w", resolverFile, err)
+	resolverPath := filepath.Join(resolverDir, resolverFile)
+	if err := os.Remove(resolverPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("删除 %s 失败: %w", resolverPath, err)
 	}
 	log.Printf("[DNS] macOS DNS 配置已清理")
 	return nil
