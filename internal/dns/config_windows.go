@@ -8,8 +8,16 @@ import (
 	"log"
 	"os/exec"
 	"strings"
+	"syscall"
 	"unicode/utf16"
 )
+
+// hiddenProcAttr 隐藏子进程窗口的 SysProcAttr
+// CREATE_NO_WINDOW (0x08000000) 防止 Windows 弹出 CMD 窗口
+var hiddenProcAttr = &syscall.SysProcAttr{
+	HideWindow:    true,
+	CreationFlags: 0x08000000,
+}
 
 // RecommendedPort 返回 Windows 平台推荐的 DNS 监听端口
 // Windows NRPT 不支持自定义端口，DNS 客户端固定向 53 端口发查询
@@ -48,6 +56,7 @@ func ConfigureSystemDNS(port int) error {
 	encodedCmd := encodeCommandForPowerShell(psCmd)
 
 	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", encodedCmd)
+	cmd.SysProcAttr = hiddenProcAttr
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("添加 NRPT 规则失败（需要管理员权限）: %w\n输出: %s", err, string(output))
@@ -69,6 +78,7 @@ func checkNRPTRuleExists() (bool, error) {
 	encodedCmd := encodeCommandForPowerShell(psCmd)
 
 	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", encodedCmd)
+	cmd.SysProcAttr = hiddenProcAttr
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// 没有规则时可能返回错误，这是正常的
@@ -86,6 +96,7 @@ func removeNRPTRule() error {
 	encodedCmd := encodeCommandForPowerShell(psCmd)
 
 	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", encodedCmd)
+	cmd.SysProcAttr = hiddenProcAttr
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// 没有规则可删除不算错误
