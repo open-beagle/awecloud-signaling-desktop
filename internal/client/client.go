@@ -38,8 +38,8 @@ type DesktopClient struct {
 	heartbeatStopCh chan struct{} // 用于停止旧的 receiveHeartbeat goroutine
 
 	// 数据流
-	dataStream     pb.DesktopService_DataStreamClient
-	dataStreamMutex sync.Mutex
+	dataStream       pb.DesktopService_DataStreamClient
+	dataStreamMutex  sync.Mutex
 	dataStreamStopCh chan struct{} // 用于停止旧的 receiveDataStream goroutine
 
 	// 隧道状态（用于心跳上报）
@@ -62,11 +62,11 @@ type DesktopClient struct {
 	servicesMutex      sync.RWMutex
 
 	// 数据缓存（gRPC 断开时返回缓存数据）
-	cachedHosts        []*HostInfo              // 主机列表缓存
+	cachedHosts        []*HostInfo                        // 主机列表缓存
 	cachedHostServices map[string][]*pb.AuthorizedService // 主机服务缓存（key: hostID）
-	cachedDevices      []*DeviceInfo            // 设备列表缓存
-	cachedFavorites    []string                 // 收藏列表缓存
-	cacheMutex         sync.RWMutex             // 保护所有缓存字段
+	cachedDevices      []*DeviceInfo                      // 设备列表缓存
+	cachedFavorites    []string                           // 收藏列表缓存
+	cacheMutex         sync.RWMutex                       // 保护所有缓存字段
 
 	// 上下文
 	ctx    context.Context
@@ -1057,14 +1057,17 @@ func (c *DesktopClient) updateFavoritesCache(favoriteIDs []string) {
 
 // DomainResolveResult 域名解析结果
 type DomainResolveResult struct {
-	Domain     string
-	AgentIP    string
-	TargetPort int
-	AgentName  string
-	DomainType string
+	Domain       string
+	AgentIP      string
+	TargetPort   int
+	AgentName    string
+	DomainType   string
+	Namespace    string // K8S 命名空间（k8ssvc 类型时）
+	ServiceName  string // K8S Service 名称（k8ssvc 类型时）
+	SvcProxyPort int    // Agent SVCProxy gRPC 端口（k8ssvc 类型时）
 }
 
-// ResolveDomain 通过 gRPC 解析 .k8s 域名
+// ResolveDomain 通过 gRPC 解析 .beagle 域名
 func (c *DesktopClient) ResolveDomain(domain string) (*DomainResolveResult, error) {
 	if !c.IsAuthenticated() {
 		return nil, fmt.Errorf("未认证")
@@ -1086,10 +1089,84 @@ func (c *DesktopClient) ResolveDomain(domain string) (*DomainResolveResult, erro
 	}
 
 	return &DomainResolveResult{
-		Domain:     resp.Domain,
-		AgentIP:    resp.AgentIp,
-		TargetPort: int(resp.TargetPort),
-		AgentName:  resp.AgentName,
-		DomainType: resp.DomainType,
+		Domain:       resp.Domain,
+		AgentIP:      resp.AgentIp,
+		TargetPort:   int(resp.TargetPort),
+		AgentName:    resp.AgentName,
+		DomainType:   resp.DomainType,
+		Namespace:    resp.Namespace,
+		ServiceName:  resp.ServiceName,
+		SvcProxyPort: int(resp.SvcProxyPort),
 	}, nil
+}
+
+// ResourceInfo 资源信息（前端展示用）
+type ResourceInfo struct {
+	Type        string   `json:"type"` // ssh / k8sapi / k8ssvc
+	AgentID     uint64   `json:"agent_id"`
+	AgentName   string   `json:"agent_name"`
+	Domain      string   `json:"domain"`
+	SSHUsers    []string `json:"ssh_users,omitempty"`
+	K8SGroups   []string `json:"k8s_groups,omitempty"`
+	Namespaces  []string `json:"namespaces,omitempty"`
+	Namespace   string   `json:"namespace,omitempty"`
+	ServiceName string   `json:"service_name,omitempty"`
+	Port        int32    `json:"port,omitempty"`
+}
+
+// GetResources 通过 gRPC 获取可访问的资源列表
+func (c *DesktopClient) GetResources() ([]*ResourceInfo, error) {
+	if !c.IsAuthenticated() {
+		return nil, fmt.Errorf("未认证")
+	}
+
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	defer cancel()
+
+	resp, err := c.grpcClient.GetResources(ctx, &pb.GetResourcesRequest{
+		DesktopId: c.desktopID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("获取资源列表失败: %w", err)
+	}
+
+	var resources []*ResourceInfo
+
+	// SSH 资源
+	for _, r := range resp.Ssh {
+		resources = append(resources, &ResourceInfo{
+			Type:      "ssh",
+			AgentID:   r.AgentId,
+			AgentName: r.AgentName,
+			Domain:    r.Domain,
+			SSHUsers:  r.SshUsers,
+		})
+	}
+
+	// K8S API 资源
+	for _, r := range resp.K8SApi {
+		resources = append(resources, &ResourceInfo{
+			Type:       "k8sapi",
+			AgentID:    r.AgentId,
+			AgentName:  r.AgentName,
+			Domain:     r.Domain,
+			K8SGroups:  r.K8SGroups,
+			Namespaces: r.Namespaces,
+		})
+	}
+
+	// K8S Service 资源
+	for _, r := range resp.K8SService {
+		resources = append(resources, &ResourceInfo{
+			Type:        "k8ssvc",
+			AgentID:     r.AgentId,
+			AgentName:   r.AgentName,
+			Domain:      r.Domain,
+			Namespace:   r.Namespace,
+			ServiceName: r.ServiceName,
+			Port:        r.Port,
+		})
+	}
+
+	return resources, nil
 }

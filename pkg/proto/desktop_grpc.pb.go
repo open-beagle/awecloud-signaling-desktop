@@ -34,6 +34,7 @@ const (
 	DesktopService_WaitForLoginResult_FullMethodName    = "/awecloud.signaling.DesktopService/WaitForLoginResult"
 	DesktopService_Logout_FullMethodName                = "/awecloud.signaling.DesktopService/Logout"
 	DesktopService_ResolveDomain_FullMethodName         = "/awecloud.signaling.DesktopService/ResolveDomain"
+	DesktopService_GetResources_FullMethodName          = "/awecloud.signaling.DesktopService/GetResources"
 )
 
 // DesktopServiceClient is the client API for DesktopService service.
@@ -70,8 +71,10 @@ type DesktopServiceClient interface {
 	WaitForLoginResult(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[WaitForLoginResultRequest, WaitForLoginResultResponse], error)
 	// 注销 - Desktop 安全离场
 	Logout(ctx context.Context, in *DesktopLogoutRequest, opts ...grpc.CallOption) (*DesktopLogoutResponse, error)
-	// 域名解析 - Desktop 查询 .k8s 域名对应的 Agent 地址
+	// 域名解析 - Desktop 查询 .beagle 域名对应的 Agent 地址
 	ResolveDomain(ctx context.Context, in *ResolveDomainRequest, opts ...grpc.CallOption) (*ResolveDomainResponse, error)
+	// 资源发现 - Desktop 查询可访问的资源列表
+	GetResources(ctx context.Context, in *GetResourcesRequest, opts ...grpc.CallOption) (*GetResourcesResponse, error)
 }
 
 type desktopServiceClient struct {
@@ -241,6 +244,16 @@ func (c *desktopServiceClient) ResolveDomain(ctx context.Context, in *ResolveDom
 	return out, nil
 }
 
+func (c *desktopServiceClient) GetResources(ctx context.Context, in *GetResourcesRequest, opts ...grpc.CallOption) (*GetResourcesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetResourcesResponse)
+	err := c.cc.Invoke(ctx, DesktopService_GetResources_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DesktopServiceServer is the server API for DesktopService service.
 // All implementations must embed UnimplementedDesktopServiceServer
 // for forward compatibility.
@@ -275,8 +288,10 @@ type DesktopServiceServer interface {
 	WaitForLoginResult(grpc.BidiStreamingServer[WaitForLoginResultRequest, WaitForLoginResultResponse]) error
 	// 注销 - Desktop 安全离场
 	Logout(context.Context, *DesktopLogoutRequest) (*DesktopLogoutResponse, error)
-	// 域名解析 - Desktop 查询 .k8s 域名对应的 Agent 地址
+	// 域名解析 - Desktop 查询 .beagle 域名对应的 Agent 地址
 	ResolveDomain(context.Context, *ResolveDomainRequest) (*ResolveDomainResponse, error)
+	// 资源发现 - Desktop 查询可访问的资源列表
+	GetResources(context.Context, *GetResourcesRequest) (*GetResourcesResponse, error)
 	mustEmbedUnimplementedDesktopServiceServer()
 }
 
@@ -331,6 +346,9 @@ func (UnimplementedDesktopServiceServer) Logout(context.Context, *DesktopLogoutR
 }
 func (UnimplementedDesktopServiceServer) ResolveDomain(context.Context, *ResolveDomainRequest) (*ResolveDomainResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ResolveDomain not implemented")
+}
+func (UnimplementedDesktopServiceServer) GetResources(context.Context, *GetResourcesRequest) (*GetResourcesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetResources not implemented")
 }
 func (UnimplementedDesktopServiceServer) mustEmbedUnimplementedDesktopServiceServer() {}
 func (UnimplementedDesktopServiceServer) testEmbeddedByValue()                        {}
@@ -590,6 +608,24 @@ func _DesktopService_ResolveDomain_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DesktopService_GetResources_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetResourcesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DesktopServiceServer).GetResources(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DesktopService_GetResources_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DesktopServiceServer).GetResources(ctx, req.(*GetResourcesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DesktopService_ServiceDesc is the grpc.ServiceDesc for DesktopService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -645,6 +681,10 @@ var DesktopService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "ResolveDomain",
 			Handler:    _DesktopService_ResolveDomain_Handler,
 		},
+		{
+			MethodName: "GetResources",
+			Handler:    _DesktopService_GetResources_Handler,
+		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
@@ -662,6 +702,110 @@ var DesktopService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "WaitForLoginResult",
 			Handler:       _DesktopService_WaitForLoginResult_Handler,
+			ServerStreams: true,
+			ClientStreams: true,
+		},
+	},
+	Metadata: "desktop/pkg/proto/desktop.proto",
+}
+
+const (
+	AgentService_SVCProxy_FullMethodName = "/awecloud.signaling.AgentService/SVCProxy"
+)
+
+// AgentServiceClient is the client API for AgentService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// AgentService Desktop 调用 Agent 的 SVCProxy 服务
+// 服务名必须与 Agent 端 agent.proto 中的 AgentService 一致，确保 gRPC method name 匹配
+type AgentServiceClient interface {
+	// SVCProxy - K8S Service 代理（双向流，Desktop → Agent → K8S ClusterIP）
+	SVCProxy(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[SVCProxyData, SVCProxyData], error)
+}
+
+type agentServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewAgentServiceClient(cc grpc.ClientConnInterface) AgentServiceClient {
+	return &agentServiceClient{cc}
+}
+
+func (c *agentServiceClient) SVCProxy(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[SVCProxyData, SVCProxyData], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &AgentService_ServiceDesc.Streams[0], AgentService_SVCProxy_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[SVCProxyData, SVCProxyData]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_SVCProxyClient = grpc.BidiStreamingClient[SVCProxyData, SVCProxyData]
+
+// AgentServiceServer is the server API for AgentService service.
+// All implementations must embed UnimplementedAgentServiceServer
+// for forward compatibility.
+//
+// AgentService Desktop 调用 Agent 的 SVCProxy 服务
+// 服务名必须与 Agent 端 agent.proto 中的 AgentService 一致，确保 gRPC method name 匹配
+type AgentServiceServer interface {
+	// SVCProxy - K8S Service 代理（双向流，Desktop → Agent → K8S ClusterIP）
+	SVCProxy(grpc.BidiStreamingServer[SVCProxyData, SVCProxyData]) error
+	mustEmbedUnimplementedAgentServiceServer()
+}
+
+// UnimplementedAgentServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedAgentServiceServer struct{}
+
+func (UnimplementedAgentServiceServer) SVCProxy(grpc.BidiStreamingServer[SVCProxyData, SVCProxyData]) error {
+	return status.Error(codes.Unimplemented, "method SVCProxy not implemented")
+}
+func (UnimplementedAgentServiceServer) mustEmbedUnimplementedAgentServiceServer() {}
+func (UnimplementedAgentServiceServer) testEmbeddedByValue()                      {}
+
+// UnsafeAgentServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to AgentServiceServer will
+// result in compilation errors.
+type UnsafeAgentServiceServer interface {
+	mustEmbedUnimplementedAgentServiceServer()
+}
+
+func RegisterAgentServiceServer(s grpc.ServiceRegistrar, srv AgentServiceServer) {
+	// If the following call panics, it indicates UnimplementedAgentServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&AgentService_ServiceDesc, srv)
+}
+
+func _AgentService_SVCProxy_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(AgentServiceServer).SVCProxy(&grpc.GenericServerStream[SVCProxyData, SVCProxyData]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type AgentService_SVCProxyServer = grpc.BidiStreamingServer[SVCProxyData, SVCProxyData]
+
+// AgentService_ServiceDesc is the grpc.ServiceDesc for AgentService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var AgentService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "awecloud.signaling.AgentService",
+	HandlerType: (*AgentServiceServer)(nil),
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "SVCProxy",
+			Handler:       _AgentService_SVCProxy_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},

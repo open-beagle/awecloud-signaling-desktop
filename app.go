@@ -31,6 +31,7 @@ type App struct {
 	dnsServer    *dns.Server
 	vipAllocator *vip.Allocator
 	proxyManager *proxy.Manager
+	svcProxyMgr  *proxy.SVCProxyManager // K8S Service gRPC 代理管理器
 }
 
 // NewApp creates a new App application struct
@@ -123,6 +124,12 @@ func (a *App) cleanupZTNA() {
 	if a.proxyManager != nil {
 		a.proxyManager.StopAll()
 		a.proxyManager = nil
+	}
+
+	// 停止所有 SVCProxy 代理
+	if a.svcProxyMgr != nil {
+		a.svcProxyMgr.StopAll()
+		a.svcProxyMgr = nil
 	}
 
 	// 清空 VIP 分配器
@@ -250,6 +257,9 @@ func (a *App) initializeZTNA() error {
 	// 2. 创建本地代理管理器（使用 tsnet Dial）
 	a.proxyManager = proxy.NewManager(a.tsManager.Dial)
 
+	// 2.5 创建 K8S Service gRPC 代理管理器
+	a.svcProxyMgr = proxy.NewSVCProxyManager(a.tsManager.Dial)
+
 	// 3. 创建并启动本地 DNS 服务器
 	// 使用平台推荐端口：Windows 需要 53（NRPT 限制），macOS/Linux 用 15353
 	dnsPort := dns.RecommendedPort()
@@ -296,19 +306,45 @@ func (a *App) resolveDomain(domain string) (string, bool) {
 		return "", false
 	}
 
-	// 启动本地代理：VIP:端口 → tsnet → Agent IP:端口
-	remoteAddr := fmt.Sprintf("%s:%d", result.AgentIP, result.TargetPort)
-	target := proxy.Target{
-		Domain:     domain,
-		VIP:        vipAddr,
-		RemoteAddr: remoteAddr,
-		Port:       result.TargetPort,
-	}
-	if err := a.proxyManager.StartProxy(target); err != nil {
-		log.Printf("[App] 代理启动失败 (%s → %s): %v", domain, remoteAddr, err)
-		// VIP 已分配但代理失败，仍返回 VIP（下次 DNS 查询会重试代理）
+	// 根据域名类型选择代理方式
+	if result.DomainType == "k8ssvc" {
+		// K8S Service：通过 gRPC SVCProxy 代理
+		svcProxyPort := result.SvcProxyPort
+		if svcProxyPort == 0 {
+			svcProxyPort = 9090 // 默认端口
+		}
+		svcTarget := proxy.SVCTarget{
+			Domain:      domain,
+			VIP:         vipAddr,
+			Port:        result.TargetPort,
+			AgentIP:     result.AgentIP,
+			GRPCPort:    svcProxyPort,
+			Namespace:   result.Namespace,
+			ServiceName: result.ServiceName,
+			TargetPort:  result.TargetPort,
+		}
+		if err := a.svcProxyMgr.StartSVCProxy(svcTarget); err != nil {
+			log.Printf("[App] SVCProxy 启动失败 (%s): %v", domain, err)
+		} else {
+			log.Printf("[App] SVCProxy 已启动: %s:%d → %s:%d (ns=%s, svc=%s)",
+				vipAddr, result.TargetPort, result.AgentIP, svcProxyPort,
+				result.Namespace, result.ServiceName)
+		}
 	} else {
-		log.Printf("[App] 代理已启动: %s:%d → %s (domain=%s)", vipAddr, result.TargetPort, remoteAddr, domain)
+		// SSH / K8SAPI / 其他：通过普通 TCP 代理
+		remoteAddr := fmt.Sprintf("%s:%d", result.AgentIP, result.TargetPort)
+		target := proxy.Target{
+			Domain:     domain,
+			VIP:        vipAddr,
+			RemoteAddr: remoteAddr,
+			Port:       result.TargetPort,
+		}
+		if err := a.proxyManager.StartProxy(target); err != nil {
+			log.Printf("[App] 代理启动失败 (%s → %s): %v", domain, remoteAddr, err)
+		} else {
+			log.Printf("[App] 代理已启动: %s:%d → %s (domain=%s, type=%s)",
+				vipAddr, result.TargetPort, remoteAddr, domain, result.DomainType)
+		}
 	}
 
 	return vipAddr, true
@@ -863,6 +899,23 @@ func (a *App) DeleteDevice(deviceToken string) error {
 	}
 
 	return a.desktopClient.DeleteDevice(deviceToken)
+}
+
+// GetResources 获取可访问的资源列表（SSH / K8S API / K8S Service）
+func (a *App) GetResources() ([]*client.ResourceInfo, error) {
+	log.Printf("[App] GetResources called")
+
+	if a.desktopClient == nil {
+		return nil, fmt.Errorf("未登录")
+	}
+
+	resources, err := a.desktopClient.GetResources()
+	if err != nil {
+		return nil, err
+	}
+
+	log.Printf("[App] 获取到 %d 个资源", len(resources))
+	return resources, nil
 }
 
 // CheckVersion 检查版本更新

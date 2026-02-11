@@ -13,6 +13,9 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
+import * as client$0 from "./internal/client/models.js";
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
 import * as config$0 from "./internal/config/models.js";
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -152,6 +155,16 @@ export function GetLogs() {
 }
 
 /**
+ * GetResources 获取可访问的资源列表（SSH / K8S API / K8S Service）
+ * @returns {$CancellablePromise<(client$0.ResourceInfo | null)[]>}
+ */
+export function GetResources() {
+    return $Call.ByID(2167352808).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType22($result);
+    }));
+}
+
+/**
  * @returns {$CancellablePromise<($models.ServiceInfo | null)[]>}
  */
 export function GetServices() {
@@ -166,7 +179,7 @@ export function GetServices() {
  */
 export function GetTunnelStatus() {
     return $Call.ByID(1614806691).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType21($result);
+        return $$createType24($result);
     }));
 }
 
@@ -175,7 +188,7 @@ export function GetTunnelStatus() {
  */
 export function GetVersion() {
     return $Call.ByID(1049863377).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType23($result);
+        return $$createType26($result);
     }));
 }
 
@@ -295,7 +308,7 @@ export function ToggleFavorite(serviceID) {
  */
 export function WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint) {
     return $Call.ByID(1518366997, serverAddr, sessionID, deviceFingerprint).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType25($result);
+        return $$createType28($result);
     }));
 }
 
@@ -320,9 +333,12 @@ const $$createType16 = $models.HostInfo.createFrom;
 const $$createType17 = $Create.Nullable($$createType16);
 const $$createType18 = $Create.Array($$createType17);
 const $$createType19 = $Create.Array($Create.Any);
-const $$createType20 = $models.TunnelStatus.createFrom;
+const $$createType20 = client$0.ResourceInfo.createFrom;
 const $$createType21 = $Create.Nullable($$createType20);
-const $$createType22 = $models.VersionInfo.createFrom;
-const $$createType23 = $Create.Nullable($$createType22);
-const $$createType24 = $models.LoginResultGRPC.createFrom;
-const $$createType25 = $Create.Nullable($$createType24);
+const $$createType22 = $Create.Array($$createType21);
+const $$createType23 = $models.TunnelStatus.createFrom;
+const $$createType24 = $Create.Nullable($$createType23);
+const $$createType25 = $models.VersionInfo.createFrom;
+const $$createType26 = $Create.Nullable($$createType25);
+const $$createType27 = $models.LoginResultGRPC.createFrom;
+const $$createType28 = $Create.Nullable($$createType27);

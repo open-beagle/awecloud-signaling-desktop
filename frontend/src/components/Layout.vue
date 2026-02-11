@@ -49,6 +49,16 @@
           <span>我的主机</span>
         </div>
         
+        <!-- 资源发现 -->
+        <div 
+          class="nav-item"
+          :class="{ active: currentRoute === '/resources' }"
+          @click="navigateTo('/resources')"
+        >
+          <el-icon><Compass /></el-icon>
+          <span>资源发现</span>
+        </div>
+        
         <!-- 用户菜单 -->
         <el-dropdown trigger="hover" @command="handleUserCommand">
           <div class="user-menu">
@@ -95,7 +105,7 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Grid, Document, Monitor, User, SwitchButton, CircleCheck, CircleClose, Loading, Iphone } from '@element-plus/icons-vue'
+import { Grid, Document, Monitor, User, SwitchButton, CircleCheck, CircleClose, Loading, Iphone, Compass } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
 import { GetTunnelStatus, ReconnectTunnel, GetGRPCStatus, Logout, ClearCredentials } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'

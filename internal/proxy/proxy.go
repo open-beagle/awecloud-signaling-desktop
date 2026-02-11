@@ -17,7 +17,7 @@ type DialFunc func(ctx context.Context, network, addr string) (net.Conn, error)
 
 // Target 代理目标信息
 type Target struct {
-	Domain     string // 域名（如 pg.yygl.beijing.k8s）
+	Domain     string // 域名（如 pg.yygl.beijing.beagle）
 	VIP        string // 本地 VIP 地址（如 127.1.0.1）
 	RemoteAddr string // 远程地址（Agent Tailscale IP:端口）
 	Port       int    // 监听端口（与远程端口相同）

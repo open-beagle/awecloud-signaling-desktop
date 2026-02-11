@@ -18,10 +18,10 @@ type ResolveFunc func(domain string) (vip string, ok bool)
 
 // Server 本地 DNS 服务器
 type Server struct {
-	listenAddr string
-	conn       *net.UDPConn
-	resolve    ResolveFunc
-	upstreamDNS string // 上游 DNS 地址（用于转发非 .k8s 域名）
+	listenAddr  string
+	conn        *net.UDPConn
+	resolve     ResolveFunc
+	upstreamDNS string // 上游 DNS 地址（用于转发非 .beagle 域名）
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup

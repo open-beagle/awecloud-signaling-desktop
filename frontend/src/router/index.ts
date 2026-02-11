@@ -6,6 +6,7 @@ import Hosts from '../views/Hosts.vue'
 import HostServices from '../views/HostServices.vue'
 import Devices from '../views/Devices.vue'
 import Logs from '../views/Logs.vue'
+import Resources from '../views/Resources.vue'
 
 const routes = [
   {
@@ -33,6 +34,12 @@ const routes = [
     path: '/hosts/:id/services',
     name: 'HostServices',
     component: HostServices,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/resources',
+    name: 'Resources',
+    component: Resources,
     meta: { requiresAuth: true }
   },
   {
