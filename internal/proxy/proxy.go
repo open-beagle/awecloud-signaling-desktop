@@ -4,9 +4,16 @@ package proxy
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net"
 	"sync"
 	"time"
@@ -21,6 +28,7 @@ type Target struct {
 	VIP        string // 本地 VIP 地址（如 127.1.0.1）
 	RemoteAddr string // 远程地址（Agent Tailscale IP:端口）
 	Port       int    // 监听端口（与远程端口相同）
+	TLS        bool   // 是否在本地提供 TLS（如 K8S API 需要 HTTPS）
 }
 
 // entry 单个代理实例
@@ -57,6 +65,7 @@ func NewManager(dial DialFunc) *Manager {
 
 // StartProxy 启动一个本地代理
 // 在 vip:port 上监听，转发到 remoteAddr
+// 当 target.TLS=true 时，在本地提供 TLS 终止（如 K8S API 的 HTTPS）
 func (m *Manager) StartProxy(target Target) error {
 	key := fmt.Sprintf("%s:%d", target.VIP, target.Port)
 
@@ -74,6 +83,21 @@ func (m *Manager) StartProxy(target Target) error {
 		return fmt.Errorf("监听 %s 失败: %w", listenAddr, err)
 	}
 
+	// 如果需要 TLS 终止，用 TLS 包装 listener
+	// kubectl 等客户端通过 HTTPS 连接本地 proxy，proxy 解密后以明文通过 tsnet 转发
+	// tsnet 本身是 WireGuard 加密的，安全性有保障
+	if target.TLS {
+		tlsCert, err := generateSelfSignedCert(target.Domain)
+		if err != nil {
+			listener.Close()
+			return fmt.Errorf("生成 TLS 证书失败: %w", err)
+		}
+		listener = tls.NewListener(listener, &tls.Config{
+			Certificates: []tls.Certificate{tlsCert},
+		})
+		log.Printf("[Proxy] TLS 终止已启用: %s", listenAddr)
+	}
+
 	ctx, cancel := context.WithCancel(m.ctx)
 	e := &entry{
 		target:   target,
@@ -89,7 +113,11 @@ func (m *Manager) StartProxy(target Target) error {
 	m.wg.Add(1)
 	go m.acceptLoop(ctx, e)
 
-	log.Printf("[Proxy] 已启动: %s → %s (%s)", listenAddr, target.RemoteAddr, target.Domain)
+	proto := "TCP"
+	if target.TLS {
+		proto = "TLS"
+	}
+	log.Printf("[Proxy] 已启动(%s): %s → %s (%s)", proto, listenAddr, target.RemoteAddr, target.Domain)
 	return nil
 }
 
