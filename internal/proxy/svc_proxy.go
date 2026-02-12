@@ -25,7 +25,7 @@ type SVCTarget struct {
 	VIP         string // 本地 VIP 地址（如 127.1.0.1）
 	Port        int    // 监听端口（与目标服务端口相同）
 	AgentIP     string // Agent 的 Tailscale IP
-	GRPCPort    int    // Agent SVCProxy gRPC 端口（默认 9090）
+	GRPCPort    int    // Agent SVCProxy gRPC 端口（默认 50051）
 	Namespace   string // K8S 命名空间
 	ServiceName string // K8S Service 名称
 	TargetPort  int    // K8S Service 目标端口

@@ -28,7 +28,7 @@ type Target struct {
 	VIP        string // 本地 VIP 地址（如 127.1.0.1）
 	RemoteAddr string // 远程地址（Agent Tailscale IP:端口）
 	Port       int    // 监听端口（与远程端口相同）
-	TLS        bool   // 是否在本地提供 TLS（如 K8S API 需要 HTTPS）
+	TLS        bool   // 是否在本地做 TLS 终止（k8sapi 类型需要）
 }
 
 // entry 单个代理实例
@@ -65,7 +65,7 @@ func NewManager(dial DialFunc) *Manager {
 
 // StartProxy 启动一个本地代理
 // 在 vip:port 上监听，转发到 remoteAddr
-// 当 target.TLS=true 时，在本地提供 TLS 终止（如 K8S API 的 HTTPS）
+// 如果 target.TLS 为 true，使用自签证书做 TLS 终止（用于 k8sapi，kubectl 需要 HTTPS）
 func (m *Manager) StartProxy(target Target) error {
 	key := fmt.Sprintf("%s:%d", target.VIP, target.Port)
 
@@ -83,14 +83,13 @@ func (m *Manager) StartProxy(target Target) error {
 		return fmt.Errorf("监听 %s 失败: %w", listenAddr, err)
 	}
 
-	// 如果需要 TLS 终止，用 TLS 包装 listener
-	// kubectl 等客户端通过 HTTPS 连接本地 proxy，proxy 解密后以明文通过 tsnet 转发
-	// tsnet 本身是 WireGuard 加密的，安全性有保障
+	// 如果需要 TLS 终止，用自签证书包装 listener
+	// kubectl 使用 --insecure-skip-tls-verify 跳过证书验证
 	if target.TLS {
-		tlsCert, err := generateSelfSignedCert(target.Domain)
+		tlsCert, err := generateSelfSignedCert()
 		if err != nil {
 			listener.Close()
-			return fmt.Errorf("生成 TLS 证书失败: %w", err)
+			return fmt.Errorf("生成自签证书失败: %w", err)
 		}
 		listener = tls.NewListener(listener, &tls.Config{
 			Certificates: []tls.Certificate{tlsCert},
@@ -113,11 +112,7 @@ func (m *Manager) StartProxy(target Target) error {
 	m.wg.Add(1)
 	go m.acceptLoop(ctx, e)
 
-	proto := "TCP"
-	if target.TLS {
-		proto = "TLS"
-	}
-	log.Printf("[Proxy] 已启动(%s): %s → %s (%s)", proto, listenAddr, target.RemoteAddr, target.Domain)
+	log.Printf("[Proxy] 已启动: %s → %s (%s)", listenAddr, target.RemoteAddr, target.Domain)
 	return nil
 }
 
@@ -219,20 +214,70 @@ func (m *Manager) handleConn(ctx context.Context, clientConn net.Conn, target Ta
 	}
 	defer remoteConn.Close()
 
-	// 双向转发
+	// 双向转发，等待两个方向都完成
 	done := make(chan struct{}, 2)
 	go func() {
 		io.Copy(remoteConn, clientConn)
+		// 客户端读完，半关闭远程写方向
+		if tc, ok := remoteConn.(interface{ CloseWrite() error }); ok {
+			tc.CloseWrite()
+		}
 		done <- struct{}{}
 	}()
 	go func() {
 		io.Copy(clientConn, remoteConn)
+		// 远程读完，半关闭客户端写方向
+		if tc, ok := clientConn.(interface{ CloseWrite() error }); ok {
+			tc.CloseWrite()
+		}
 		done <- struct{}{}
 	}()
 
-	// 等待任一方向完成
+	// 等待两个方向都完成
 	select {
-	case <-done:
 	case <-ctx.Done():
+	case <-done:
+		// 第一个方向完成，等待第二个
+		select {
+		case <-done:
+		case <-ctx.Done():
+		}
 	}
+}
+
+// generateSelfSignedCert 生成自签 TLS 证书
+// 用于 K8S API 代理的本地 TLS 终止
+// kubectl 使用 --insecure-skip-tls-verify 跳过证书验证
+func generateSelfSignedCert() (tls.Certificate, error) {
+	// 生成 ECDSA 私钥
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("生成私钥失败: %w", err)
+	}
+
+	// 创建证书模板
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			Organization: []string{"AWECloud K8S API Proxy"},
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour), // 10 年有效期
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		DNSNames:              []string{"localhost", "*.beagle"},
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+	}
+
+	// 自签证书
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("创建证书失败: %w", err)
+	}
+
+	return tls.Certificate{
+		Certificate: [][]byte{certDER},
+		PrivateKey:  privateKey,
+	}, nil
 }

@@ -311,7 +311,7 @@ func (a *App) resolveDomain(domain string) (string, bool) {
 		// K8S Service：通过 gRPC SVCProxy 代理
 		svcProxyPort := result.SvcProxyPort
 		if svcProxyPort == 0 {
-			svcProxyPort = 9090 // 默认端口
+			svcProxyPort = 50051 // 默认端口
 		}
 		svcTarget := proxy.SVCTarget{
 			Domain:      domain,
@@ -338,6 +338,7 @@ func (a *App) resolveDomain(domain string) (string, bool) {
 			VIP:        vipAddr,
 			RemoteAddr: remoteAddr,
 			Port:       result.TargetPort,
+			TLS:        result.DomainType == "k8sapi", // K8S API 需要本地 TLS 终止，kubectl 默认 HTTPS
 		}
 		if err := a.proxyManager.StartProxy(target); err != nil {
 			log.Printf("[App] 代理启动失败 (%s → %s): %v", domain, remoteAddr, err)
