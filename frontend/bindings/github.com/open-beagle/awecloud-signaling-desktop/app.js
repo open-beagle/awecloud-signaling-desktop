@@ -88,11 +88,22 @@ export function DeleteDevice(deviceToken) {
 }
 
 /**
+ * GenerateKubeconfig 自动生成 kubeconfig，为每个已授权的 K8S API 资源创建集群条目
+ * 流程：获取 k8sapi 资源 → 触发 DNS 解析（分配 VIP + 启动代理）→ 生成 kubeconfig
+ * @returns {$CancellablePromise<$models.KubeconfigResult | null>}
+ */
+export function GenerateKubeconfig() {
+    return $Call.ByID(1237423901).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType7($result);
+    }));
+}
+
+/**
  * @returns {$CancellablePromise<config$0.Config | null>}
  */
 export function GetConfig() {
     return $Call.ByID(1200034045).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType7($result);
+        return $$createType9($result);
     }));
 }
 
@@ -102,7 +113,7 @@ export function GetConfig() {
  */
 export function GetDevices() {
     return $Call.ByID(2647233474).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType10($result);
+        return $$createType12($result);
     }));
 }
 
@@ -112,7 +123,7 @@ export function GetDevices() {
  */
 export function GetGRPCStatus() {
     return $Call.ByID(2380737917).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType12($result);
+        return $$createType14($result);
     }));
 }
 
@@ -123,7 +134,7 @@ export function GetGRPCStatus() {
  */
 export function GetHostServices(hostID) {
     return $Call.ByID(654294273, hostID).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType15($result);
+        return $$createType17($result);
     }));
 }
 
@@ -133,7 +144,7 @@ export function GetHostServices(hostID) {
  */
 export function GetHosts() {
     return $Call.ByID(4245603774).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType18($result);
+        return $$createType20($result);
     }));
 }
 
@@ -150,7 +161,17 @@ export function GetLogLevel() {
  */
 export function GetLogs() {
     return $Call.ByID(1743981476).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType19($result);
+        return $$createType21($result);
+    }));
+}
+
+/**
+ * GetProxyStatus 获取所有本地代理连接状态
+ * @returns {$CancellablePromise<($models.ProxyStatusInfo | null)[]>}
+ */
+export function GetProxyStatus() {
+    return $Call.ByID(1800065723).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType24($result);
     }));
 }
 
@@ -160,7 +181,7 @@ export function GetLogs() {
  */
 export function GetResources() {
     return $Call.ByID(2167352808).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType22($result);
+        return $$createType27($result);
     }));
 }
 
@@ -169,7 +190,7 @@ export function GetResources() {
  */
 export function GetServices() {
     return $Call.ByID(839930963).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType15($result);
+        return $$createType17($result);
     }));
 }
 
@@ -179,7 +200,7 @@ export function GetServices() {
  */
 export function GetTunnelStatus() {
     return $Call.ByID(1614806691).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType24($result);
+        return $$createType29($result);
     }));
 }
 
@@ -188,7 +209,7 @@ export function GetTunnelStatus() {
  */
 export function GetVersion() {
     return $Call.ByID(1049863377).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType26($result);
+        return $$createType31($result);
     }));
 }
 
@@ -308,7 +329,7 @@ export function ToggleFavorite(serviceID) {
  */
 export function WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint) {
     return $Call.ByID(1518366997, serverAddr, sessionID, deviceFingerprint).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType28($result);
+        return $$createType33($result);
     }));
 }
 
@@ -319,26 +340,31 @@ const $$createType2 = $models.VersionCheckResult.createFrom;
 const $$createType3 = $Create.Nullable($$createType2);
 const $$createType4 = $models.CreateLoginSessionResult.createFrom;
 const $$createType5 = $Create.Nullable($$createType4);
-const $$createType6 = config$0.Config.createFrom;
+const $$createType6 = $models.KubeconfigResult.createFrom;
 const $$createType7 = $Create.Nullable($$createType6);
-const $$createType8 = $models.DeviceInfo.createFrom;
+const $$createType8 = config$0.Config.createFrom;
 const $$createType9 = $Create.Nullable($$createType8);
-const $$createType10 = $Create.Array($$createType9);
-const $$createType11 = $models.GRPCStatus.createFrom;
-const $$createType12 = $Create.Nullable($$createType11);
-const $$createType13 = $models.ServiceInfo.createFrom;
+const $$createType10 = $models.DeviceInfo.createFrom;
+const $$createType11 = $Create.Nullable($$createType10);
+const $$createType12 = $Create.Array($$createType11);
+const $$createType13 = $models.GRPCStatus.createFrom;
 const $$createType14 = $Create.Nullable($$createType13);
-const $$createType15 = $Create.Array($$createType14);
-const $$createType16 = $models.HostInfo.createFrom;
-const $$createType17 = $Create.Nullable($$createType16);
-const $$createType18 = $Create.Array($$createType17);
-const $$createType19 = $Create.Array($Create.Any);
-const $$createType20 = client$0.ResourceInfo.createFrom;
-const $$createType21 = $Create.Nullable($$createType20);
-const $$createType22 = $Create.Array($$createType21);
-const $$createType23 = $models.TunnelStatus.createFrom;
-const $$createType24 = $Create.Nullable($$createType23);
-const $$createType25 = $models.VersionInfo.createFrom;
+const $$createType15 = $models.ServiceInfo.createFrom;
+const $$createType16 = $Create.Nullable($$createType15);
+const $$createType17 = $Create.Array($$createType16);
+const $$createType18 = $models.HostInfo.createFrom;
+const $$createType19 = $Create.Nullable($$createType18);
+const $$createType20 = $Create.Array($$createType19);
+const $$createType21 = $Create.Array($Create.Any);
+const $$createType22 = $models.ProxyStatusInfo.createFrom;
+const $$createType23 = $Create.Nullable($$createType22);
+const $$createType24 = $Create.Array($$createType23);
+const $$createType25 = client$0.ResourceInfo.createFrom;
 const $$createType26 = $Create.Nullable($$createType25);
-const $$createType27 = $models.LoginResultGRPC.createFrom;
-const $$createType28 = $Create.Nullable($$createType27);
+const $$createType27 = $Create.Array($$createType26);
+const $$createType28 = $models.TunnelStatus.createFrom;
+const $$createType29 = $Create.Nullable($$createType28);
+const $$createType30 = $models.VersionInfo.createFrom;
+const $$createType31 = $Create.Nullable($$createType30);
+const $$createType32 = $models.LoginResultGRPC.createFrom;
+const $$createType33 = $Create.Nullable($$createType32);

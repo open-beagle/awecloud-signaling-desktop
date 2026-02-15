@@ -254,6 +254,58 @@ export class HostInfo {
 }
 
 /**
+ * KubeconfigResult kubeconfig 生成结果
+ */
+export class KubeconfigResult {
+    /**
+     * Creates a new KubeconfigResult instance.
+     * @param {Partial<KubeconfigResult>} [$$source = {}] - The source object to create the KubeconfigResult.
+     */
+    constructor($$source = {}) {
+        if (!("path" in $$source)) {
+            /**
+             * kubeconfig 文件路径
+             * @member
+             * @type {string}
+             */
+            this["path"] = "";
+        }
+        if (!("clusters" in $$source)) {
+            /**
+             * 已配置的集群名称列表
+             * @member
+             * @type {string[]}
+             */
+            this["clusters"] = [];
+        }
+        if (!("count" in $$source)) {
+            /**
+             * 集群数量
+             * @member
+             * @type {number}
+             */
+            this["count"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new KubeconfigResult instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {KubeconfigResult}
+     */
+    static createFrom($$source = {}) {
+        const $$createField1_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("clusters" in $$parsedSource) {
+            $$parsedSource["clusters"] = $$createField1_0($$parsedSource["clusters"]);
+        }
+        return new KubeconfigResult(/** @type {Partial<KubeconfigResult>} */($$parsedSource));
+    }
+}
+
+/**
  * WaitForLoginResultGRPC 通过 gRPC 双向流等待登录结果
  * 此方法建立 gRPC 连接，等待 Server 推送登录结果
  * 返回登录成功的凭证信息
@@ -333,6 +385,78 @@ export class LoginResultGRPC {
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new LoginResultGRPC(/** @type {Partial<LoginResultGRPC>} */($$parsedSource));
+    }
+}
+
+/**
+ * ProxyStatusInfo 代理连接状态信息
+ */
+export class ProxyStatusInfo {
+    /**
+     * Creates a new ProxyStatusInfo instance.
+     * @param {Partial<ProxyStatusInfo>} [$$source = {}] - The source object to create the ProxyStatusInfo.
+     */
+    constructor($$source = {}) {
+        if (!("domain" in $$source)) {
+            /**
+             * 域名
+             * @member
+             * @type {string}
+             */
+            this["domain"] = "";
+        }
+        if (!("vip" in $$source)) {
+            /**
+             * 本地 VIP 地址
+             * @member
+             * @type {string}
+             */
+            this["vip"] = "";
+        }
+        if (!("port" in $$source)) {
+            /**
+             * 监听端口
+             * @member
+             * @type {number}
+             */
+            this["port"] = 0;
+        }
+        if (!("remote_addr" in $$source)) {
+            /**
+             * 远程地址
+             * @member
+             * @type {string}
+             */
+            this["remote_addr"] = "";
+        }
+        if (!("type" in $$source)) {
+            /**
+             * 类型：tcp / svc
+             * @member
+             * @type {string}
+             */
+            this["type"] = "";
+        }
+        if (!("tls" in $$source)) {
+            /**
+             * 是否 TLS
+             * @member
+             * @type {boolean}
+             */
+            this["tls"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ProxyStatusInfo instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {ProxyStatusInfo}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ProxyStatusInfo(/** @type {Partial<ProxyStatusInfo>} */($$parsedSource));
     }
 }
 

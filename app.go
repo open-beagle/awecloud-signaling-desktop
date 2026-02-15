@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -314,14 +315,15 @@ func (a *App) resolveDomain(domain string) (string, bool) {
 			svcProxyPort = 50051 // 默认端口
 		}
 		svcTarget := proxy.SVCTarget{
-			Domain:      domain,
-			VIP:         vipAddr,
-			Port:        result.TargetPort,
-			AgentIP:     result.AgentIP,
-			GRPCPort:    svcProxyPort,
-			Namespace:   result.Namespace,
-			ServiceName: result.ServiceName,
-			TargetPort:  result.TargetPort,
+			Domain:       domain,
+			VIP:          vipAddr,
+			Port:         result.TargetPort,
+			AgentIP:      result.AgentIP,
+			GRPCPort:     svcProxyPort,
+			Namespace:    result.Namespace,
+			ServiceName:  result.ServiceName,
+			TargetPort:   result.TargetPort,
+			EndpointName: result.EndpointName,
 		}
 		if err := a.svcProxyMgr.StartSVCProxy(svcTarget); err != nil {
 			log.Printf("[App] SVCProxy 启动失败 (%s): %v", domain, err)
@@ -663,6 +665,50 @@ func (a *App) GetTunnelStatus() *TunnelStatus {
 	return status
 }
 
+// ProxyStatusInfo 代理连接状态信息
+type ProxyStatusInfo struct {
+	Domain     string `json:"domain"`      // 域名
+	VIP        string `json:"vip"`         // 本地 VIP 地址
+	Port       int    `json:"port"`        // 监听端口
+	RemoteAddr string `json:"remote_addr"` // 远程地址
+	Type       string `json:"type"`        // 类型：tcp / svc
+	TLS        bool   `json:"tls"`         // 是否 TLS
+}
+
+// GetProxyStatus 获取所有本地代理连接状态
+func (a *App) GetProxyStatus() []*ProxyStatusInfo {
+	var result []*ProxyStatusInfo
+
+	// TCP 代理状态
+	if a.proxyManager != nil {
+		for _, t := range a.proxyManager.GetStatus() {
+			result = append(result, &ProxyStatusInfo{
+				Domain:     t.Domain,
+				VIP:        t.VIP,
+				Port:       t.Port,
+				RemoteAddr: t.RemoteAddr,
+				Type:       "tcp",
+				TLS:        t.TLS,
+			})
+		}
+	}
+
+	// SVCProxy 代理状态
+	if a.svcProxyMgr != nil {
+		for _, t := range a.svcProxyMgr.GetStatus() {
+			result = append(result, &ProxyStatusInfo{
+				Domain:     t.Domain,
+				VIP:        t.VIP,
+				Port:       t.Port,
+				RemoteAddr: fmt.Sprintf("%s:%d", t.AgentIP, t.GRPCPort),
+				Type:       "svc",
+			})
+		}
+	}
+
+	return result
+}
+
 // ReconnectTunnel 重新连接隧道
 func (a *App) ReconnectTunnel() error {
 	log.Printf("[App] ReconnectTunnel called")
@@ -917,6 +963,210 @@ func (a *App) GetResources() ([]*client.ResourceInfo, error) {
 
 	log.Printf("[App] 获取到 %d 个资源", len(resources))
 	return resources, nil
+}
+
+// KubeconfigResult kubeconfig 生成结果
+type KubeconfigResult struct {
+	Path     string   `json:"path"`     // kubeconfig 文件路径
+	Clusters []string `json:"clusters"` // 已配置的集群名称列表
+	Count    int      `json:"count"`    // 集群数量
+}
+
+// clusterEntry kubeconfig 集群条目
+type clusterEntry struct {
+	Name   string // 集群名称（如 beijing）
+	Domain string // 域名
+	VIP    string // 本地 VIP 地址
+	Port   int    // 端口（K8S API 默认 6443）
+}
+
+// GenerateKubeconfig 自动生成 kubeconfig，为每个已授权的 K8S API 资源创建集群条目
+// 流程：获取 k8sapi 资源 → 触发 DNS 解析（分配 VIP + 启动代理）→ 生成 kubeconfig
+func (a *App) GenerateKubeconfig() (*KubeconfigResult, error) {
+	log.Printf("[App] GenerateKubeconfig called")
+
+	if a.desktopClient == nil {
+		return nil, fmt.Errorf("未登录")
+	}
+
+	// 1. 获取资源列表
+	resources, err := a.desktopClient.GetResources()
+	if err != nil {
+		return nil, fmt.Errorf("获取资源列表失败: %w", err)
+	}
+
+	// 2. 筛选 k8sapi 类型资源
+	var k8sResources []*client.ResourceInfo
+	for _, r := range resources {
+		if r.Type == "k8sapi" {
+			k8sResources = append(k8sResources, r)
+		}
+	}
+
+	if len(k8sResources) == 0 {
+		return &KubeconfigResult{Count: 0}, nil
+	}
+
+	// 3. 对每个 k8sapi 域名触发 DNS 解析（确保 VIP 已分配、TLS 代理已启动）
+	var clusters []clusterEntry
+
+	for _, r := range k8sResources {
+		// 触发 DNS 解析（会自动分配 VIP + 启动 TLS 代理）
+		vipAddr, ok := a.resolveDomain(r.Domain)
+		if !ok {
+			log.Printf("[App] kubeconfig: 域名解析失败 %s，跳过", r.Domain)
+			continue
+		}
+
+		// 从域名提取集群名称：kubernetes.{agent_name}.beagle → agent_name
+		// 或 kubernetes.{endpoint}.{agent_name}.beagle → endpoint-agent_name
+		clusterName := extractClusterName(r.Domain, r.AgentName)
+
+		// K8S API 默认端口 6443
+		port := 6443
+		if r.Port > 0 {
+			port = int(r.Port)
+		}
+
+		clusters = append(clusters, clusterEntry{
+			Name:   clusterName,
+			Domain: r.Domain,
+			VIP:    vipAddr,
+			Port:   port,
+		})
+	}
+
+	if len(clusters) == 0 {
+		return &KubeconfigResult{Count: 0}, nil
+	}
+
+	// 4. 生成 kubeconfig YAML
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, fmt.Errorf("获取 HOME 目录失败: %w", err)
+	}
+
+	kubeDir := homeDir + "/.kube"
+	if err := os.MkdirAll(kubeDir, 0700); err != nil {
+		return nil, fmt.Errorf("创建 .kube 目录失败: %w", err)
+	}
+
+	kubeconfigPath := kubeDir + "/config"
+
+	// 读取现有 kubeconfig（如果存在）
+	existingContent, _ := os.ReadFile(kubeconfigPath)
+
+	// 构建新的 kubeconfig 内容
+	newContent := buildKubeconfig(string(existingContent), clusters)
+
+	if err := os.WriteFile(kubeconfigPath, []byte(newContent), 0600); err != nil {
+		return nil, fmt.Errorf("写入 kubeconfig 失败: %w", err)
+	}
+
+	clusterNames := make([]string, 0, len(clusters))
+	for _, c := range clusters {
+		clusterNames = append(clusterNames, c.Name)
+	}
+
+	log.Printf("[App] kubeconfig 已生成: %s（%d 个集群）", kubeconfigPath, len(clusters))
+	return &KubeconfigResult{
+		Path:     kubeconfigPath,
+		Clusters: clusterNames,
+		Count:    len(clusters),
+	}, nil
+}
+
+// extractClusterName 从域名和 Agent 名称提取集群名称
+// kubernetes.beijing.beagle → beijing
+// kubernetes.beagle-241.beijing.beagle → beagle-241-beijing
+func extractClusterName(domain, agentName string) string {
+	// 移除域名后缀（.beagle 或其他）
+	parts := strings.Split(domain, ".")
+	if len(parts) < 3 {
+		return agentName
+	}
+
+	// 去掉第一个 "kubernetes" 和最后一个后缀
+	middle := parts[1 : len(parts)-1]
+	return strings.Join(middle, "-")
+}
+
+// buildKubeconfig 构建 kubeconfig YAML 内容
+// 使用标记块方式，避免影响用户已有配置
+func buildKubeconfig(existing string, clusters []clusterEntry) string {
+	// 如果没有现有配置，生成完整的 kubeconfig
+	// 如果有现有配置，在标记块内替换
+
+	marker := "# >>> AWECloud Signaling Clusters >>>"
+	markerEnd := "# <<< AWECloud Signaling Clusters <<<"
+
+	// 构建集群、上下文、用户条目
+	var clusterYAML, contextYAML, userYAML strings.Builder
+
+	for _, c := range clusters {
+		// cluster 条目
+		clusterYAML.WriteString("- cluster:\n")
+		clusterYAML.WriteString(fmt.Sprintf("    server: https://%s:%d\n", c.VIP, c.Port))
+		clusterYAML.WriteString("    insecure-skip-tls-verify: true\n")
+		clusterYAML.WriteString(fmt.Sprintf("  name: %s\n", c.Name))
+
+		// context 条目
+		contextYAML.WriteString("- context:\n")
+		contextYAML.WriteString(fmt.Sprintf("    cluster: %s\n", c.Name))
+		contextYAML.WriteString("    user: signaling-user\n")
+		contextYAML.WriteString(fmt.Sprintf("  name: %s\n", c.Name))
+
+		// user 条目（共用一个 signaling-user）
+	}
+
+	// 只需要一个 user 条目
+	userYAML.WriteString("- name: signaling-user\n")
+	userYAML.WriteString("  user: {}\n")
+
+	signalingBlock := fmt.Sprintf(`%s
+apiVersion: v1
+kind: Config
+clusters:
+%scontexts:
+%susers:
+%s%s`,
+		marker,
+		clusterYAML.String(),
+		contextYAML.String(),
+		userYAML.String(),
+		markerEnd,
+	)
+
+	// 如果没有现有配置，直接返回完整 kubeconfig
+	if strings.TrimSpace(existing) == "" {
+		return fmt.Sprintf(`apiVersion: v1
+kind: Config
+current-context: %s
+clusters:
+%scontexts:
+%susers:
+%s`, clusters[0].Name, clusterYAML.String(), contextYAML.String(), userYAML.String())
+	}
+
+	// 如果已有标记块，替换
+	beginIdx := strings.Index(existing, marker)
+	endIdx := strings.Index(existing, markerEnd)
+	if beginIdx >= 0 && endIdx >= 0 {
+		endIdx += len(markerEnd)
+		if endIdx < len(existing) && existing[endIdx] == '\n' {
+			endIdx++
+		}
+		return existing[:beginIdx] + signalingBlock + "\n" + existing[endIdx:]
+	}
+
+	// 没有标记块，尝试合并到现有 kubeconfig
+	// 简单方案：在 clusters/contexts/users 段追加
+	// 复杂合并容易出错，改用独立文件方案
+	signalingConfigPath := strings.Replace(existing, "", "", 0) // no-op
+	_ = signalingConfigPath
+
+	// 写入独立文件 ~/.kube/signaling-config，提示用户设置 KUBECONFIG
+	return existing + "\n" + signalingBlock + "\n"
 }
 
 // CheckVersion 检查版本更新

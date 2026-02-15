@@ -1065,6 +1065,7 @@ type DomainResolveResult struct {
 	Namespace    string // K8S 命名空间（k8ssvc 类型时）
 	ServiceName  string // K8S Service 名称（k8ssvc 类型时）
 	SvcProxyPort int    // Agent SVCProxy gRPC 端口（k8ssvc 类型时）
+	EndpointName string // Endpoint 名称（Endpoint 跳跃时）
 }
 
 // ResolveDomain 通过 gRPC 解析 .beagle 域名
@@ -1097,6 +1098,7 @@ func (c *DesktopClient) ResolveDomain(domain string) (*DomainResolveResult, erro
 		Namespace:    resp.Namespace,
 		ServiceName:  resp.ServiceName,
 		SvcProxyPort: int(resp.SvcProxyPort),
+		EndpointName: resp.EndpointName,
 	}, nil
 }
 

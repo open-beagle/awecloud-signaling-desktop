@@ -2137,6 +2137,7 @@ type ResolveDomainResponse struct {
 	Namespace     string                 `protobuf:"bytes,8,opt,name=namespace,proto3" json:"namespace,omitempty"`                               // K8S 命名空间（k8ssvc 类型时）
 	ServiceName   string                 `protobuf:"bytes,9,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"`        // K8S Service 名称（k8ssvc 类型时）
 	SvcProxyPort  int32                  `protobuf:"varint,10,opt,name=svc_proxy_port,json=svcProxyPort,proto3" json:"svc_proxy_port,omitempty"` // Agent SVCProxy gRPC 端口（k8ssvc 类型时，默认 9090）
+	EndpointName  string                 `protobuf:"bytes,11,opt,name=endpoint_name,json=endpointName,proto3" json:"endpoint_name,omitempty"`    // Endpoint 名称（Endpoint 跳跃时，非空表示需要走 Endpoint 路径）
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2239,6 +2240,13 @@ func (x *ResolveDomainResponse) GetSvcProxyPort() int32 {
 		return x.SvcProxyPort
 	}
 	return 0
+}
+
+func (x *ResolveDomainResponse) GetEndpointName() string {
+	if x != nil {
+		return x.EndpointName
+	}
+	return ""
 }
 
 // GetResourcesRequest 资源发现请求
@@ -2583,13 +2591,14 @@ func (x *GetResourcesResponse) GetK8SService() []*K8SServiceResource {
 // 字段号与 agent.proto 中的 SVCProxyData 完全一致，确保 wire 兼容
 type SVCProxyData struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`                        // 目标命名空间（首包携带）
-	ServiceName   string                 `protobuf:"bytes,2,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"` // 目标 Service 名称（首包携带）
-	Port          int32                  `protobuf:"varint,3,opt,name=port,proto3" json:"port,omitempty"`                                 // 目标端口（首包携带）
-	Data          []byte                 `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`                                  // 数据载荷
-	IsConnect     bool                   `protobuf:"varint,5,opt,name=is_connect,json=isConnect,proto3" json:"is_connect,omitempty"`      // 是否为连接请求（首包 true）
-	IsClose       bool                   `protobuf:"varint,6,opt,name=is_close,json=isClose,proto3" json:"is_close,omitempty"`            // 是否为关闭通知
-	Error         string                 `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`                                // 错误信息（如有）
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`                           // 目标命名空间（首包携带）
+	ServiceName   string                 `protobuf:"bytes,2,opt,name=service_name,json=serviceName,proto3" json:"service_name,omitempty"`    // 目标 Service 名称（首包携带）
+	Port          int32                  `protobuf:"varint,3,opt,name=port,proto3" json:"port,omitempty"`                                    // 目标端口（首包携带）
+	Data          []byte                 `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`                                     // 数据载荷
+	IsConnect     bool                   `protobuf:"varint,5,opt,name=is_connect,json=isConnect,proto3" json:"is_connect,omitempty"`         // 是否为连接请求（首包 true）
+	IsClose       bool                   `protobuf:"varint,6,opt,name=is_close,json=isClose,proto3" json:"is_close,omitempty"`               // 是否为关闭通知
+	Error         string                 `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`                                   // 错误信息（如有）
+	EndpointName  string                 `protobuf:"bytes,8,opt,name=endpoint_name,json=endpointName,proto3" json:"endpoint_name,omitempty"` // Endpoint 名称（首包携带，非空时走 Endpoint 跳跃路径）
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2669,6 +2678,13 @@ func (x *SVCProxyData) GetIsClose() bool {
 func (x *SVCProxyData) GetError() string {
 	if x != nil {
 		return x.Error
+	}
+	return ""
+}
+
+func (x *SVCProxyData) GetEndpointName() string {
+	if x != nil {
+		return x.EndpointName
 	}
 	return ""
 }
@@ -2840,7 +2856,7 @@ const file_desktop_pkg_proto_desktop_proto_rawDesc = "" +
 	"\x14ResolveDomainRequest\x12\x1d\n" +
 	"\n" +
 	"desktop_id\x18\x01 \x01(\x04R\tdesktopId\x12\x16\n" +
-	"\x06domain\x18\x02 \x01(\tR\x06domain\"\xc6\x02\n" +
+	"\x06domain\x18\x02 \x01(\tR\x06domain\"\xeb\x02\n" +
 	"\x15ResolveDomainResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x16\n" +
@@ -2855,7 +2871,8 @@ const file_desktop_pkg_proto_desktop_proto_rawDesc = "" +
 	"\tnamespace\x18\b \x01(\tR\tnamespace\x12!\n" +
 	"\fservice_name\x18\t \x01(\tR\vserviceName\x12$\n" +
 	"\x0esvc_proxy_port\x18\n" +
-	" \x01(\x05R\fsvcProxyPort\"4\n" +
+	" \x01(\x05R\fsvcProxyPort\x12#\n" +
+	"\rendpoint_name\x18\v \x01(\tR\fendpointName\"4\n" +
 	"\x13GetResourcesRequest\x12\x1d\n" +
 	"\n" +
 	"desktop_id\x18\x01 \x01(\x04R\tdesktopId\"|\n" +
@@ -2887,7 +2904,7 @@ const file_desktop_pkg_proto_desktop_proto_rawDesc = "" +
 	"\x03ssh\x18\x01 \x03(\v2\x1f.awecloud.signaling.SSHResourceR\x03ssh\x12;\n" +
 	"\ak8s_api\x18\x02 \x03(\v2\".awecloud.signaling.K8SAPIResourceR\x06k8sApi\x12G\n" +
 	"\vk8s_service\x18\x03 \x03(\v2&.awecloud.signaling.K8SServiceResourceR\n" +
-	"k8sService\"\xc7\x01\n" +
+	"k8sService\"\xec\x01\n" +
 	"\fSVCProxyData\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12!\n" +
 	"\fservice_name\x18\x02 \x01(\tR\vserviceName\x12\x12\n" +
@@ -2896,7 +2913,8 @@ const file_desktop_pkg_proto_desktop_proto_rawDesc = "" +
 	"\n" +
 	"is_connect\x18\x05 \x01(\bR\tisConnect\x12\x19\n" +
 	"\bis_close\x18\x06 \x01(\bR\aisClose\x12\x14\n" +
-	"\x05error\x18\a \x01(\tR\x05error*\xcc\x01\n" +
+	"\x05error\x18\a \x01(\tR\x05error\x12#\n" +
+	"\rendpoint_name\x18\b \x01(\tR\fendpointName*\xcc\x01\n" +
 	"\x0fDesktopDataType\x12!\n" +
 	"\x1dDESKTOP_DATA_TYPE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15DESKTOP_DATA_TYPE_ALL\x10\x01\x12\x1e\n" +

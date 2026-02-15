@@ -21,14 +21,15 @@ import (
 
 // SVCTarget K8S Service 代理目标信息
 type SVCTarget struct {
-	Domain      string // 域名（如 postgres.default.beijing.beagle）
-	VIP         string // 本地 VIP 地址（如 127.1.0.1）
-	Port        int    // 监听端口（与目标服务端口相同）
-	AgentIP     string // Agent 的 Tailscale IP
-	GRPCPort    int    // Agent SVCProxy gRPC 端口（默认 50051）
-	Namespace   string // K8S 命名空间
-	ServiceName string // K8S Service 名称
-	TargetPort  int    // K8S Service 目标端口
+	Domain       string // 域名（如 postgres.default.beijing.beagle）
+	VIP          string // 本地 VIP 地址（如 127.1.0.1）
+	Port         int    // 监听端口（与目标服务端口相同）
+	AgentIP      string // Agent 的 Tailscale IP
+	GRPCPort     int    // Agent SVCProxy gRPC 端口（默认 50051）
+	Namespace    string // K8S 命名空间
+	ServiceName  string // K8S Service 名称
+	TargetPort   int    // K8S Service 目标端口
+	EndpointName string // Endpoint 名称（非空时走 Endpoint 跳跃路径）
 }
 
 // svcEntry 单个 SVCProxy 代理实例
@@ -120,6 +121,17 @@ func (m *SVCProxyManager) Count() int {
 	return len(m.proxies)
 }
 
+// GetStatus 获取所有运行中的 SVCProxy 代理目标信息
+func (m *SVCProxyManager) GetStatus() []SVCTarget {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	targets := make([]SVCTarget, 0, len(m.proxies))
+	for _, e := range m.proxies {
+		targets = append(targets, e.target)
+	}
+	return targets
+}
+
 // acceptLoop 接受连接循环
 func (m *SVCProxyManager) acceptLoop(ctx context.Context, e *svcEntry) {
 	defer m.wg.Done()
@@ -176,12 +188,13 @@ func (m *SVCProxyManager) handleConn(ctx context.Context, clientConn net.Conn, t
 		return
 	}
 
-	// 3. 发送首包（连接请求）
+	// 3. 发送首包（连接请求，携带 endpoint_name 用于 Endpoint 跳跃路径）
 	if err := stream.Send(&pb.SVCProxyData{
-		Namespace:   target.Namespace,
-		ServiceName: target.ServiceName,
-		Port:        int32(target.TargetPort),
-		IsConnect:   true,
+		Namespace:    target.Namespace,
+		ServiceName:  target.ServiceName,
+		Port:         int32(target.TargetPort),
+		IsConnect:    true,
+		EndpointName: target.EndpointName,
 	}); err != nil {
 		log.Printf("[SVCProxy] 发送首包失败 (%s): %v", target.Domain, err)
 		return
