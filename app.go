@@ -335,18 +335,28 @@ func (a *App) resolveDomain(domain string) (string, bool) {
 	} else {
 		// SSH / K8SAPI / 其他：通过普通 TCP 代理
 		remoteAddr := fmt.Sprintf("%s:%d", result.AgentIP, result.TargetPort)
+
+		// SSH 类型域名：本地监听 22 端口（SSH 客户端默认端口），远程转发到 Agent 分配的端口
+		// K8SAPI 类型域名：本地监听 6443 端口（kubectl 默认端口），远程转发到 Agent 分配的端口
+		localPort := result.TargetPort
+		if result.DomainType == "ssh" {
+			localPort = 22
+		} else if result.DomainType == "k8sapi" {
+			localPort = 6443
+		}
+
 		target := proxy.Target{
 			Domain:     domain,
 			VIP:        vipAddr,
 			RemoteAddr: remoteAddr,
-			Port:       result.TargetPort,
+			Port:       localPort,
 			TLS:        result.DomainType == "k8sapi", // K8S API 需要本地 TLS 终止，kubectl 默认 HTTPS
 		}
 		if err := a.proxyManager.StartProxy(target); err != nil {
 			log.Printf("[App] 代理启动失败 (%s → %s): %v", domain, remoteAddr, err)
 		} else {
 			log.Printf("[App] 代理已启动: %s:%d → %s (domain=%s, type=%s)",
-				vipAddr, result.TargetPort, remoteAddr, domain, result.DomainType)
+				vipAddr, localPort, remoteAddr, domain, result.DomainType)
 		}
 	}
 
