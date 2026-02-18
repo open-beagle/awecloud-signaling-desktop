@@ -52,7 +52,7 @@ jobs:
             unzip
 
       - name: Install Wails v3
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.60
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@latest
 
       - name: Build Desktop Applications (Linux and Windows)
         run: |
@@ -89,7 +89,7 @@ jobs:
           node-version: '20'
 
       - name: Install Wails v3
-        run: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-alpha.60
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@latest
 
       - name: Build Desktop Application (macOS)
         run: |

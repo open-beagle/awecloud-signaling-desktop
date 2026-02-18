@@ -73,37 +73,6 @@ installWindowsDeps() {
     echo -e "${GREEN}✓ Windows cross-compilation dependencies OK${NC}"
 }
 
-# downloadWintun 下载 wintun.dll 用于嵌入
-downloadWintun() {
-    local WINTUN_VERSION="0.14.1"
-    local TARGET_DIR="internal/tailscale/resources"
-    local TARGET_FILE="${TARGET_DIR}/wintun.dll"
-    
-    # 检查是否已存在
-    if [ -f "${TARGET_FILE}" ]; then
-        echo -e "${GREEN}✓ wintun.dll 已存在${NC}"
-        return 0
-    fi
-    
-    echo -e "${YELLOW}下载 wintun ${WINTUN_VERSION}...${NC}"
-    
-    # 创建临时目录
-    local TMP_DIR=$(mktemp -d)
-    trap "rm -rf ${TMP_DIR}" RETURN
-    
-    # 下载
-    curl -sL "https://www.wintun.net/builds/wintun-${WINTUN_VERSION}.zip" -o "${TMP_DIR}/wintun.zip"
-    
-    # 解压
-    unzip -q "${TMP_DIR}/wintun.zip" -d "${TMP_DIR}"
-    
-    # 复制 amd64 版本
-    mkdir -p "${TARGET_DIR}"
-    cp "${TMP_DIR}/wintun/bin/amd64/wintun.dll" "${TARGET_FILE}"
-    
-    echo -e "${GREEN}✓ wintun.dll 已下载${NC}"
-}
-
 # generateWindowsResources 生成 Windows 资源文件（图标嵌入）
 generateWindowsResources() {
     local ARCH="$1"
@@ -262,7 +231,6 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
             ;;
         windows)
             installWindowsDeps
-            downloadWintun
             generateWindowsResources "${ARCH}"
             ;;
         darwin)

@@ -20,9 +20,6 @@
 go.work
 go.work.sum
 
-# Wintun DLL（构建时下载，不提交）
-internal/tailscale/resources/*.dll
-
 # IDE
 .vscode/
 .idea/

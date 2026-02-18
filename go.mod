@@ -5,7 +5,7 @@ go 1.25.5
 require (
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/shirou/gopsutil v3.21.11+incompatible
-	github.com/wailsapp/wails/v3 v3.0.0-alpha.64
+	github.com/wailsapp/wails/v3 v3.0.0-alpha.72
 	go.opentelemetry.io/otel v1.40.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.40.0
 	go.opentelemetry.io/otel/sdk v1.40.0
