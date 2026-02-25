@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"embed"
+	"io/fs"
 	"log"
 	"os"
 	"runtime"
@@ -86,6 +87,12 @@ func main() {
 	// 创建应用实例
 	app := NewApp()
 
+	// 从 embed.FS 中提取 frontend/dist 子目录
+	frontendFS, err := fs.Sub(assets, "frontend/dist")
+	if err != nil {
+		log.Fatalf("Failed to get frontend/dist from embedded assets: %v", err)
+	}
+
 	// 创建 Wails v3 应用
 	mainApp = application.New(application.Options{
 		Name:        "awecloud-signaling",
@@ -95,7 +102,7 @@ func main() {
 			application.NewService(app),
 		},
 		Assets: application.AssetOptions{
-			Handler: application.AssetFileServerFS(assets),
+			Handler: application.AssetFileServerFS(frontendFS),
 		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: false,
