@@ -7,7 +7,6 @@ import HostServices from '../views/HostServices.vue'
 import Devices from '../views/Devices.vue'
 import Logs from '../views/Logs.vue'
 import Resources from '../views/Resources.vue'
-
 const routes = [
   {
     path: '/',

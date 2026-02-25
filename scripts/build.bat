@@ -3,12 +3,15 @@ setlocal enabledelayedexpansion
 
 REM Desktop 构建脚本 (Wails v3) - Windows 版本
 
+REM 切换到脚本所在目录的上级目录（desktop/）
+cd /d "%~dp0.."
+
 REM 读取版本号
 if "%BUILD_VERSION%"=="" (
     if exist "version" (
         set /p BUILD_VERSION=<version
     ) else (
-        set BUILD_VERSION=v0.2.0
+        set BUILD_VERSION=dev
     )
 )
 if "%BUILD_ADDRESS%"=="" set BUILD_ADDRESS=
