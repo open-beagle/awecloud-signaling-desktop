@@ -49,14 +49,14 @@
           <span>我的主机</span>
         </div>
         
-        <!-- 资源发现 -->
+        <!-- 我的K8S -->
         <div 
           class="nav-item"
-          :class="{ active: currentRoute === '/resources' }"
-          @click="navigateTo('/resources')"
+          :class="{ active: currentRoute.startsWith('/k8s') }"
+          @click="navigateTo('/k8s')"
         >
           <el-icon><Compass /></el-icon>
-          <span>资源发现</span>
+          <span>我的K8S</span>
         </div>
         
         <!-- 用户菜单 -->

@@ -1,3 +1,7 @@
+/**
+ * @deprecated 此 store 已废弃，请使用 domains.ts
+ * 旧的服务数据结构，将在完全迁移到新的域名列表后删除
+ */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 

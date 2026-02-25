@@ -53,6 +53,9 @@ service DesktopService {
 
   // 资源发现 - Desktop 查询可访问的资源列表
   rpc GetResources(GetResourcesRequest) returns (GetResourcesResponse);
+
+  // 获取域名列表 - Desktop 查询可访问的域名记录（按类型分类）
+  rpc GetDomainList(GetDomainListRequest) returns (GetDomainListResponse);
 }
 
 // ============================================
@@ -431,6 +434,33 @@ message GetResourcesResponse {
   repeated K8SServiceResource k8s_service = 3;
 }
 
+// ============================================
+// 获取域名列表
+// ============================================
+
+// GetDomainListRequest 获取域名列表请求
+message GetDomainListRequest {
+  uint64 desktop_id = 1; // Desktop ID
+}
+
+// DomainItem 域名记录
+message DomainItem {
+  string domain = 1; // 域名（如 beagle-242.beijing.beagle）
+  string type = 2; // 类型：ssh / k8sapi / k8ssvc
+  string status = 3; // 状态：online / offline
+  repeated int32 service_ports = 4; // K8S Service 端口列表（k8ssvc 类型时）
+  repeated string ssh_users = 5; // SSH 用户列表（ssh 类型时）
+  string namespace = 6; // K8S 命名空间（k8ssvc 类型时）
+  string service_name = 7; // K8S Service 名称（k8ssvc 类型时）
+  string region = 8; // 区域名称（从 domain 解析，如 beijing）
+  string endpoint_id = 9; // Endpoint 名称（Endpoint 域名时填充，Device 域名时为空）
+}
+
+// GetDomainListResponse 获取域名列表响应
+message GetDomainListResponse {
+  repeated DomainItem domains = 1; // 域名列表
+}
+
 
 // ============================================
 // Agent SVCProxy 服务（Desktop 作为客户端调用 Agent）
@@ -447,12 +477,12 @@ service AgentService {
 // 首包携带连接参数（is_connect=true），后续包携带数据
 // 字段号与 agent.proto 中的 SVCProxyData 完全一致，确保 wire 兼容
 message SVCProxyData {
-  string namespace = 1;      // 目标命名空间（首包携带）
-  string service_name = 2;   // 目标 Service 名称（首包携带）
-  int32 port = 3;            // 目标端口（首包携带）
-  bytes data = 4;            // 数据载荷
-  bool is_connect = 5;       // 是否为连接请求（首包 true）
-  bool is_close = 6;         // 是否为关闭通知
-  string error = 7;          // 错误信息（如有）
-  string endpoint_name = 8;  // Endpoint 名称（首包携带，非空时走 Endpoint 跳跃路径）
+  string namespace = 1; // 目标命名空间（首包携带）
+  string service_name = 2; // 目标 Service 名称（首包携带）
+  int32 port = 3; // 目标端口（首包携带）
+  bytes data = 4; // 数据载荷
+  bool is_connect = 5; // 是否为连接请求（首包 true）
+  bool is_close = 6; // 是否为关闭通知
+  string error = 7; // 错误信息（如有）
+  string endpoint_name = 8; // Endpoint 名称（首包携带，非空时走 Endpoint 跳跃路径）
 }

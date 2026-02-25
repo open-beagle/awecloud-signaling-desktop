@@ -1,350 +1,83 @@
 <template>
-  <Layout>
-    <div class="services-page">
-      <!-- 页面头部 -->
-      <div class="page-header">
-        <div class="header-left">
-          <h2>我的服务</h2>
-          <div class="filter-tags">
-            <el-tag 
-              :class="{ 'filter-tag': true, 'active': filterStatus.favorite }"
-              @click="toggleFilter('favorite')"
-              type="warning"
-              effect="plain"
-            >
-              ⭐ 收藏 {{ favoriteCount }}
-            </el-tag>
-            <el-tag 
-              :class="{ 'filter-tag': true, 'active': filterStatus.online }"
-              @click="toggleFilter('online')"
-              type="success"
-              effect="plain"
-            >
-              共 {{ onlineCount }} 个在线
-            </el-tag>
-            <el-tag 
-              :class="{ 'filter-tag': true, 'active': filterStatus.offline }"
-              @click="toggleFilter('offline')"
-              type="info"
-              effect="plain"
-            >
-              共 {{ offlineCount }} 个离线
-            </el-tag>
-          </div>
-        </div>
-        <div class="header-right">
-          <!-- 搜索框（可展开/收起） -->
-          <transition name="search-expand">
-            <el-input
-              v-if="searchExpanded"
-              ref="searchInputRef"
-              v-model="searchQuery"
-              placeholder="搜索服务"
-              :prefix-icon="Search"
-              clearable
-              class="search-input"
-              @blur="handleSearchBlur"
-            />
-          </transition>
-          
-          <el-tooltip :content="searchExpanded ? '关闭搜索' : '搜索'" placement="bottom">
-            <el-button 
-              :icon="Search" 
-              @click="toggleSearch"
-              circle
-            />
-          </el-tooltip>
-          
-          <el-tooltip content="刷新" placement="bottom">
-            <el-button 
-              :icon="Refresh" 
-              @click="handleRefresh" 
-              :loading="servicesStore.loading"
-              circle
-            />
-          </el-tooltip>
-        </div>
-      </div>
-
-      <!-- 服务列表 -->
-      <div class="services-content">
-        <el-empty 
-          v-if="!servicesStore.loading && servicesStore.services.length === 0" 
-          description="暂无可用服务" 
-        />
-        
-        <el-empty 
-          v-else-if="!servicesStore.loading && filteredServices.length === 0" 
-          description="没有找到匹配的服务" 
-        />
-        
-        <div v-else class="services-grid">
-          <ServiceCard
-            v-for="(service, index) in filteredServices"
-            :key="service.instance_id"
-            :service="service"
-            :index="index + 1"
-            @favorite-changed="handleFavoriteChanged"
-          />
-        </div>
-      </div>
+  <div class="services-page">
+    <div class="page-header">
+      <h2>我的服务</h2>
     </div>
-  </Layout>
+    
+    <div v-if="loading" class="loading">
+      加载中...
+    </div>
+    
+    <div v-else-if="servicesDomains.length === 0" class="empty">
+      暂无服务
+    </div>
+    
+    <div v-else class="services-grid">
+      <ServiceDomainCard
+        v-for="domain in servicesDomains"
+        :key="domain.domain"
+        :domain="domain"
+      />
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, computed, nextTick } from 'vue'
+import { computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, Search } from '@element-plus/icons-vue'
-import { useAuthStore } from '../stores/auth'
-import { useServicesStore } from '../stores/services'
-import Layout from '../components/Layout.vue'
-import ServiceCard from '../components/ServiceCard.vue'
-import { GetServices } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import { useDomainsStore } from '../stores/domains'
+import ServiceDomainCard from '../components/ServiceDomainCard.vue'
+import { GetDomainList } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
-const authStore = useAuthStore()
-const servicesStore = useServicesStore()
+const domainsStore = useDomainsStore()
 
-// 搜索和过滤
-const searchQuery = ref('')
-const searchExpanded = ref(false)
-const searchInputRef = ref()
+const loading = computed(() => domainsStore.loading)
+const servicesDomains = computed(() => domainsStore.servicesDomains)
 
-// 默认筛选：优先在线 > 离线
-const getDefaultFilterStatus = () => {
-  const hasOnline = servicesStore.services.some(s => s.status === 'online')
-  const hasFavorite = servicesStore.services.some(s => s.is_favorite)
-  
-  if (hasFavorite) {
-    // 有收藏：显示收藏
-    return { favorite: true, online: false, offline: false }
-  } else if (hasOnline) {
-    // 无收藏但有在线：显示在线
-    return { favorite: false, online: true, offline: false }
-  } else {
-    // 无收藏无在线：显示离线
-    return { favorite: false, online: false, offline: true }
-  }
-}
-
-const filterStatus = ref(getDefaultFilterStatus())
-
-// 切换搜索框展开/收起
-const toggleSearch = async () => {
-  searchExpanded.value = !searchExpanded.value
-  
-  if (searchExpanded.value) {
-    // 展开时自动聚焦
-    await nextTick()
-    searchInputRef.value?.focus()
-  } else {
-    // 收起时清空搜索内容
-    searchQuery.value = ''
-  }
-}
-
-// 搜索框失去焦点时，如果没有搜索内容则自动收起
-const handleSearchBlur = () => {
-  if (!searchQuery.value) {
-    setTimeout(() => {
-      searchExpanded.value = false
-    }, 200)
-  }
-}
-
-// 统计数量
-const favoriteCount = computed(() => {
-  return servicesStore.services.filter(service => service.is_favorite).length
-})
-
-const onlineCount = computed(() => {
-  return servicesStore.services.filter(service => service.status === 'online').length
-})
-
-const offlineCount = computed(() => {
-  return servicesStore.services.filter(service => service.status !== 'online').length
-})
-
-// 切换筛选状态
-const toggleFilter = (type: 'favorite' | 'online' | 'offline') => {
-  filterStatus.value[type] = !filterStatus.value[type]
-}
-
-// 过滤后的服务列表
-const filteredServices = computed(() => {
-  let services = servicesStore.services
-
-  // 按搜索关键词过滤
-  if (searchQuery.value) {
-    const query = searchQuery.value.toLowerCase()
-    services = services.filter(service => 
-      service.instance_name.toLowerCase().includes(query) ||
-      service.agent_name?.toLowerCase().includes(query) ||
-      service.description?.toLowerCase().includes(query)
-    )
-  }
-
-  // 按状态过滤
-  services = services.filter(service => {
-    const isFavorite = service.is_favorite
-    const isOnline = service.status === 'online'
-    const isOffline = service.status !== 'online'
-
-    // 如果收藏筛选开启，且服务已收藏，则显示
-    if (filterStatus.value.favorite && isFavorite) return true
-    
-    // 如果在线筛选开启，且服务在线，则显示
-    if (filterStatus.value.online && isOnline) return true
-    
-    // 如果离线筛选开启，且服务离线，则显示
-    if (filterStatus.value.offline && isOffline) return true
-
-    return false
-  })
-
-  // 收藏的服务优先显示
-  return services.sort((a, b) => {
-    if (a.is_favorite && !b.is_favorite) return -1
-    if (!a.is_favorite && b.is_favorite) return 1
-    return 0
-  })
-})
-
-onMounted(async () => {
-  await loadServices()
-})
-
-const loadServices = async () => {
-  servicesStore.setLoading(true)
+const loadDomains = async () => {
+  domainsStore.setLoading(true)
   try {
-    const services = await GetServices()
-    // 过滤掉 null 值
-    const validServices = (services || []).filter((s): s is NonNullable<typeof s> => s !== null)
-    servicesStore.setServices(validServices)
-    
-    // 服务列表加载后，重新计算默认筛选状态
-    filterStatus.value = getDefaultFilterStatus()
+    const domains = await GetDomainList()
+    domainsStore.setDomains(domains || [])
   } catch (error: any) {
-    ElMessage.error(error.message || '获取服务列表失败')
+    ElMessage.error(error.message || '获取域名列表失败')
   } finally {
-    servicesStore.setLoading(false)
+    domainsStore.setLoading(false)
   }
 }
 
-const handleRefresh = async () => {
-  await loadServices()
-  ElMessage.success('刷新成功')
-}
-
-const handleFavoriteChanged = async () => {
-  // 收藏状态变化后重新加载服务列表
-  await loadServices()
-}
+onMounted(() => {
+  loadDomains()
+})
 </script>
 
 <style scoped>
 .services-page {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: #f5f5f5;
+  padding: 20px;
 }
 
 .page-header {
-  background: white;
-  padding: 20px 30px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  margin-bottom: 20px;
 }
 
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.header-left h2 {
-  margin: 0;
+.page-header h2 {
   font-size: 20px;
-  font-weight: 500;
+  font-weight: 600;
   color: #333;
+  margin: 0;
 }
 
-.filter-tags {
-  display: flex;
-  gap: 8px;
-}
-
-.filter-tag {
-  cursor: pointer;
-  user-select: none;
-  transition: all 0.3s ease;
-  opacity: 0.5;
-}
-
-.filter-tag:hover {
-  opacity: 0.8;
-  transform: translateY(-1px);
-}
-
-.filter-tag.active {
-  opacity: 1;
-  background: linear-gradient(135deg, var(--el-tag-bg-color) 0%, var(--el-color-primary-light-7) 100%);
-  border-color: var(--el-color-primary-light-5);
-  font-weight: 500;
-}
-
-.header-right {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.search-input {
-  width: 200px;
-}
-
-/* 搜索框展开/收起动画 */
-.search-expand-enter-active,
-.search-expand-leave-active {
-  transition: all 0.3s ease;
-}
-
-.search-expand-enter-from {
-  width: 0;
-  opacity: 0;
-  transform: translateX(20px);
-}
-
-.search-expand-enter-to {
-  width: 200px;
-  opacity: 1;
-  transform: translateX(0);
-}
-
-.search-expand-leave-from {
-  width: 200px;
-  opacity: 1;
-  transform: translateX(0);
-}
-
-.search-expand-leave-to {
-  width: 0;
-  opacity: 0;
-  transform: translateX(20px);
-}
-
-.services-content {
-  flex: 1;
-  padding: 24px;
-  overflow-y: auto;
+.loading,
+.empty {
+  text-align: center;
+  padding: 40px;
+  color: #999;
+  font-size: 14px;
 }
 
 .services-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
 }
 </style>

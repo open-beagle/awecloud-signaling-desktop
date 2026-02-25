@@ -3,10 +3,11 @@ import { useAuthStore } from '../stores/auth'
 import Login from '../views/Login.vue'
 import Services from '../views/Services.vue'
 import Hosts from '../views/Hosts.vue'
-import HostServices from '../views/HostServices.vue'
+import K8S from '../views/K8S.vue'
+import K8SDetail from '../views/K8SDetail.vue'
 import Devices from '../views/Devices.vue'
 import Logs from '../views/Logs.vue'
-import Resources from '../views/Resources.vue'
+
 const routes = [
   {
     path: '/',
@@ -30,15 +31,15 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
-    path: '/hosts/:id/services',
-    name: 'HostServices',
-    component: HostServices,
+    path: '/k8s',
+    name: 'K8S',
+    component: K8S,
     meta: { requiresAuth: true }
   },
   {
-    path: '/resources',
-    name: 'Resources',
-    component: Resources,
+    path: '/k8s/:domain',
+    name: 'K8SDetail',
+    component: K8SDetail,
     meta: { requiresAuth: true }
   },
   {

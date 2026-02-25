@@ -1585,3 +1585,47 @@ func (a *App) WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint st
 		Username:    result.Username,
 	}, nil
 }
+
+// DomainItem 域名项（用于前端）
+type DomainItem struct {
+	Domain       string   `json:"domain"`
+	Type         string   `json:"type"`
+	Status       string   `json:"status"`
+	ServicePorts []int32  `json:"service_ports"`
+	SSHUsers     []string `json:"ssh_users"`
+	Namespace    string   `json:"namespace"`
+	ServiceName  string   `json:"service_name"`
+	Region       string   `json:"region"`
+}
+
+// GetDomainList 获取域名列表
+func (a *App) GetDomainList() ([]*DomainItem, error) {
+	log.Printf("[App] GetDomainList called")
+
+	if a.desktopClient == nil {
+		return nil, fmt.Errorf("未登录")
+	}
+
+	domains, err := a.desktopClient.GetDomainList()
+	if err != nil {
+		return nil, err
+	}
+
+	// 转换为前端格式
+	result := make([]*DomainItem, 0, len(domains))
+	for _, d := range domains {
+		result = append(result, &DomainItem{
+			Domain:       d.Domain,
+			Type:         d.Type,
+			Status:       d.Status,
+			ServicePorts: d.ServicePorts,
+			SSHUsers:     d.SSHUsers,
+			Namespace:    d.Namespace,
+			ServiceName:  d.ServiceName,
+			Region:       d.Region,
+		})
+	}
+
+	log.Printf("[App] Returning %d domains", len(result))
+	return result, nil
+}

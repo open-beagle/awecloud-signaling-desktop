@@ -1172,3 +1172,48 @@ func (c *DesktopClient) GetResources() ([]*ResourceInfo, error) {
 
 	return resources, nil
 }
+
+// DomainInfo 域名信息（用于前端三个核心页面）
+type DomainInfo struct {
+	Domain       string   `json:"domain"`        // 域名
+	Type         string   `json:"type"`          // 类型：ssh / k8sapi / k8ssvc
+	Status       string   `json:"status"`        // 状态：online / offline
+	ServicePorts []int32  `json:"service_ports"` // K8S Service 端口列表（k8ssvc 类型）
+	SSHUsers     []string `json:"ssh_users"`     // SSH 用户列表（ssh 类型）
+	Namespace    string   `json:"namespace"`     // K8S 命名空间（k8ssvc 类型）
+	ServiceName  string   `json:"service_name"`  // K8S Service 名称（k8ssvc 类型）
+	Region       string   `json:"region"`        // 区域名称（从域名解析）
+}
+
+// GetDomainList 通过 gRPC 获取域名列表
+func (c *DesktopClient) GetDomainList() ([]*DomainInfo, error) {
+	if !c.IsAuthenticated() {
+		return nil, fmt.Errorf("未认证")
+	}
+
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	defer cancel()
+
+	resp, err := c.grpcClient.GetDomainList(ctx, &pb.GetDomainListRequest{
+		DesktopId: c.desktopID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("获取域名列表失败: %w", err)
+	}
+
+	domains := make([]*DomainInfo, 0, len(resp.Domains))
+	for _, d := range resp.Domains {
+		domains = append(domains, &DomainInfo{
+			Domain:       d.Domain,
+			Type:         d.Type,
+			Status:       d.Status,
+			ServicePorts: d.ServicePorts,
+			SSHUsers:     d.SshUsers,
+			Namespace:    d.Namespace,
+			ServiceName:  d.ServiceName,
+			Region:       d.Region,
+		})
+	}
+
+	return domains, nil
+}
