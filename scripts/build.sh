@@ -10,8 +10,18 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# 版本信息
-BUILD_VERSION="${BUILD_VERSION:-dev}"
+# 切换到脚本所在目录的上级目录（desktop/）
+cd "$(dirname "$0")/.."
+
+# 读取版本号
+if [ -z "$BUILD_VERSION" ]; then
+    if [ -f "version" ]; then
+        BUILD_VERSION=$(cat version | tr -d '\n\r')
+    else
+        BUILD_VERSION="dev"
+    fi
+fi
+
 BUILD_ADDRESS="${BUILD_ADDRESS:-}"  # 默认 Server 地址（可选）
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo "0")
@@ -242,12 +252,12 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
     esac
     
     # 设置输出文件名
-    OUTPUT_NAME="awecloud-signaling-${BUILD_VERSION}-${OS}-${ARCH}"
+    OUTPUT_NAME="signal_desktop-${BUILD_VERSION}-${OS}-${ARCH}"
     if [ "$OS" = "windows" ]; then
         OUTPUT_NAME="${OUTPUT_NAME}.exe"
-        BUILD_OUTPUT="${OUTPUT_DIR}/awecloud-signaling-desktop.exe"
+        BUILD_OUTPUT="${OUTPUT_DIR}/signal_desktop.exe"
     else
-        BUILD_OUTPUT="${OUTPUT_DIR}/awecloud-signaling-desktop"
+        BUILD_OUTPUT="${OUTPUT_DIR}/signal_desktop"
     fi
     
     # 构建 ldflags
@@ -293,8 +303,8 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
         if [ "$OS" = "darwin" ]; then
             echo -e "${YELLOW}Packaging macOS .app bundle...${NC}"
             
-            APP_BUNDLE_NAME="Signaling Desktop.app"
-            ZIP_NAME="awecloud-signaling-${BUILD_VERSION}-${OS}-${ARCH}.zip"
+            APP_BUNDLE_NAME="Signal Desktop.app"
+            ZIP_NAME="signal_desktop-${BUILD_VERSION}-${OS}-${ARCH}.zip"
             
             # 创建 .app 目录结构
             rm -rf "${OUTPUT_DIR}/${APP_BUNDLE_NAME}"
@@ -302,7 +312,7 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
             mkdir -p "${OUTPUT_DIR}/${APP_BUNDLE_NAME}/Contents/Resources"
             
             # 复制可执行文件
-            cp "${BUILD_OUTPUT}" "${OUTPUT_DIR}/${APP_BUNDLE_NAME}/Contents/MacOS/awecloud-signaling-desktop"
+            cp "${BUILD_OUTPUT}" "${OUTPUT_DIR}/${APP_BUNDLE_NAME}/Contents/MacOS/signal_desktop"
             
             # 创建 Info.plist
             cat > "${OUTPUT_DIR}/${APP_BUNDLE_NAME}/Contents/Info.plist" << EOF
@@ -313,9 +323,9 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleName</key>
-    <string>Signaling Desktop</string>
+    <string>Signal Desktop</string>
     <key>CFBundleExecutable</key>
-    <string>awecloud-signaling-desktop</string>
+    <string>signal_desktop</string>
     <key>CFBundleIdentifier</key>
     <string>com.awecloud.signaling.desktop</string>
     <key>CFBundleVersion</key>

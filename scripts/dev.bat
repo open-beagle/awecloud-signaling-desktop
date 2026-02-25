@@ -27,8 +27,14 @@ if '%errorlevel%' NEQ '0' (
 
 REM ----------------------------------------------------------------
 
-REM 设置默认版本
-if "%BUILD_VERSION%"=="" set BUILD_VERSION=v0.2.0
+REM 读取版本号
+if "%BUILD_VERSION%"=="" (
+    if exist "version" (
+        set /p BUILD_VERSION=<version
+    ) else (
+        set BUILD_VERSION=v0.2.0
+    )
+)
 
 echo ========================================
 echo Beagle Desktop - Development Mode
@@ -86,52 +92,9 @@ if not exist ".tmp\bin" (
     mkdir ".tmp\bin"
 )
 
-REM ----------------------------------------------------------------
-REM 检查并下载 Wintun 驱动
-REM ----------------------------------------------------------------
-set WINTUN_VERSION=0.14.1
-set WINTUN_TARGET=build\bin\wintun.dll
-
-REM 确保 build\bin 目录存在
-if not exist "build\bin" (
-    mkdir "build\bin"
-)
-
-if not exist "%WINTUN_TARGET%" (
-    echo [INFO] Downloading wintun-%WINTUN_VERSION%...
-    
-    REM 下载到 .tmp 目录
-    powershell -Command "Invoke-WebRequest -Uri 'https://www.wintun.net/builds/wintun-%WINTUN_VERSION%.zip' -OutFile '.tmp\wintun.zip'"
-    
-    if exist ".tmp\wintun.zip" (
-        echo [INFO] Extracting wintun...
-        powershell -Command "Expand-Archive -Path '.tmp\wintun.zip' -DestinationPath '.tmp' -Force"
-        del ".tmp\wintun.zip"
-        
-        REM 查找并复制 wintun.dll（支持多种解压目录名）
-        set WINTUN_FOUND=0
-        for %%D in (".tmp\wintun" ".tmp\wintun-%WINTUN_VERSION%") do (
-            if exist "%%~D\bin\amd64\wintun.dll" (
-                copy /Y "%%~D\bin\amd64\wintun.dll" "%WINTUN_TARGET%" >nul
-                echo [INFO] Copied wintun.dll to build\bin\
-                set WINTUN_FOUND=1
-            )
-        )
-        
-        if "!WINTUN_FOUND!"=="0" (
-            echo [ERROR] wintun.dll not found after extraction!
-            echo [ERROR] Please check .tmp directory structure
-        )
-    ) else (
-        echo [ERROR] Failed to download wintun. VPN features will not work.
-    )
-) else (
-    echo [INFO] Wintun already exists: %WINTUN_TARGET%
-)
-
 echo.
 echo [INFO] Starting Wails development server...
-echo [WARN] ENSURE YOU ARE RUNNING AS ADMINISTRATOR for VPN features!
+echo [WARN] ENSURE YOU ARE RUNNING AS ADMINISTRATOR for system-level features!
 echo.
 
 REM 设置版本环境变量供应用读取

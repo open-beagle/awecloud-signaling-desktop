@@ -1,12 +1,23 @@
 # Desktop 开发脚本 - Windows PowerShell 版本（简化版）
-# 工作目录: awecloud-signaling-server\
+# 工作目录: awecloud-signaling-server\desktop\
 
 param(
     [string]$BuildVersion = $env:BUILD_VERSION
 )
 
-# 设置默认版本
-if ([string]::IsNullOrEmpty($BuildVersion)) { $BuildVersion = "dev" }
+# 设置工作目录为 desktop 目录
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$DesktopDir = Split-Path -Parent $ScriptDir
+Set-Location $DesktopDir
+
+# 读取版本号
+if ([string]::IsNullOrEmpty($BuildVersion)) {
+    if (Test-Path "version") {
+        $BuildVersion = (Get-Content "version" -Raw).Trim()
+    } else {
+        $BuildVersion = "dev"
+    }
+}
 
 # 检查管理员权限
 $IsAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -17,18 +28,12 @@ if (-not $IsAdmin) {
     Write-Host ""
 }
 
-# 设置工作目录为项目根目录
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$DesktopDir = Split-Path -Parent $ScriptDir
-$RootDir = Split-Path -Parent $DesktopDir
-Set-Location $RootDir
-
+Write-Host ""
 Write-Host "========================================"
 Write-Host "Beagle Desktop - Development Mode"
 Write-Host "========================================"
 Write-Host "Version:           $BuildVersion"
-Write-Host "Root Directory:    $RootDir"
-Write-Host "Desktop Directory: desktop\"
+Write-Host "Desktop Directory: $DesktopDir"
 Write-Host "Admin Privileges:  $IsAdmin"
 Write-Host ""
 
@@ -49,24 +54,24 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
 }
 
 # 安装前端依赖（如果需要）
-if (-not (Test-Path "desktop\frontend\node_modules")) {
+if (-not (Test-Path "frontend\node_modules")) {
     Write-Host "[INFO] Installing frontend dependencies..."
-    Set-Location "desktop\frontend"
+    Set-Location "frontend"
     npm install
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] Failed to install frontend dependencies" -ForegroundColor Red
-        Set-Location $RootDir
+        Set-Location $DesktopDir
         Read-Host "Press Enter to exit"
         exit 1
     }
-    Set-Location $RootDir
+    Set-Location $DesktopDir
 } else {
     Write-Host "[INFO] Frontend dependencies already installed"
 }
 
 # 确保 .tmp 目录存在
-$TmpDir = "desktop\.tmp"
-$TmpBinDir = "desktop\.tmp\bin"
+$TmpDir = ".tmp"
+$TmpBinDir = ".tmp\bin"
 if (-not (Test-Path $TmpDir)) {
     New-Item -ItemType Directory -Path $TmpDir -Force | Out-Null
 }
@@ -74,54 +79,26 @@ if (-not (Test-Path $TmpBinDir)) {
     New-Item -ItemType Directory -Path $TmpBinDir -Force | Out-Null
 }
 
-# 检查并下载 Wintun 驱动
-$WintunVersion = "0.14.1"
-$WintunTarget = "$TmpDir\wintun\bin\amd64\wintun.dll"
-
-if (-not (Test-Path $WintunTarget)) {
-    Write-Host "[INFO] Downloading wintun-$WintunVersion..."
-    
-    $WintunZip = "$TmpDir\wintun.zip"
-    $WintunUrl = "https://www.wintun.net/builds/wintun-$WintunVersion.zip"
-    
-    try {
-        Invoke-WebRequest -Uri $WintunUrl -OutFile $WintunZip -ErrorAction Stop
-        
-        Write-Host "[INFO] Extracting wintun..."
-        Expand-Archive -Path $WintunZip -DestinationPath $TmpDir -Force
-        Remove-Item $WintunZip -Force
-        
-        Write-Host "[INFO] Wintun downloaded successfully" -ForegroundColor Green
-    } catch {
-        Write-Host "[ERROR] Failed to download wintun: $_" -ForegroundColor Red
-        Write-Host "[WARN] VPN features will not work." -ForegroundColor Yellow
-    }
-} else {
-    Write-Host "[INFO] Wintun already exists: $WintunTarget"
-}
-
 Write-Host ""
 Write-Host "[INFO] Building frontend..."
-Set-Location "desktop\frontend"
+Set-Location "frontend"
 npm run build
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] Failed to build frontend" -ForegroundColor Red
-    Set-Location $RootDir
+    Set-Location $DesktopDir
     Read-Host "Press Enter to exit"
     exit 1
 }
-Set-Location $RootDir
+Set-Location $DesktopDir
 
 Write-Host ""
 Write-Host "[INFO] Building Go application..."
-$OutputExe = "$TmpBinDir\awecloud-signaling-desktop.exe"
+$OutputExe = "$TmpBinDir\signal_desktop.exe"
 $BuildFlags = "-buildvcs=false -gcflags=all=-l"
 $LdFlags = "-X 'github.com/open-beagle/awecloud-signaling-desktop/internal/version.Version=$BuildVersion'"
 
-Set-Location "desktop"
-go build -o "..\$OutputExe" -ldflags $LdFlags -gcflags=all=-l .
+go build -o $OutputExe -ldflags $LdFlags -gcflags=all=-l .
 $BuildResult = $LASTEXITCODE
-Set-Location $RootDir
 
 if ($BuildResult -ne 0) {
     Write-Host "[ERROR] Failed to build Go application" -ForegroundColor Red
@@ -140,15 +117,14 @@ Write-Host "[INFO] Build successful: $OutputExe" -ForegroundColor Green
 Write-Host ""
 Write-Host "[INFO] Starting application..."
 if ($IsAdmin) {
-    Write-Host "[INFO] Running with administrator privileges - VPN features enabled" -ForegroundColor Green
+    Write-Host "[INFO] Running with administrator privileges - system features enabled" -ForegroundColor Green
 } else {
-    Write-Host "[WARN] Not running as administrator - VPN features may not work!" -ForegroundColor Yellow
+    Write-Host "[WARN] Not running as administrator - some features may not work!" -ForegroundColor Yellow
 }
 Write-Host ""
 
-# 运行应用（使用完整路径避免 PowerShell 模块加载错误）
-$FullExePath = Join-Path $RootDir $OutputExe
-& $FullExePath
+# 运行应用
+& $OutputExe
 
 $ExitCode = $LASTEXITCODE
 

@@ -3,8 +3,14 @@ setlocal enabledelayedexpansion
 
 REM Desktop 构建脚本 (Wails v3) - Windows 版本
 
-REM 版本信息
-if "%BUILD_VERSION%"=="" set BUILD_VERSION=v0.2.0
+REM 读取版本号
+if "%BUILD_VERSION%"=="" (
+    if exist "version" (
+        set /p BUILD_VERSION=<version
+    ) else (
+        set BUILD_VERSION=v0.2.0
+    )
+)
 if "%BUILD_ADDRESS%"=="" set BUILD_ADDRESS=
 
 REM 获取 Git 信息
@@ -69,6 +75,24 @@ if not exist "node_modules" (
 )
 cd ..
 
+REM 生成绑定（必须在构建前端之前）
+if %WAILS3_AVAILABLE% equ 1 (
+    echo [INFO] Generating bindings...
+    wails3 generate bindings
+    if %ERRORLEVEL% neq 0 (
+        echo [ERROR] Failed to generate bindings
+        exit /b 1
+    )
+) else (
+    if exist "frontend\bindings" (
+        echo [INFO] wails3 not available, using existing bindings...
+    ) else (
+        echo [ERROR] wails3 not available and no existing bindings found
+        echo Please install wails3 or ensure frontend\bindings directory exists
+        exit /b 1
+    )
+)
+
 REM 构建前端
 echo [INFO] Building frontend...
 cd frontend
@@ -79,20 +103,6 @@ if %ERRORLEVEL% neq 0 (
     exit /b 1
 )
 cd ..
-
-REM 生成绑定
-if %WAILS3_AVAILABLE% equ 1 (
-    echo [INFO] Generating bindings...
-    wails3 generate bindings
-) else (
-    if exist "frontend\bindings" (
-        echo [INFO] wails3 not available, using existing bindings...
-    ) else (
-        echo [ERROR] wails3 not available and no existing bindings found
-        echo Please install wails3 or ensure frontend\bindings directory exists
-        exit /b 1
-    )
-)
 
 REM 创建输出目录
 if not exist "%OUTPUT_DIR%" mkdir "%OUTPUT_DIR%"
@@ -120,8 +130,8 @@ if not "%BUILD_ADDRESS%"=="" (
     set LDFLAGS=!LDFLAGS! -X "github.com/open-beagle/awecloud-signaling-desktop/internal/config.buildAddress=%BUILD_ADDRESS%"
 )
 
-set BUILD_OUTPUT=%OUTPUT_DIR%\awecloud-signaling-desktop.exe
-set OUTPUT_NAME=awecloud-signaling-%BUILD_VERSION%-windows-%GOARCH%.exe
+set BUILD_OUTPUT=%OUTPUT_DIR%\signal_desktop.exe
+set OUTPUT_NAME=signal_desktop-%BUILD_VERSION%-windows-%GOARCH%.exe
 
 echo Building with: go build -tags production -trimpath -ldflags "%LDFLAGS%" -o %BUILD_OUTPUT%
 go build -tags production -trimpath -ldflags "%LDFLAGS%" -o %BUILD_OUTPUT%

@@ -1,5 +1,5 @@
 # Desktop Build Script (Wails v3) - Windows PowerShell
-# Working Directory: awecloud-signaling-server\
+# Working Directory: awecloud-signaling-server\desktop\
 
 param(
     [string]$BuildVersion = $env:BUILD_VERSION,
@@ -7,8 +7,19 @@ param(
     [string]$GoArch = $env:GOARCH
 )
 
-# Set defaults
-if ([string]::IsNullOrEmpty($BuildVersion)) { $BuildVersion = "dev" }
+# Set working directory to desktop folder
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$DesktopDir = Split-Path -Parent $ScriptDir
+Set-Location $DesktopDir
+
+# Read version from file if not provided
+if ([string]::IsNullOrEmpty($BuildVersion)) {
+    if (Test-Path "version") {
+        $BuildVersion = (Get-Content "version" -Raw).Trim()
+    } else {
+        $BuildVersion = "dev"
+    }
+}
 if ([string]::IsNullOrEmpty($BuildAddress)) { 
     # 尝试从 SIGNALING_ADDRESS 环境变量读取（与 Linux 版本保持一致）
     $BuildAddress = $env:SIGNALING_ADDRESS
@@ -35,26 +46,21 @@ try {
 
 $BuildDate = Get-Date -Format "yyyy-MM-dd_HH:mm:ss"
 
-# Set working directory to project root
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$DesktopDir = Split-Path -Parent $ScriptDir
-$RootDir = Split-Path -Parent $DesktopDir
-Set-Location $RootDir
-
-$OutputDir = "desktop\build\bin"
+$OutputDir = "build\bin"
 
 Write-Host "========================================"
 Write-Host "AWECloud Signaling Desktop Builder"
 Write-Host "========================================"
 Write-Host ""
-Write-Host "Root Directory: $RootDir"
-Write-Host "Version:        $BuildVersion"
-Write-Host "Build Number:   $BuildNumber"
-Write-Host "Address:        $BuildAddress"
-Write-Host "Git Commit:     $GitCommit"
-Write-Host "Build Date:     $BuildDate"
-Write-Host "Architecture:   $GoArch"
+Write-Host "Desktop Directory: $DesktopDir"
+Write-Host "Version:           $BuildVersion"
+Write-Host "Build Number:      $BuildNumber"
+Write-Host "Address:           $BuildAddress"
+Write-Host "Git Commit:        $GitCommit"
+Write-Host "Build Date:        $BuildDate"
+Write-Host "Architecture:      $GoArch"
 Write-Host ""
+
 # Check Node.js
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Host "[ERROR] node command not found" -ForegroundColor Red
@@ -77,101 +83,51 @@ if (Get-Command wails3 -ErrorAction SilentlyContinue) {
 
 # Install frontend dependencies
 Write-Host "[INFO] Installing frontend dependencies..."
-Set-Location "desktop\frontend"
+Set-Location "frontend"
 if (-not (Test-Path "node_modules")) {
     npm install
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] Failed to install frontend dependencies" -ForegroundColor Red
-        Set-Location $RootDir
+        Set-Location $DesktopDir
         exit 1
     }
 } else {
     Write-Host "Frontend dependencies already installed, skipping..."
 }
-Set-Location $RootDir
+Set-Location $DesktopDir
 
-# Build frontend
-Write-Host "[INFO] Building frontend..."
-Set-Location "desktop\frontend"
-npm run build
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[ERROR] Failed to build frontend" -ForegroundColor Red
-    Set-Location $RootDir
-    exit 1
-}
-Set-Location $RootDir
-
-# Generate bindings
+# Generate bindings (必须在构建前端之前)
 if ($Wails3Available) {
     Write-Host "[INFO] Generating bindings..."
-    Set-Location "desktop"
     wails3 generate bindings
-    Set-Location $RootDir
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] Failed to generate bindings" -ForegroundColor Red
+        exit 1
+    }
 } else {
-    if (Test-Path "desktop\frontend\bindings") {
+    if (Test-Path "frontend\bindings") {
         Write-Host "[INFO] wails3 not available, using existing bindings..."
     } else {
         Write-Host "[ERROR] wails3 not available and no existing bindings found" -ForegroundColor Red
-        Write-Host "Please install wails3 or ensure desktop\frontend\bindings directory exists"
+        Write-Host "Please install wails3 or ensure frontend\bindings directory exists"
         exit 1
     }
 }
+
+# Build frontend
+Write-Host "[INFO] Building frontend..."
+Set-Location "frontend"
+npm run build
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[ERROR] Failed to build frontend" -ForegroundColor Red
+    Set-Location $DesktopDir
+    exit 1
+}
+Set-Location $DesktopDir
 
 # Create output directory
 if (-not (Test-Path $OutputDir)) {
     New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
-}
-
-# Download and prepare Wintun for embedding
-$WintunVersion = "0.14.1"
-$WintunResourceDir = "desktop\internal\tailscale\resources"
-$WintunDllPath = "$WintunResourceDir\wintun.dll"
-
-if (-not (Test-Path $WintunResourceDir)) {
-    New-Item -ItemType Directory -Path $WintunResourceDir -Force | Out-Null
-}
-
-if (-not (Test-Path $WintunDllPath)) {
-    Write-Host "[INFO] Downloading wintun-$WintunVersion for embedding..."
-    
-    $TmpDir = "desktop\.tmp"
-    if (-not (Test-Path $TmpDir)) {
-        New-Item -ItemType Directory -Path $TmpDir -Force | Out-Null
-    }
-    
-    $WintunZip = "$TmpDir\wintun.zip"
-    $WintunUrl = "https://www.wintun.net/builds/wintun-$WintunVersion.zip"
-    
-    try {
-        Invoke-WebRequest -Uri $WintunUrl -OutFile $WintunZip -ErrorAction Stop
-        
-        Write-Host "[INFO] Extracting wintun..."
-        Expand-Archive -Path $WintunZip -DestinationPath $TmpDir -Force
-        Remove-Item $WintunZip -Force
-        
-        $WintunFound = $false
-        $PossibleDirs = @("$TmpDir\wintun", "$TmpDir\wintun-$WintunVersion")
-        
-        foreach ($Dir in $PossibleDirs) {
-            $SourceDll = "$Dir\bin\amd64\wintun.dll"
-            if (Test-Path $SourceDll) {
-                Copy-Item $SourceDll $WintunDllPath -Force
-                Write-Host "[SUCCESS] Copied wintun.dll to $WintunResourceDir" -ForegroundColor Green
-                $WintunFound = $true
-                break
-            }
-        }
-        
-        if (-not $WintunFound) {
-            Write-Host "[ERROR] wintun.dll not found after extraction!" -ForegroundColor Red
-            exit 1
-        }
-    } catch {
-        Write-Host "[ERROR] Failed to download wintun: $_" -ForegroundColor Red
-        exit 1
-    }
-} else {
-    Write-Host "[INFO] Wintun already exists for embedding: $WintunDllPath"
 }
 
 # Generate Windows resources
@@ -187,8 +143,6 @@ if (-not (Get-Command go-winres -ErrorAction SilentlyContinue)) {
     }
 }
 
-Set-Location "desktop"
-
 # Create winres directory
 if (-not (Test-Path "winres")) {
     New-Item -ItemType Directory -Path "winres" -Force | Out-Null
@@ -200,6 +154,7 @@ if (Test-Path "build\windows\icon.ico") {
 } elseif (Test-Path "build\appicon.png") {
     Copy-Item "build\appicon.png" "winres\icon.png" -Force
 }
+
 # Generate manifest file
 $ManifestXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
@@ -267,9 +222,9 @@ if (Test-Path "rsrc_windows_$GoArch.syso") {
     Write-Host "[SUCCESS] Windows resources generated: rsrc_windows_$GoArch.syso" -ForegroundColor Green
 } else {
     Write-Host "[ERROR] Failed to generate Windows resources" -ForegroundColor Red
-    Set-Location $RootDir
     exit 1
 }
+
 # Build
 Write-Host ""
 Write-Host "========================================"
@@ -290,8 +245,8 @@ if (-not [string]::IsNullOrEmpty($BuildAddress)) {
     $LdFlags += " -X `"github.com/open-beagle/awecloud-signaling-desktop/internal/config.buildAddress=$BuildAddress`""
 }
 
-$BuildOutput = "build\bin\awecloud-signaling-desktop.exe"
-$OutputName = "awecloud-signaling-$BuildVersion-windows-$GoArch.exe"
+$BuildOutput = "build\bin\signal_desktop.exe"
+$OutputName = "signal_desktop-$BuildVersion-windows-$GoArch.exe"
 
 Write-Host "Building with: go build -tags production -trimpath -ldflags `"$LdFlags`" -o $BuildOutput"
 go build -tags production -trimpath -ldflags $LdFlags -o $BuildOutput
@@ -300,7 +255,6 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] Build failed" -ForegroundColor Red
     Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
     Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
-    Set-Location $RootDir
     exit 1
 }
 
@@ -317,15 +271,12 @@ if (Test-Path $BuildOutput) {
     Write-Host "[ERROR] Build failed - output file not found" -ForegroundColor Red
     Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
     Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
-    Set-Location $RootDir
     exit 1
 }
 
 # Cleanup
 Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
 Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
-
-Set-Location $RootDir
 
 Write-Host ""
 Write-Host "========================================"
