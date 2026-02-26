@@ -3,10 +3,14 @@
     <div class="card-header">
       <span class="status-indicator" :class="domain.status"></span>
       <span class="domain-name">{{ domain.domain }}</span>
+      <button class="copy-btn domain-copy" @click.stop="copyDomain" :title="'复制域名'">
+        {{ domainCopied ? '✓' : '⎘' }}
+      </button>
     </div>
     <div class="card-footer">
+      <span class="hint-text">点击查看 kubeconfig</span>
       <button class="copy-btn" @click.stop="copyKubeconfig">
-        {{ copied ? '已复制' : '复制' }}
+        {{ copied ? '已复制' : '复制 kubeconfig' }}
       </button>
     </div>
   </div>
@@ -23,14 +27,21 @@ const props = defineProps<{
 
 const router = useRouter()
 const copied = ref(false)
+const domainCopied = ref(false)
 
 function handleClick() {
-  // 点击卡片进入详情页
   router.push(`/k8s/${encodeURIComponent(props.domain.domain)}`)
 }
 
+function copyDomain() {
+  navigator.clipboard.writeText(props.domain.domain)
+  domainCopied.value = true
+  setTimeout(() => {
+    domainCopied.value = false
+  }, 1500)
+}
+
 function copyKubeconfig() {
-  // 生成 kubeconfig
   const kubeconfig = generateKubeconfig(props.domain)
   navigator.clipboard.writeText(kubeconfig)
   copied.value = true
@@ -109,13 +120,36 @@ users:
   font-weight: 500;
   color: #333;
   word-break: break-all;
+  flex: 1;
+}
+
+.domain-copy {
+  padding: 2px 6px;
+  font-size: 14px;
+  background: transparent;
+  color: #999;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.domain-copy:hover {
+  color: #1890ff;
+  border-color: #1890ff;
 }
 
 .card-footer {
   padding-top: 8px;
   border-top: 1px solid #f0f0f0;
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.hint-text {
+  font-size: 12px;
+  color: #999;
 }
 
 .copy-btn {
@@ -127,6 +161,7 @@ users:
   font-size: 12px;
   cursor: pointer;
   transition: background-color 0.3s;
+  flex-shrink: 0;
 }
 
 .copy-btn:hover {

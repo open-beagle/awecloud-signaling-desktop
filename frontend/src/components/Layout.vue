@@ -96,7 +96,7 @@
     
     <!-- 主内容区域 -->
     <div class="main-content">
-      <slot />
+      <router-view />
     </div>
   </div>
 </template>
