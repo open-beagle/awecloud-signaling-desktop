@@ -108,12 +108,14 @@ import { ElMessage } from 'element-plus'
 import { Grid, Document, Monitor, User, SwitchButton, CircleCheck, CircleClose, Loading, Iphone, Compass } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
-import { GetTunnelStatus, ReconnectTunnel, GetGRPCStatus, Logout, ClearCredentials } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import { useDomainsStore } from '../stores/domains'
+import { GetTunnelStatus, ReconnectTunnel, GetGRPCStatus, GetDomainList, Logout, ClearCredentials } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const servicesStore = useServicesStore()
+const domainsStore = useDomainsStore()
 
 // 隧道状态
 const tunnelStatus = ref({ connected: false, ip: '', error: '' })
@@ -123,6 +125,7 @@ let tunnelTimer: number | null = null
 // gRPC 状态
 const grpcStatus = ref({ connected: false, server_address: '', error: '' })
 let grpcTimer: number | null = null
+let domainsTimer: number | null = null
 // gRPC 重连中状态：之前连接过但现在断开
 const grpcWasConnected = ref(false)
 const grpcReconnecting = computed(() => {
@@ -180,6 +183,15 @@ const loadGRPCStatus = async () => {
   }
 }
 
+const loadDomains = async () => {
+  try {
+    const domains = await GetDomainList()
+    domainsStore.setDomains(domains || [])
+  } catch (error) {
+    console.error('Failed to get domain list:', error)
+  }
+}
+
 const handleTunnelClick = async () => {
   if (tunnelLoading.value) return
   tunnelLoading.value = true
@@ -202,8 +214,10 @@ const handleTunnelClick = async () => {
 onMounted(() => {
   loadTunnelStatus()
   loadGRPCStatus()
+  loadDomains()
   tunnelTimer = window.setInterval(loadTunnelStatus, 5000)
   grpcTimer = window.setInterval(loadGRPCStatus, 5000)
+  domainsTimer = window.setInterval(loadDomains, 30000) // 30秒刷新一次域名列表
 })
 
 onUnmounted(() => {
@@ -212,6 +226,9 @@ onUnmounted(() => {
   }
   if (grpcTimer) {
     clearInterval(grpcTimer)
+  }
+  if (domainsTimer) {
+    clearInterval(domainsTimer)
   }
 })
 

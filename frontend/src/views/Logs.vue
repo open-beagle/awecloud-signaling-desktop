@@ -1,72 +1,69 @@
 <template>
-  <Layout>
-    <div class="logs-page">
-      <!-- 页面头部 -->
-      <div class="page-header">
-        <div class="header-left">
-          <h2>查看日志</h2>
-          <el-tag v-if="logs.length > 0">
-            共 {{ logs.length }} 条
-          </el-tag>
-        </div>
-        <div class="header-right">
-          <el-tooltip :content="autoRefresh ? '自动刷新中（点击关闭）' : '点击开启自动刷新'" placement="bottom">
-            <el-button 
-              :icon="Refresh" 
-              :type="autoRefresh ? 'primary' : 'default'"
-              @click="toggleAutoRefresh"
-              circle
-            />
-          </el-tooltip>
-          <el-tooltip content="滚动到底部" placement="bottom">
-            <el-button 
-              :icon="Bottom" 
-              @click="scrollToBottom"
-              circle
-            />
-          </el-tooltip>
-          <el-tooltip content="清空" placement="bottom">
-            <el-button 
-              :icon="Delete" 
-              @click="handleClear"
-              circle
-            />
-          </el-tooltip>
-          <el-tooltip content="下载" placement="bottom">
-            <el-button 
-              :icon="Download" 
-              @click="handleDownload"
-              circle
-            />
-          </el-tooltip>
-        </div>
+  <div class="logs-page">
+    <!-- 页面头部 -->
+    <div class="page-header">
+      <div class="header-left">
+        <h2>查看日志</h2>
+        <el-tag v-if="logs.length > 0">
+          共 {{ logs.length }} 条
+        </el-tag>
       </div>
+      <div class="header-right">
+        <el-tooltip :content="autoRefresh ? '自动刷新中（点击关闭）' : '点击开启自动刷新'" placement="bottom">
+          <el-button 
+            :icon="Refresh" 
+            :type="autoRefresh ? 'primary' : 'default'"
+            @click="toggleAutoRefresh"
+            circle
+          />
+        </el-tooltip>
+        <el-tooltip content="滚动到底部" placement="bottom">
+          <el-button 
+            :icon="Bottom" 
+            @click="scrollToBottom"
+            circle
+          />
+        </el-tooltip>
+        <el-tooltip content="清空" placement="bottom">
+          <el-button 
+            :icon="Delete" 
+            @click="handleClear"
+            circle
+          />
+        </el-tooltip>
+        <el-tooltip content="下载" placement="bottom">
+          <el-button 
+            :icon="Download" 
+            @click="handleDownload"
+            circle
+          />
+        </el-tooltip>
+      </div>
+    </div>
 
-      <!-- 日志内容 -->
-      <div class="logs-content" ref="logsContainer">
-        <div v-if="logs.length === 0" class="empty">
-          暂无日志
-        </div>
-        <div v-else class="log-lines">
-          <div
-            v-for="(log, index) in logs"
-            :key="index"
-            class="log-line"
-            :class="getLogClass(log)"
-          >
-            {{ log }}
-          </div>
+    <!-- 日志内容 -->
+    <div class="logs-content" ref="logsContainer">
+      <div v-if="logs.length === 0" class="empty">
+        暂无日志
+      </div>
+      <div v-else class="log-lines">
+        <div
+          v-for="(log, index) in logs"
+          :key="index"
+          class="log-line"
+          :class="getLogClass(log)"
+        >
+          {{ log }}
         </div>
       </div>
     </div>
-  </Layout>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Delete, Download, Bottom } from '@element-plus/icons-vue'
-import Layout from '../components/Layout.vue'
 import { GetLogs } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 const logs = ref<string[]>([])

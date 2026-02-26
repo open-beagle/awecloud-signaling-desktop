@@ -1,117 +1,114 @@
 <template>
-  <Layout>
-    <div class="devices-page">
-      <!-- 页面头部 -->
-      <div class="page-header">
-        <div class="header-left">
-          <h2>我的设备</h2>
-          <el-tag v-if="devices.length > 0">
-            共 {{ devices.length }} 台设备
-          </el-tag>
-        </div>
-        <div class="header-right">
-          <el-tooltip content="刷新" placement="bottom">
-            <el-button 
-              :icon="Refresh" 
-              @click="loadDevices" 
-              :loading="loading"
-              circle
-            />
-          </el-tooltip>
-        </div>
+  <div class="devices-page">
+    <!-- 页面头部 -->
+    <div class="page-header">
+      <div class="header-left">
+        <h2>我的设备</h2>
+        <el-tag v-if="devices.length > 0">
+          共 {{ devices.length }} 台设备
+        </el-tag>
       </div>
-
-      <!-- 内容区域 -->
-      <div class="devices-content">
-        <el-alert
-          type="info"
-          :closable="false"
-          show-icon
-          class="info-alert"
-        >
-          <template #title>
-            关于设备管理
-          </template>
-          <p>这里显示所有使用您的账号登录的设备。您可以让设备下线或删除设备记录。</p>
-        </el-alert>
-
-        <el-table
-          v-loading="loading"
-          :data="devices"
-          stripe
-          class="devices-table"
-        >
-          <el-table-column label="主机名" min-width="180">
-            <template #default="{ row }">
-              <span>{{ row.hostname || '-' }}</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="设备信息" min-width="180">
-            <template #default="{ row }">
-              <span>{{ formatOSInfo(row.os) }} {{ formatArchInfo(row.arch) }}</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="状态" width="160">
-            <template #default="{ row }">
-              <span v-if="row.status === 'online'" class="status-online">
-                在线<span v-if="row.ip" class="status-detail">, {{ row.ip }}</span>
-              </span>
-              <span v-else class="status-offline">
-                离线<span v-if="row.last_used_at" class="status-detail">, {{ formatTime(row.last_used_at) }}</span>
-              </span>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="创建" width="120">
-            <template #default="{ row }">
-              <span class="time-text">{{ formatTime(row.created_at) }}</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="操作" width="120" fixed="right">
-            <template #default="{ row }">
-              <div class="action-buttons">
-                <el-tooltip v-if="row.status === 'online' && !row.is_current" content="下线" placement="top">
-                  <el-button
-                    size="small"
-                    type="warning"
-                    :icon="SwitchButton"
-                    @click="handleOffline(row)"
-                    circle
-                  />
-                </el-tooltip>
-                <el-tooltip v-if="!row.is_current" content="删除" placement="top">
-                  <el-button
-                    size="small"
-                    type="danger"
-                    :icon="Delete"
-                    @click="handleDelete(row)"
-                    circle
-                  />
-                </el-tooltip>
-                <el-tag v-if="row.is_current" type="success" size="small">
-                  当前设备
-                </el-tag>
-              </div>
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <div v-if="devices.length === 0 && !loading" class="empty-state">
-          <el-empty description="暂无设备记录" />
-        </div>
+      <div class="header-right">
+        <el-tooltip content="刷新" placement="bottom">
+          <el-button 
+            :icon="Refresh" 
+            @click="loadDevices" 
+            :loading="loading"
+            circle
+          />
+        </el-tooltip>
       </div>
     </div>
-  </Layout>
+
+    <!-- 内容区域 -->
+    <div class="devices-content">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        class="info-alert"
+      >
+        <template #title>
+          关于设备管理
+        </template>
+        <p>这里显示所有使用您的账号登录的设备。您可以让设备下线或删除设备记录。</p>
+      </el-alert>
+
+      <el-table
+        v-loading="loading"
+        :data="devices"
+        stripe
+        class="devices-table"
+      >
+        <el-table-column label="主机名" min-width="180">
+          <template #default="{ row }">
+            <span>{{ row.hostname || '-' }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="设备信息" min-width="180">
+          <template #default="{ row }">
+            <span>{{ formatOSInfo(row.os) }} {{ formatArchInfo(row.arch) }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="状态" width="160">
+          <template #default="{ row }">
+            <span v-if="row.status === 'online'" class="status-online">
+              在线<span v-if="row.ip" class="status-detail">, {{ row.ip }}</span>
+            </span>
+            <span v-else class="status-offline">
+              离线<span v-if="row.last_used_at" class="status-detail">, {{ formatTime(row.last_used_at) }}</span>
+            </span>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="创建" width="120">
+          <template #default="{ row }">
+            <span class="time-text">{{ formatTime(row.created_at) }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <div class="action-buttons">
+              <el-tooltip v-if="row.status === 'online' && !row.is_current" content="下线" placement="top">
+                <el-button
+                  size="small"
+                  type="warning"
+                  :icon="SwitchButton"
+                  @click="handleOffline(row)"
+                  circle
+                />
+              </el-tooltip>
+              <el-tooltip v-if="!row.is_current" content="删除" placement="top">
+                <el-button
+                  size="small"
+                  type="danger"
+                  :icon="Delete"
+                  @click="handleDelete(row)"
+                  circle
+                />
+              </el-tooltip>
+              <el-tag v-if="row.is_current" type="success" size="small">
+                当前设备
+              </el-tag>
+            </div>
+          </template>
+        </el-table-column>
+      </el-table>
+
+      <div v-if="devices.length === 0 && !loading" class="empty-state">
+        <el-empty description="暂无设备记录" />
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, SwitchButton, Delete } from '@element-plus/icons-vue'
-import Layout from '../components/Layout.vue'
 import { GetDevices, OfflineDevice, DeleteDevice } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 interface Device {
