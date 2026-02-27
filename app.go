@@ -309,28 +309,55 @@ func (a *App) resolveDomain(domain string) (string, bool) {
 
 	// 根据域名类型选择代理方式
 	if result.DomainType == "k8ssvc" {
-		// K8S Service：通过 gRPC SVCProxy 代理
+		// K8S Service：需要从 GetDomainList 获取 ServicePorts
+		// ResolveDomain 不返回端口列表，需要查询域名列表
+		domains, err := a.desktopClient.GetDomainList()
+		if err != nil {
+			log.Printf("[App] 获取域名列表失败 (%s): %v", domain, err)
+			return "", false
+		}
+
+		// 查找当前域名的 ServicePorts
+		var servicePorts []int32
+		for _, d := range domains {
+			if d.Domain == domain {
+				servicePorts = d.ServicePorts
+				break
+			}
+		}
+
+		if len(servicePorts) == 0 {
+			log.Printf("[App] K8S Service 域名 %s 没有 service_ports", domain)
+			return "", false
+		}
+
+		// 为每个端口创建独立的 SVCProxy
 		svcProxyPort := result.SvcProxyPort
 		if svcProxyPort == 0 {
-			svcProxyPort = 50051 // 默认端口
+			svcProxyPort = 50051 // 默认 Agent gRPC 端口
 		}
-		svcTarget := proxy.SVCTarget{
-			Domain:       domain,
-			VIP:          vipAddr,
-			Port:         result.TargetPort,
-			AgentIP:      result.AgentIP,
-			GRPCPort:     svcProxyPort,
-			Namespace:    result.Namespace,
-			ServiceName:  result.ServiceName,
-			TargetPort:   result.TargetPort,
-			EndpointName: result.EndpointName,
-		}
-		if err := a.svcProxyMgr.StartSVCProxy(svcTarget); err != nil {
-			log.Printf("[App] SVCProxy 启动失败 (%s): %v", domain, err)
-		} else {
-			log.Printf("[App] SVCProxy 已启动: %s:%d → %s:%d (ns=%s, svc=%s)",
-				vipAddr, result.TargetPort, result.AgentIP, svcProxyPort,
-				result.Namespace, result.ServiceName)
+
+		for _, port := range servicePorts {
+			svcTarget := proxy.SVCTarget{
+				Domain:       domain,
+				VIP:          vipAddr,
+				Port:         int(port),       // 本地监听端口（服务真实端口）
+				AgentIP:      result.AgentIP,
+				GRPCPort:     int(svcProxyPort), // Agent gRPC 端口
+				Namespace:    result.Namespace,
+				ServiceName:  result.ServiceName,
+				TargetPort:   int(port),       // 发送给 Agent 的目标端口
+				EndpointName: result.EndpointName,
+			}
+			if err := a.svcProxyMgr.StartSVCProxy(svcTarget); err != nil {
+				log.Printf("[App] Warning: SVCProxy 启动失败 (%s:%d): %v", domain, port, err)
+				log.Printf("[App] 提示: Windows 端口 %d 可能被系统保留，请使用 'netsh int ipv4 show excludedportrange protocol=tcp' 检查", port)
+				// 不返回错误，继续处理其他端口
+			} else {
+				log.Printf("[App] SVCProxy 已启动: %s:%d → %s:%d (ns=%s, svc=%s)",
+					vipAddr, port, result.AgentIP, svcProxyPort,
+					result.Namespace, result.ServiceName)
+			}
 		}
 	} else {
 		// SSH / K8SAPI / 其他：通过普通 TCP 代理
