@@ -150,7 +150,7 @@ jobs:
           for file in artifacts/*; do
             if [ -f "$file" ]; then
               filename=$(basename "$file")
-              latest_filename=$(echo "$filename" | sed "s/$VERSION/latest/g")
+              latest_filename=$(echo "$filename" | sed "s|$VERSION|latest|g")
               echo "Uploading $latest_filename..."
               mc cp "$file" "${S3_BUCKET}/$latest_filename"
             fi
@@ -177,7 +177,7 @@ jobs:
             if [ -f "$file" ]; then
               filename=$(basename "$file")
               mc anonymous set download "${S3_BUCKET}/$filename"
-              latest_filename=$(echo "$filename" | sed "s/$VERSION/latest/g")
+              latest_filename=$(echo "$filename" | sed "s|$VERSION|latest|g")
               mc anonymous set download "${S3_BUCKET}/$latest_filename"
             fi
           done
