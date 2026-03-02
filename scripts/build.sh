@@ -16,13 +16,10 @@ cd "$(dirname "$0")/.."
 # 读取版本号
 if [ -z "$BUILD_VERSION" ]; then
     if [ -f "version" ]; then
-        BUILD_VERSION=$(cat version | tr -d '\n\r' | sed 's/^v//')
+        BUILD_VERSION=$(cat version | tr -d '\n\r')
     else
         BUILD_VERSION="dev"
     fi
-else
-    # 如果从环境变量传入，也去除 v 前缀
-    BUILD_VERSION=$(echo "$BUILD_VERSION" | sed 's/^v//')
 fi
 
 BUILD_ADDRESS="${BUILD_ADDRESS:-}"  # 默认 Server 地址（可选）
