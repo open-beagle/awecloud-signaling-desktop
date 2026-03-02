@@ -5,7 +5,7 @@ go 1.25.5
 require (
 	github.com/denisbrodbeck/machineid v1.0.1
 	github.com/shirou/gopsutil v3.21.11+incompatible
-	github.com/wailsapp/wails/v3 v3.0.0-alpha.72
+	github.com/wailsapp/wails/v3 v3.0.0-alpha.74
 	go.opentelemetry.io/otel v1.40.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.40.0
 	go.opentelemetry.io/otel/sdk v1.40.0
@@ -111,5 +111,3 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260128011058-8636f8732409 // indirect
 	gvisor.dev/gvisor v0.0.0-20250205023644-9414b50a5633 // indirect
 )
-
-// replace github.com/wailsapp/wails/v3 => /home/code/go/pkg/mod

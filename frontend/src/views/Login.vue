@@ -252,7 +252,14 @@ const handleAutoLogin = async () => {
     // 自动登录失败，切换到 saved 模式
     isAutoLogging.value = false
     loginMode.value = 'saved'
-    loginHint.value = '自动登录失败，请点击"登录"按钮重新登录'
+    
+    // 检查是否是用户禁用
+    const errorMsg = error?.message || error?.toString() || ''
+    if (errorMsg.includes('禁用') || errorMsg.includes('disabled')) {
+      loginHint.value = '您的账号已被禁用，请联系管理员'
+    } else {
+      loginHint.value = '自动登录失败，请点击"登录"按钮重新登录'
+    }
   }
 }
 

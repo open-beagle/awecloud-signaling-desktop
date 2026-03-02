@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -10,12 +11,27 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/device"
 	pb "github.com/open-beagle/awecloud-signaling-desktop/pkg/proto"
 )
+
+// ReconnectReason 重连原因
+type ReconnectReason int
+
+const (
+	ReconnectReasonUnknown      ReconnectReason = iota // 未知原因
+	ReconnectReasonDisabled                            // 用户已禁用
+	ReconnectReasonInvalidCred                         // 凭证无效
+	ReconnectReasonNetworkError                        // 网络错误
+)
+
+// ErrStopReconnect 表示应停止重连（用户禁用或凭证无效）
+var ErrStopReconnect = errors.New("stop reconnect: user disabled or invalid credentials")
 
 // DesktopClient Desktop 客户端
 type DesktopClient struct {
@@ -55,7 +71,7 @@ type DesktopClient struct {
 	connMutex     sync.RWMutex
 
 	// 重连回调（用于通知 App 层重新获取 authKey）
-	onReconnectNeeded func() error
+	onReconnectNeeded func(reason ReconnectReason, message string) error
 
 	// 已授权服务列表
 	authorizedServices []*pb.AuthorizedService
@@ -178,7 +194,7 @@ func (c *DesktopClient) setGRPCConnected(connected bool) {
 }
 
 // SetReconnectCallback 设置重连回调
-func (c *DesktopClient) SetReconnectCallback(callback func() error) {
+func (c *DesktopClient) SetReconnectCallback(callback func(reason ReconnectReason, message string) error) {
 	c.onReconnectNeeded = callback
 }
 
@@ -315,6 +331,30 @@ func (c *DesktopClient) receiveHeartbeat(stopCh <-chan struct{}) {
 			default:
 			}
 
+			// 检查错误类型
+			if st, ok := status.FromError(err); ok {
+				switch st.Code() {
+				case codes.PermissionDenied:
+					// 用户已禁用，停止重连
+					log.Printf("[DesktopClient] User disabled, stopping heartbeat")
+					if c.onReconnectNeeded != nil {
+						if cbErr := c.onReconnectNeeded(ReconnectReasonDisabled, st.Message()); cbErr != nil {
+							log.Printf("[DesktopClient] Reconnect callback failed: %v", cbErr)
+						}
+					}
+					return
+				case codes.Unauthenticated:
+					// 凭证无效，停止重连
+					log.Printf("[DesktopClient] Invalid credentials, stopping heartbeat")
+					if c.onReconnectNeeded != nil {
+						if cbErr := c.onReconnectNeeded(ReconnectReasonInvalidCred, st.Message()); cbErr != nil {
+							log.Printf("[DesktopClient] Reconnect callback failed: %v", cbErr)
+						}
+					}
+					return
+				}
+			}
+
 			log.Printf("[DesktopClient] Will retry in %v", backoff)
 			select {
 			case <-time.After(backoff):
@@ -330,6 +370,10 @@ func (c *DesktopClient) receiveHeartbeat(stopCh <-chan struct{}) {
 			if c.IsAuthenticated() {
 				if err := c.reconnect(); err != nil {
 					log.Printf("[DesktopClient] Reconnect failed: %v", err)
+					// 用户禁用或凭证无效，停止重连
+					if errors.Is(err, ErrStopReconnect) {
+						return
+					}
 				} else {
 					log.Printf("[DesktopClient] Reconnected successfully")
 					return // 新 goroutine 已启动，当前退出
@@ -361,12 +405,41 @@ func (c *DesktopClient) reconnect() error {
 	_, err := c.Authenticate(desktopID, secret)
 	if err != nil {
 		log.Printf("[DesktopClient] Re-authenticate failed: %v", err)
-		// 凭证无效，触发重连回调（通知 App 层）
+
+		// 检查错误类型：通过错误消息判断（Authenticate 用 fmt.Errorf %w 包装了 gRPC 错误，无法直接提取 status code）
+		errMsg := err.Error()
+		var reason ReconnectReason
+		var message string
+
+		if strings.Contains(errMsg, "禁用") || strings.Contains(errMsg, "disabled") {
+			reason = ReconnectReasonDisabled
+			message = errMsg
+			log.Printf("[DesktopClient] User disabled, stopping reconnect attempts")
+		} else if strings.Contains(errMsg, "Unauthenticated") || strings.Contains(errMsg, "凭证无效") {
+			reason = ReconnectReasonInvalidCred
+			message = errMsg
+			log.Printf("[DesktopClient] Invalid credentials, stopping reconnect attempts")
+		} else if strings.Contains(errMsg, "Unavailable") || strings.Contains(errMsg, "connection refused") {
+			reason = ReconnectReasonNetworkError
+			message = errMsg
+			log.Printf("[DesktopClient] Network error, will continue reconnect attempts")
+		} else {
+			reason = ReconnectReasonUnknown
+			message = errMsg
+		}
+
+		// 触发重连回调（通知 App 层）
 		if c.onReconnectNeeded != nil {
-			if cbErr := c.onReconnectNeeded(); cbErr != nil {
+			if cbErr := c.onReconnectNeeded(reason, message); cbErr != nil {
 				log.Printf("[DesktopClient] Reconnect callback failed: %v", cbErr)
 			}
 		}
+
+		// 用户禁用或凭证无效时，返回 ErrStopReconnect 让调用方停止重试
+		if reason == ReconnectReasonDisabled || reason == ReconnectReasonInvalidCred {
+			return ErrStopReconnect
+		}
+
 		return err
 	}
 

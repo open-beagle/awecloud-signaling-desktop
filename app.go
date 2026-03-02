@@ -148,6 +148,21 @@ func (a *App) Login(serverAddr, clientName, clientSecret string, rememberMe bool
 	// 创建客户端
 	log.Printf("[App] Creating Desktop client for: %s", serverAddr)
 	a.desktopClient = client.NewDesktopClient(serverAddr)
+
+	// 设置重连回调
+	a.desktopClient.SetReconnectCallback(func(reason client.ReconnectReason, message string) error {
+		log.Printf("[App] Reconnect callback: reason=%v, message=%s", reason, message)
+
+		// 用户禁用或凭证无效时，直接退出程序
+		if reason == client.ReconnectReasonDisabled || reason == client.ReconnectReasonInvalidCred {
+			log.Printf("[App] User disabled or invalid credentials, exiting application")
+			os.Exit(0)
+			return nil
+		}
+
+		return nil
+	})
+
 	if err := a.desktopClient.Start(); err != nil {
 		return fmt.Errorf("failed to start desktop client: %w", err)
 	}
@@ -341,12 +356,12 @@ func (a *App) resolveDomain(domain string) (string, bool) {
 			svcTarget := proxy.SVCTarget{
 				Domain:       domain,
 				VIP:          vipAddr,
-				Port:         int(port),       // 本地监听端口（服务真实端口）
+				Port:         int(port), // 本地监听端口（服务真实端口）
 				AgentIP:      result.AgentIP,
 				GRPCPort:     int(svcProxyPort), // Agent gRPC 端口
 				Namespace:    result.Namespace,
 				ServiceName:  result.ServiceName,
-				TargetPort:   int(port),       // 发送给 Agent 的目标端口
+				TargetPort:   int(port), // 发送给 Agent 的目标端口
 				EndpointName: result.EndpointName,
 			}
 			if err := a.svcProxyMgr.StartSVCProxy(svcTarget); err != nil {
@@ -1581,6 +1596,20 @@ func (a *App) WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint st
 
 	// 保存 Desktop 客户端（重要：用于后续的 API 调用）
 	a.desktopClient = desktopClient
+
+	// 设置重连回调
+	a.desktopClient.SetReconnectCallback(func(reason client.ReconnectReason, message string) error {
+		log.Printf("[App] Reconnect callback: reason=%v, message=%s", reason, message)
+
+		// 用户禁用或凭证无效时，直接退出程序
+		if reason == client.ReconnectReasonDisabled || reason == client.ReconnectReasonInvalidCred {
+			log.Printf("[App] User disabled or invalid credentials, exiting application")
+			os.Exit(0)
+			return nil
+		}
+
+		return nil
+	})
 
 	// 设置认证结果（重要：这样后续的 API 调用才能识别已登录状态）
 	a.authResult = authResult
