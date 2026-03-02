@@ -20,7 +20,7 @@ jobs:
 
       - name: Read version from file
         id: version
-        run: echo "BUILD_VERSION=$(cat desktop/version)" >> $GITHUB_OUTPUT
+        run: echo "BUILD_VERSION=$(cat desktop/version | tr -d '\n\r' | sed 's/^v//')" >> $GITHUB_OUTPUT
 
   build-desktop:
     name: Build Desktop (Linux/Windows)
@@ -147,14 +147,18 @@ jobs:
           
           # 上传 latest 版本
           echo "Updating latest version..."
-          for file in artifacts/*; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              latest_filename=$(echo "$filename" | sed "s|$VERSION|latest|g")
-              echo "Uploading $latest_filename..."
-              mc cp "$file" "${S3_BUCKET}/$latest_filename"
-            fi
-          done
+          if [ -n "$VERSION" ]; then
+            for file in artifacts/*; do
+              if [ -f "$file" ]; then
+                filename=$(basename "$file")
+                latest_filename=$(echo "$filename" | sed "s|$VERSION|latest|g")
+                echo "Uploading $latest_filename..."
+                mc cp "$file" "${S3_BUCKET}/$latest_filename"
+              fi
+            done
+          else
+            echo "Warning: VERSION is empty, skipping latest upload"
+          fi
           
           # 创建 Desktop 版本信息文件
           cat > signal_desktop-version.json << EOF
