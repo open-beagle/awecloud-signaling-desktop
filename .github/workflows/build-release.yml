@@ -181,10 +181,19 @@ jobs:
             if [ -f "$file" ]; then
               filename=$(basename "$file")
               mc anonymous set download "${S3_BUCKET}/$filename"
-              latest_filename=$(echo "$filename" | sed "s|$VERSION|latest|g")
-              mc anonymous set download "${S3_BUCKET}/$latest_filename"
             fi
           done
+          
+          # 设置 latest 版本的权限
+          if [ -n "$VERSION" ]; then
+            for file in artifacts/*; do
+              if [ -f "$file" ]; then
+                filename=$(basename "$file")
+                latest_filename=$(echo "$filename" | sed "s|$VERSION|latest|g")
+                mc anonymous set download "${S3_BUCKET}/$latest_filename"
+              fi
+            done
+          fi
           
           echo "Desktop ${VERSION} uploaded successfully!"
         env:
