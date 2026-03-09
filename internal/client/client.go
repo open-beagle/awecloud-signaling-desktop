@@ -526,9 +526,11 @@ func getSystemInfo() (*pb.DesktopSystemInfo, error) {
 		return nil, fmt.Errorf("failed to get device fingerprint: %w", err)
 	}
 
+	// Os 字段存储完整的操作系统信息（如 "Windows 10"）
+	// OsVersion 字段留空（避免重复）
 	return &pb.DesktopSystemInfo{
 		Os:        fingerprint.OS,
-		OsVersion: device.GetOSInfo(),
+		OsVersion: "",
 		Arch:      fingerprint.Arch,
 		Hostname:  fingerprint.Hostname,
 		Cpu:       "",
