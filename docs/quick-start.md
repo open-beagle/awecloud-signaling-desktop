@@ -56,7 +56,7 @@ Desktop 会使用默认配置：
 
 ```powershell
 # 开发模式（推荐，需要管理员权限）
-Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -File desktop\scripts\dev.ps1 -BuildVersion v0.2.3"
+Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -File desktop\scripts\dev.ps1 -BuildVersion "
 
 # 或运行已构建的程序（需要管理员权限）
 Start-Process desktop\build\bin\awecloud-signaling-desktop.exe -Verb RunAs
@@ -129,7 +129,7 @@ go run cmd/server/main.go
 cd C:\Users\Mengk\go\src\github.com\open-beagle\awecloud-signaling-server
 
 # 使用管理员权限启动（类似 Linux sudo）
-Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -File desktop\scripts\dev.ps1 -BuildVersion v0.2.3"
+Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -File desktop\scripts\dev.ps1 -BuildVersion "
 ```
 
 ### 终端 3：访问 Web 管理界面（可选）

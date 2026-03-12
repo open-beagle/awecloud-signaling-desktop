@@ -45,15 +45,15 @@ wails3 dev
 # 从项目根目录 awecloud-signaling-server\ 运行
 
 # 开发模式（需要管理员权限）
-Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -File desktop\scripts\dev.ps1 -BuildVersion v0.2.3"
+Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -File desktop\scripts\dev.ps1 -BuildVersion "
 
-powershell -ExecutionPolicy Bypass -File desktop\scripts\dev.ps1 -BuildVersion v0.2.3
+powershell -ExecutionPolicy Bypass -File desktop\scripts\dev.ps1 -BuildVersion
 
 
 # 构建代码
-Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -File desktop\scripts\build.ps1 -BuildVersion v0.2.3 -GoArch amd64"
+Start-Process powershell -Verb RunAs -ArgumentList "-ExecutionPolicy Bypass -File desktop\scripts\build.ps1 -BuildVersion  -GoArch amd64"
 
-powershell -ExecutionPolicy Bypass -File desktop\scripts\build.ps1 -BuildVersion v0.2.3 -GoArch amd64
+powershell -ExecutionPolicy Bypass -File desktop\scripts\build.ps1 -BuildVersion  -GoArch amd64
 ```
 
 **说明：**
