@@ -440,6 +440,8 @@ const handleUserCommand = async (command: string) => {
 
 .main-content {
   flex: 1;
-  overflow: hidden;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
 }
 </style>
