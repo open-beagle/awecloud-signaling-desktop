@@ -12,15 +12,22 @@ import (
 const resolverDir = "/etc/resolver"
 const resolverFile = "beagle" // 域名后缀
 
+// RecommendedListenAddr 返回 macOS 平台推荐的 DNS 监听地址
+// macOS 默认只有 127.0.0.1 可用（127.0.0.2 需要手动添加 loopback alias）
+// 使用 127.0.0.1:15353 高端口，通过 /etc/resolver 的 port 指令转发
+func RecommendedListenAddr() string {
+	return "127.0.0.1:15353"
+}
+
 // RecommendedPort 返回 macOS 平台推荐的 DNS 监听端口
 func RecommendedPort() int {
-	return 53
+	return 15353
 }
 
 // ConfigureSystemDNS 配置系统 DNS，将 .beagle 域名指向本地 DNS 服务器
-// macOS: 创建 /etc/resolver/beagle 文件
+// macOS: 创建 /etc/resolver/beagle 文件，使用 127.0.0.1 + 自定义端口
 func ConfigureSystemDNS(port int) error {
-	content := fmt.Sprintf("nameserver 127.0.0.2\nport %d\n", port)
+	content := fmt.Sprintf("nameserver 127.0.0.1\nport %d\n", port)
 
 	// 创建 /etc/resolver 目录（需要 sudo 权限）
 	if err := os.MkdirAll(resolverDir, 0755); err != nil {
