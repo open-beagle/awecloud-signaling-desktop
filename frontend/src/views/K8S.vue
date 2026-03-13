@@ -28,6 +28,9 @@ const k8sDomains = computed(() => domainsStore.k8sDomains)
 <style scoped>
 .k8s-page {
   padding: 20px;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .empty {
@@ -41,5 +44,6 @@ const k8sDomains = computed(() => domainsStore.k8sDomains)
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 16px;
+  padding-bottom: 20px;
 }
 </style>
