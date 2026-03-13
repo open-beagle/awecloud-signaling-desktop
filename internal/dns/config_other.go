@@ -4,6 +4,11 @@ package dns
 
 import "log"
 
+// RecommendedListenAddr 返回默认平台推荐的 DNS 监听地址
+func RecommendedListenAddr() string {
+	return "127.0.0.2:53"
+}
+
 // RecommendedPort 返回 Linux 平台推荐的 DNS 监听端口
 func RecommendedPort() int {
 	return 53
