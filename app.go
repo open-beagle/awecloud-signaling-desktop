@@ -277,9 +277,9 @@ func (a *App) initializeZTNA() error {
 	a.svcProxyMgr = proxy.NewSVCProxyManager(a.tsManager.Dial)
 
 	// 3. 创建并启动本地 DNS 服务器
-	// 使用平台推荐端口：Windows 需要 53（NRPT 限制），macOS/Linux 用 15353
+	// 使用平台推荐地址：macOS 用 127.0.0.1:15353（macOS 默认无 127.0.0.2），其他平台用 127.0.0.2
 	dnsPort := dns.RecommendedPort()
-	dnsAddr := fmt.Sprintf("127.0.0.2:%d", dnsPort)
+	dnsAddr := dns.RecommendedListenAddr()
 
 	a.dnsServer = dns.NewServer(dnsAddr, a.resolveDomain)
 	if err := a.dnsServer.Start(); err != nil {

@@ -19,6 +19,11 @@ var hiddenProcAttr = &syscall.SysProcAttr{
 	CreationFlags: 0x08000000,
 }
 
+// RecommendedListenAddr 返回 Windows 平台推荐的 DNS 监听地址
+func RecommendedListenAddr() string {
+	return "127.0.0.2:53"
+}
+
 // RecommendedPort 返回 Windows 平台推荐的 DNS 监听端口
 // Windows NRPT 不支持自定义端口，DNS 客户端固定向 53 端口发查询
 func RecommendedPort() int {

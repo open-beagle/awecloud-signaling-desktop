@@ -10,6 +10,11 @@ import (
 	"strings"
 )
 
+// RecommendedListenAddr 返回 Linux 平台推荐的 DNS 监听地址
+func RecommendedListenAddr() string {
+	return "127.0.0.2:5353"
+}
+
 // RecommendedPort 返回 Linux 平台推荐的 DNS 监听端口
 // systemd-resolved 占用 53 端口，Desktop DNS 使用 5353 避免冲突
 func RecommendedPort() int {
