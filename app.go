@@ -31,6 +31,7 @@ type App struct {
 	// ZTNA: DNS 劫持 + VIP 分配 + 本地代理
 	dnsServer    *dns.Server
 	vipAllocator *vip.Allocator
+	networkCfg   *vip.NetworkConfig // VIP 网络配置（macOS loopback alias 管理）
 	proxyManager *proxy.Manager
 	svcProxyMgr  *proxy.SVCProxyManager // K8S Service gRPC 代理管理器
 }
@@ -131,6 +132,12 @@ func (a *App) cleanupZTNA() {
 	if a.svcProxyMgr != nil {
 		a.svcProxyMgr.StopAll()
 		a.svcProxyMgr = nil
+	}
+
+	// 清理 VIP 网络配置（macOS 上删除 loopback alias）
+	if a.networkCfg != nil {
+		a.networkCfg.Cleanup()
+		a.networkCfg = nil
 	}
 
 	// 清空 VIP 分配器
@@ -269,6 +276,17 @@ func (a *App) initializeZTNA() error {
 
 	// 1. 创建 VIP 分配器
 	a.vipAllocator = vip.NewAllocator()
+
+	// 1.5 初始化 VIP 网络配置（macOS 上管理 loopback alias）
+	a.networkCfg = vip.NewNetworkConfig()
+	if err := a.networkCfg.Setup(); err != nil {
+		log.Printf("[App] Warning: VIP 网络配置失败: %v", err)
+	}
+
+	// 设置 VIP 分配回调（macOS 上按需添加 loopback alias）
+	a.vipAllocator.SetOnAllocate(func(vipAddr string) error {
+		return a.networkCfg.AddAlias(vipAddr)
+	})
 
 	// 2. 创建本地代理管理器（使用 tsnet Dial）
 	a.proxyManager = proxy.NewManager(a.tsManager.Dial)
