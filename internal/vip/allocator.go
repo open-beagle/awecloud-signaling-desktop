@@ -4,8 +4,13 @@ package vip
 
 import (
 	"fmt"
+	"log"
 	"sync"
 )
+
+// AllocateCallback VIP 分配后的回调函数类型
+// macOS 平台用于在分配 VIP 后自动添加 loopback alias
+type AllocateCallback func(vip string) error
 
 // Allocator VIP 地址分配器
 // 将域名映射到 127.1.x.x 地址，避免端口冲突
@@ -18,6 +23,9 @@ type Allocator struct {
 	// 下一个可分配的地址序号（从 1 开始）
 	nextIndex int
 
+	// VIP 分配后的回调（macOS 用于添加 loopback alias）
+	onAllocate AllocateCallback
+
 	mu sync.RWMutex
 }
 
@@ -28,6 +36,14 @@ func NewAllocator() *Allocator {
 		vipToDomain: make(map[string]string),
 		nextIndex:   1,
 	}
+}
+
+// SetOnAllocate 设置 VIP 分配后的回调函数
+// macOS 平台用于在分配 VIP 后自动添加 loopback alias
+func (a *Allocator) SetOnAllocate(cb AllocateCallback) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.onAllocate = cb
 }
 
 // Allocate 为域名分配 VIP 地址
@@ -56,6 +72,13 @@ func (a *Allocator) Allocate(domain string) (string, error) {
 
 	a.domainToVIP[domain] = vip
 	a.vipToDomain[vip] = domain
+
+	// 触发回调（macOS 用于添加 loopback alias）
+	if a.onAllocate != nil {
+		if err := a.onAllocate(vip); err != nil {
+			log.Printf("[VIP] 分配回调失败 (%s -> %s): %v", domain, vip, err)
+		}
+	}
 
 	return vip, nil
 }
