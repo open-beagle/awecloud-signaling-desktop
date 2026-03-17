@@ -13,10 +13,28 @@ import (
 var lockFile *os.File
 
 // lockFilePath 锁文件路径
+// 使用用户配置目录而非临时目录，避免以下问题：
+// 1. macOS 的 os.TempDir() 在不同启动方式下可能返回不同路径
+// 2. Linux 的 /tmp 可能被 systemd-tmpfiles 定期清理
 func lockFilePath() string {
-	// 使用用户临时目录
-	tmpDir := os.TempDir()
-	return filepath.Join(tmpDir, "awecloud-signaling-desktop.lock")
+	// 优先使用用户配置目录（与应用数据目录一致）
+	configDir, err := os.UserConfigDir()
+	if err == nil {
+		dir := filepath.Join(configDir, "signaling-desktop")
+		os.MkdirAll(dir, 0755)
+		return filepath.Join(dir, "singleton.lock")
+	}
+
+	// 回退到用户主目录
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		dir := filepath.Join(homeDir, ".signaling-desktop")
+		os.MkdirAll(dir, 0755)
+		return filepath.Join(dir, "singleton.lock")
+	}
+
+	// 最终回退到临时目录
+	return filepath.Join(os.TempDir(), "awecloud-signaling-desktop.lock")
 }
 
 // CheckSingleInstance 检查是否已有实例运行

@@ -12,7 +12,6 @@ var (
 	kernel32      = syscall.NewLazyDLL("kernel32.dll")
 	user32        = syscall.NewLazyDLL("user32.dll")
 	createMutex   = kernel32.NewProc("CreateMutexW")
-	getLastError  = kernel32.NewProc("GetLastError")
 	releaseMutex  = kernel32.NewProc("ReleaseMutex")
 	closeHandle   = kernel32.NewProc("CloseHandle")
 	findWindow    = user32.NewProc("FindWindowW")
@@ -43,14 +42,15 @@ func CheckSingleInstance() bool {
 	name, _ := syscall.UTF16PtrFromString(mutexName)
 
 	// 创建互斥锁
-	handle, _, _ := createMutex.Call(0, 0, uintptr(unsafe.Pointer(name)))
+	// createMutex.Call 的第三个返回值就是 GetLastError 的结果
+	// 不能单独调用 GetLastError，因为 .Call() 本身会重置 last error
+	handle, _, err := createMutex.Call(0, 0, uintptr(unsafe.Pointer(name)))
 	if handle == 0 {
 		return false
 	}
 
 	// 检查是否已存在
-	lastErr, _, _ := getLastError.Call()
-	if lastErr == ERROR_ALREADY_EXISTS {
+	if err == syscall.Errno(ERROR_ALREADY_EXISTS) {
 		// 已有实例运行，尝试激活已有窗口
 		activateExistingWindow()
 		closeHandle.Call(handle)
