@@ -1,3 +1,5 @@
+// awecloud-signaling-desktop 主入口
+// 负责初始化应用、加载配置、启动 Wails 窗口及托盘
 package main
 
 import (
