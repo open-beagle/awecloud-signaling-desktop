@@ -6,15 +6,25 @@
 
     <template v-else>
       <div class="toolbar">
-        <span class="cluster-count">共 {{ k8sDomains.length }} 个集群</span>
+        <input
+          v-model="searchQuery"
+          class="search-input"
+          placeholder="搜索集群..."
+          type="text"
+        />
+        <span class="cluster-count">{{ filteredDomains.length }} / {{ k8sDomains.length }} 个集群</span>
         <button class="merge-btn" @click="copyAllKubeconfig">
           {{ allCopied ? '✓ 已复制' : '复制全部 kubeconfig' }}
         </button>
       </div>
 
-      <div class="k8s-grid">
+      <div v-if="filteredDomains.length === 0" class="empty">
+        未找到匹配的集群
+      </div>
+
+      <div v-else class="k8s-grid">
         <K8SCard
-          v-for="domain in k8sDomains"
+          v-for="domain in filteredDomains"
           :key="domain.domain"
           :domain="domain"
         />
@@ -32,6 +42,13 @@ import type { DomainItem } from '../stores/domains'
 const domainsStore = useDomainsStore()
 const k8sDomains = computed(() => domainsStore.k8sDomains)
 const allCopied = ref(false)
+const searchQuery = ref('')
+
+const filteredDomains = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) return k8sDomains.value
+  return k8sDomains.value.filter(d => d.domain.toLowerCase().includes(q))
+})
 
 function generateMergedKubeconfig(domains: DomainItem[]): string {
   const clusters = domains.map(d => `- name: ${d.region}
@@ -62,7 +79,7 @@ ${users}`
 }
 
 function copyAllKubeconfig() {
-  const merged = generateMergedKubeconfig(k8sDomains.value)
+  const merged = generateMergedKubeconfig(filteredDomains.value)
   navigator.clipboard.writeText(merged)
   allCopied.value = true
   setTimeout(() => { allCopied.value = false }, 1500)
@@ -89,6 +106,22 @@ function copyAllKubeconfig() {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
+  gap: 12px;
+}
+
+.search-input {
+  flex: 1;
+  max-width: 260px;
+  padding: 5px 10px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  border-color: #1890ff;
 }
 
 .cluster-count {
