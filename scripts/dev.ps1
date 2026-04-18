@@ -79,6 +79,37 @@ if (-not (Test-Path $TmpBinDir)) {
     New-Item -ItemType Directory -Path $TmpBinDir -Force | Out-Null
 }
 
+# 确保 Go 依赖完整（bindings 生成需要）
+Write-Host ""
+Write-Host "[INFO] Ensuring Go dependencies are up to date..."
+go mod tidy
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[ERROR] Failed to run go mod tidy" -ForegroundColor Red
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+
+# 生成 bindings（必须在构建前端之前）
+if (Get-Command wails3 -ErrorAction SilentlyContinue) {
+    Write-Host ""
+    Write-Host "[INFO] Generating bindings..."
+    wails3 generate bindings
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] Failed to generate bindings" -ForegroundColor Red
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
+} else {
+    if (Test-Path "frontend\bindings") {
+        Write-Host "[INFO] wails3 not available, using existing bindings..."
+    } else {
+        Write-Host "[ERROR] wails3 not available and no existing bindings found" -ForegroundColor Red
+        Write-Host "Please install wails3: go install github.com/wailsapp/wails/v3/cmd/wails3@latest"
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
+}
+
 Write-Host ""
 Write-Host "[INFO] Building frontend..."
 Set-Location "frontend"
