@@ -39,24 +39,35 @@ wails3 dev
 
 #### Windows
 
-**使用 PowerShell 脚本（从项目根目录运行）：**
+**方式一：管理员终端直接运行（推荐）：**
+
+右键 Windows Terminal → "以管理员身份运行"，然后：
+
+```powershell
+# 从项目根目录 awecloud-signaling-server\ 运行
+
+# 开发模式
+powershell -ExecutionPolicy Bypass -File desktop\scripts\dev.ps1
+
+# 构建代码
+powershell -ExecutionPolicy Bypass -File desktop\scripts\build.ps1 -GoArch amd64
+```
+
+**方式二：普通终端提权运行：**
 
 ```powershell
 # 从项目根目录 awecloud-signaling-server\ 运行
 
 # 开发模式（需要管理员权限）
-Start-Process powershell -Verb RunAs -WorkingDirectory (Get-Location) -ArgumentList "-ExecutionPolicy Bypass -File desktop\scripts\dev.ps1"
+Start-Process powershell -Verb RunAs -ArgumentList "-NoExit -Command cd '$((Get-Location).Path)'; powershell -ExecutionPolicy Bypass -File desktop\scripts\dev.ps1"
 
 # 构建代码（需要管理员权限）
-Start-Process powershell -Verb RunAs -WorkingDirectory (Get-Location) -ArgumentList "-ExecutionPolicy Bypass -File desktop\scripts\build.ps1 -GoArch amd64"
-
-# 构建代码（当前终端已有管理员权限时）
-powershell -ExecutionPolicy Bypass -File desktop\scripts\build.ps1 -GoArch amd64
+Start-Process powershell -Verb RunAs -ArgumentList "-NoExit -Command cd '$((Get-Location).Path)'; powershell -ExecutionPolicy Bypass -File desktop\scripts\build.ps1 -GoArch amd64"
 ```
 
 **说明：**
 
-- `Start-Process powershell -Verb RunAs` 类似 Linux 的 `sudo`，显式要求管理员权限
+- 方式二通过 `-Command cd` 显式切换目录，避免 Win11 上 `-WorkingDirectory` 被忽略的问题
 - VPN 功能需要管理员权限才能正常工作
 
 **或使用传统 Batch 脚本（从 desktop\ 目录运行）：**
