@@ -38,7 +38,7 @@ func (c *DesktopClient) Authenticate(desktopID uint64, secret string) (*AuthResu
 
 	log.Printf("[DesktopClient] Authenticate: desktop_id=%d, device=%s", desktopID, fingerprint.Hash)
 
-	// 调用 gRPC Authenticate
+	// 先尝试 gRPC
 	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
 	defer cancel()
 
@@ -51,7 +51,34 @@ func (c *DesktopClient) Authenticate(desktopID uint64, secret string) (*AuthResu
 
 	resp, err := c.grpcClient.Authenticate(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("authentication failed: %w", err)
+		log.Printf("[DesktopClient] gRPC Authenticate failed: %v, trying REST fallback...", err)
+
+		// gRPC 失败，尝试 REST 回退
+		restResult, restErr := c.httpFallback.Authenticate(desktopID, secret, fingerprint.Hash, &SystemInfoForREST{
+			OS:       fingerprint.OS,
+			Arch:     fingerprint.Arch,
+			Hostname: fingerprint.Hostname,
+		})
+		if restErr != nil {
+			// REST 也失败，返回原始 gRPC 错误
+			return nil, fmt.Errorf("authentication failed: %w", err)
+		}
+
+		// REST 成功，切换到 REST 模式
+		c.switchToREST()
+		log.Printf("[DesktopClient] Authentication successful via REST fallback")
+
+		// 保存认证信息
+		c.desktopID = desktopID
+		c.secret = secret
+		c.httpFallback.SetCredentials(desktopID, secret)
+
+		// REST 模式下启动轮询心跳
+		go c.restHeartbeatLoop()
+		// REST 模式下启动轮询数据
+		go c.restDataLoop()
+
+		return restResult, nil
 	}
 
 	if !resp.Success {
@@ -129,7 +156,16 @@ func (c *DesktopClient) CreateLoginSession(usernameHint string) (*CreateLoginSes
 
 	resp, err := c.grpcClient.CreateLoginSession(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("创建登录会话失败: %w", err)
+		log.Printf("[Client] gRPC CreateLoginSession failed: %v, trying REST fallback...", err)
+
+		// gRPC 失败，尝试 REST 回退
+		restResult, restErr := c.httpFallback.CreateLoginSession(usernameHint)
+		if restErr != nil {
+			return nil, fmt.Errorf("创建登录会话失败: %w", err)
+		}
+
+		c.switchToREST()
+		return restResult, nil
 	}
 
 	if !resp.Success {
