@@ -48,6 +48,16 @@
           <el-icon><Monitor /></el-icon>
           <span>我的主机</span>
         </div>
+
+        <!-- 我的设备 -->
+        <div 
+          class="nav-item"
+          :class="{ active: currentRoute.startsWith('/devices') }"
+          @click="navigateTo('/devices')"
+        >
+          <el-icon><Iphone /></el-icon>
+          <span>我的设备</span>
+        </div>
         
         <!-- 我的K8S -->
         <div 
@@ -72,11 +82,7 @@
                   <span>{{ authStore.clientId }}</span>
                 </div>
               </el-dropdown-item>
-              <el-dropdown-item divided command="devices">
-                <el-icon><Iphone /></el-icon>
-                <span>我的设备</span>
-              </el-dropdown-item>
-              <el-dropdown-item command="logs">
+              <el-dropdown-item divided command="logs">
                 <el-icon><Document /></el-icon>
                 <span>查看日志</span>
               </el-dropdown-item>
@@ -241,9 +247,7 @@ const navigateTo = (path: string) => {
 }
 
 const handleUserCommand = async (command: string) => {
-  if (command === 'devices') {
-    navigateTo('/devices')
-  } else if (command === 'logs') {
+  if (command === 'logs') {
     navigateTo('/logs')
   } else if (command === 'switchUser') {
     // 切换用户：注销 + 清除所有凭据，强制重新走完整登录流程
