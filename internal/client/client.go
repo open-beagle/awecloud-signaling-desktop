@@ -1202,16 +1202,24 @@ func (c *DesktopClient) ResolveDomain(domain string) (*DomainResolveResult, erro
 
 // ResourceInfo 资源信息（前端展示用）
 type ResourceInfo struct {
-	Type        string   `json:"type"` // ssh / k8sapi / k8ssvc
-	AgentID     uint64   `json:"agent_id"`
-	AgentName   string   `json:"agent_name"`
-	Domain      string   `json:"domain"`
-	SSHUsers    []string `json:"ssh_users,omitempty"`
-	K8SGroups   []string `json:"k8s_groups,omitempty"`
-	Namespaces  []string `json:"namespaces,omitempty"`
-	Namespace   string   `json:"namespace,omitempty"`
-	ServiceName string   `json:"service_name,omitempty"`
-	Port        int32    `json:"port,omitempty"`
+	Type           string   `json:"type"` // ssh / k8sapi / k8ssvc
+	AgentID        uint64   `json:"agent_id"`
+	AgentName      string   `json:"agent_name"`
+	Domain         string   `json:"domain"`
+	SSHUsers       []string `json:"ssh_users,omitempty"`
+	K8SGroups      []string `json:"k8s_groups,omitempty"`
+	Namespaces     []string `json:"namespaces,omitempty"`
+	Namespace      string   `json:"namespace,omitempty"`
+	ServiceName    string   `json:"service_name,omitempty"`
+	Port           int32    `json:"port,omitempty"`
+	ResourceID     string   `json:"resource_id,omitempty"`
+	DisplayName    string   `json:"display_name,omitempty"`
+	TenantName     string   `json:"tenant_name,omitempty"`
+	State          string   `json:"state,omitempty"`
+	TargetRevision int64    `json:"target_revision,omitempty"`
+	AgentIP        string   `json:"agent_ip,omitempty"`
+	ListenPort     uint32   `json:"listen_port,omitempty"`
+	SSHUser        string   `json:"ssh_user,omitempty"`
 }
 
 // GetResources 通过 gRPC 获取可访问的资源列表
@@ -1265,6 +1273,15 @@ func (c *DesktopClient) GetResources() ([]*ResourceInfo, error) {
 			Namespace:   r.Namespace,
 			ServiceName: r.ServiceName,
 			Port:        r.Port,
+		})
+	}
+
+	for _, r := range resp.ContainerSsh {
+		resources = append(resources, &ResourceInfo{
+			Type: "container_ssh", ResourceID: r.ResourceId, DisplayName: r.DisplayName,
+			TenantName: r.TenantName, State: r.State, TargetRevision: r.TargetRevision,
+			AgentID: r.AgentNodeId, Domain: r.Domain, AgentIP: r.AgentIp,
+			ListenPort: r.ListenPort, SSHUser: r.SshUser,
 		})
 	}
 

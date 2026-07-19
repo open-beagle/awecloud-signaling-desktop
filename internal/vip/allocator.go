@@ -99,6 +99,19 @@ func (a *Allocator) GetVIP(domain string) (string, bool) {
 	return vip, ok
 }
 
+// Release removes a stale DNS mapping. Platform loopback aliases may remain
+// until Cleanup, but without this mapping the local DNS server returns NXDOMAIN.
+func (a *Allocator) Release(domain string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	vip, ok := a.domainToVIP[domain]
+	if !ok {
+		return
+	}
+	delete(a.domainToVIP, domain)
+	delete(a.vipToDomain, vip)
+}
+
 // GetAll 获取所有映射（用于调试/展示）
 func (a *Allocator) GetAll() map[string]string {
 	a.mu.RLock()

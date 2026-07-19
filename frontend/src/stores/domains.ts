@@ -11,6 +11,8 @@ export interface DomainItem {
   namespace?: string          // K8S 命名空间（k8ssvc 类型时）
   service_name?: string       // K8S Service 名称（k8ssvc 类型时）
   region: string              // 区域名称（从 domain 解析，如 beijing）
+  display_name?: string
+  resource_id?: string
 }
 
 export const useDomainsStore = defineStore('domains', () => {
@@ -25,7 +27,7 @@ export const useDomainsStore = defineStore('domains', () => {
   // 计算属性：SSH 域名列表（我的主机）
   // 按 domain 聚合，因为一个主机可能有多个用户
   const hostsDomains = computed(() => {
-    const sshDomains = domains.value.filter(d => d.type === 'ssh')
+    const sshDomains = domains.value.filter(d => d.type === 'ssh' || d.type === 'container_ssh')
     // 已经按 domain 聚合了，直接返回
     return sshDomains
   })

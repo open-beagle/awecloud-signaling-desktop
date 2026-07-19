@@ -13,6 +13,7 @@ import (
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/banner"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/client"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/containerroute"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/dns"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/proxy"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/tailscale"
@@ -29,11 +30,12 @@ type App struct {
 	loginMutex    sync.Mutex                 // 保护登录窗口的并发访问
 
 	// ZTNA: DNS 劫持 + VIP 分配 + 本地代理
-	dnsServer    *dns.Server
-	vipAllocator *vip.Allocator
-	networkCfg   *vip.NetworkConfig // VIP 网络配置（macOS loopback alias 管理）
-	proxyManager *proxy.Manager
-	svcProxyMgr  *proxy.SVCProxyManager // K8S Service gRPC 代理管理器
+	dnsServer       *dns.Server
+	vipAllocator    *vip.Allocator
+	networkCfg      *vip.NetworkConfig // VIP 网络配置（macOS loopback alias 管理）
+	proxyManager    *proxy.Manager
+	svcProxyMgr     *proxy.SVCProxyManager // K8S Service gRPC 代理管理器
+	containerRoutes *containerroute.Manager
 }
 
 // NewApp creates a new App application struct
@@ -142,6 +144,7 @@ func (a *App) cleanupZTNA() {
 
 	// 清空 VIP 分配器
 	a.vipAllocator = nil
+	a.containerRoutes = nil
 }
 
 // Login 使用已保存的凭证自动认证
@@ -290,6 +293,7 @@ func (a *App) initializeZTNA() error {
 
 	// 2. 创建本地代理管理器（使用 tsnet Dial）
 	a.proxyManager = proxy.NewManager(a.tsManager.Dial)
+	a.containerRoutes = containerroute.NewManager(a.vipAllocator, a.proxyManager)
 
 	// 2.5 创建 K8S Service gRPC 代理管理器
 	a.svcProxyMgr = proxy.NewSVCProxyManager(a.tsManager.Dial)
@@ -1030,6 +1034,9 @@ func (a *App) GetResources() ([]*client.ResourceInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := a.syncContainerSSHRoutes(resources); err != nil {
+		log.Printf("[App] ContainerSSH 路由同步失败: %v", err)
+	}
 
 	log.Printf("[App] 获取到 %d 个资源", len(resources))
 	return resources, nil
@@ -1670,6 +1677,8 @@ type DomainItem struct {
 	Namespace    string   `json:"namespace"`
 	ServiceName  string   `json:"service_name"`
 	Region       string   `json:"region"`
+	DisplayName  string   `json:"display_name,omitempty"`
+	ResourceID   string   `json:"resource_id,omitempty"`
 }
 
 // GetDomainList 获取域名列表
@@ -1700,6 +1709,32 @@ func (a *App) GetDomainList() ([]*DomainItem, error) {
 		})
 	}
 
+	resources, resourceErr := a.desktopClient.GetResources()
+	if resourceErr != nil {
+		log.Printf("[App] ContainerSSH 资源查询失败，保留旧资源视图: %v", resourceErr)
+	} else {
+		if err := a.syncContainerSSHRoutes(resources); err != nil {
+			log.Printf("[App] ContainerSSH 路由同步失败: %v", err)
+		}
+		for _, resource := range resources {
+			if resource.Type != "container_ssh" {
+				continue
+			}
+			result = append(result, &DomainItem{
+				Domain: resource.Domain, Type: "container_ssh", Status: "online",
+				SSHUsers: []string{resource.SSHUser}, Region: resource.TenantName,
+				DisplayName: resource.DisplayName, ResourceID: resource.ResourceID,
+			})
+		}
+	}
+
 	log.Printf("[App] Returning %d domains", len(result))
 	return result, nil
+}
+
+func (a *App) syncContainerSSHRoutes(resources []*client.ResourceInfo) error {
+	if a.containerRoutes == nil {
+		return nil
+	}
+	return a.containerRoutes.Sync(resources)
 }
