@@ -432,6 +432,26 @@ message GetResourcesResponse {
   repeated SSHResource ssh = 1;
   repeated K8SAPIResource k8s_api = 2;
   repeated K8SServiceResource k8s_service = 3;
+  repeated ContainerSSHResource container_ssh = 4;
+}
+
+// ContainerSSHResource deliberately omits Pod and Kubernetes credentials.
+message ContainerSSHResource {
+  string resource_id = 1;
+  string tenant_id = 2;
+  string tenant_name = 3;
+  string display_name = 4;
+  string provider_id = 5;
+  string external_workspace_id = 6;
+  string state = 7;
+  int64 target_revision = 8;
+  uint64 agent_node_id = 9;
+  string cluster_id = 10;
+  string capability = 11;
+  uint32 listen_port = 12;
+  string domain = 13;
+  string agent_ip = 14;
+  string ssh_user = 15;
 }
 
 // ============================================

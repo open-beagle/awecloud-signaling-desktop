@@ -37,7 +37,8 @@ cd /path/to/awecloud-signaling-server
 # 获取管理员 Token
 TOKEN=$(curl -s -X POST http://localhost:8080/api/admin/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin123"}' | jq -r '.token')
+  -d "$(jq -n --arg username "$ADMIN_USERNAME" --arg password "$ADMIN_PASSWORD" \
+    '{username: $username, password: $password}')" | jq -r '.token')
 
 echo "Token: $TOKEN"
 ```
