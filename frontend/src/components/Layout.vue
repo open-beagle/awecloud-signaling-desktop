@@ -29,6 +29,16 @@
       </div>
       
       <div class="navbar-right">
+        <!-- 资源浏览 -->
+        <div
+          class="nav-item"
+          :class="{ active: currentRoute === '/resources' }"
+          @click="navigateTo('/resources')"
+        >
+          <el-icon><Collection /></el-icon>
+          <span>资源浏览</span>
+        </div>
+
         <!-- 我的服务 -->
         <div 
           class="nav-item"
@@ -111,10 +121,11 @@
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Grid, Document, Monitor, User, SwitchButton, CircleCheck, CircleClose, Loading, Iphone, Compass } from '@element-plus/icons-vue'
+import { Collection, Grid, Document, Monitor, User, SwitchButton, CircleCheck, CircleClose, Loading, Iphone, Compass } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
 import { useDomainsStore } from '../stores/domains'
+import type { DomainItem } from '../stores/domains'
 import { GetTunnelStatus, ReconnectTunnel, GetGRPCStatus, GetDomainList, Logout, ClearCredentials } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 const router = useRouter()
@@ -192,7 +203,7 @@ const loadGRPCStatus = async () => {
 const loadDomains = async () => {
   try {
     const domains = await GetDomainList()
-    domainsStore.setDomains(domains || [])
+    domainsStore.setDomains(((domains || []).filter(Boolean)) as DomainItem[])
   } catch (error) {
     console.error('Failed to get domain list:', error)
   }
@@ -281,7 +292,7 @@ const handleUserCommand = async (command: string) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 24px;
+  padding: 0 16px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   z-index: 100;
 }
@@ -289,7 +300,8 @@ const handleUserCommand = async (command: string) => {
 .navbar-left {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .logo {
@@ -381,14 +393,15 @@ const handleUserCommand = async (command: string) => {
 .navbar-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
+  min-width: 0;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 16px;
+  padding: 8px 10px;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
