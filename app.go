@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/containerroute"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/dns"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/proxy"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/serviceroute"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/tailscale"
 	appVersion "github.com/open-beagle/awecloud-signaling-desktop/internal/version"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/vip"
@@ -36,6 +38,12 @@ type App struct {
 	proxyManager    *proxy.Manager
 	svcProxyMgr     *proxy.SVCProxyManager // K8S Service gRPC 代理管理器
 	containerRoutes *containerroute.Manager
+	serviceRoutes   *serviceroute.Manager
+
+	tenantMutex          sync.Mutex
+	tenantOperationMutex sync.Mutex
+	activeTenantID       string
+	allowedTenantDomains map[string]struct{}
 }
 
 // NewApp creates a new App application struct
@@ -145,13 +153,45 @@ func (a *App) cleanupZTNA() {
 	// 清空 VIP 分配器
 	a.vipAllocator = nil
 	a.containerRoutes = nil
+	a.serviceRoutes = nil
+}
+
+func (a *App) clearTenantContext() {
+	a.tenantMutex.Lock()
+	a.activeTenantID = ""
+	a.allowedTenantDomains = nil
+	a.tenantMutex.Unlock()
+	if a.desktopClient != nil {
+		a.desktopClient.ClearResourceCaches()
+	}
+}
+
+// teardownLocalSession removes all locally usable state from the previous
+// identity. It intentionally does not alter the persisted login config; the
+// caller commits new credentials only after the next authentication succeeds.
+func (a *App) teardownLocalSession() {
+	a.cleanupZTNA()
+	if a.tsManager != nil {
+		_ = a.tsManager.Disconnect()
+		a.tsManager = nil
+	}
+	if a.desktopClient != nil {
+		a.desktopClient.ClearResourceCaches()
+		a.desktopClient.Stop()
+		a.desktopClient = nil
+	}
+	a.authResult = nil
+	a.clearTenantContext()
 }
 
 // Login 使用已保存的凭证自动认证
 func (a *App) Login(serverAddr, clientName, clientSecret string, rememberMe bool) error {
 	log.Printf("[App] Login: serverAddr=%s, clientName=%s, rememberMe=%v", serverAddr, clientName, rememberMe)
+	if a.desktopClient != nil || a.tsManager != nil {
+		a.teardownLocalSession()
+	}
 
-	config.GlobalConfig.ServerAddress = serverAddr
+	config.GlobalConfig.SelectServer(serverAddr)
 	config.GlobalConfig.ClientID = clientName
 	config.GlobalConfig.RememberMe = rememberMe
 
@@ -239,7 +279,7 @@ func (a *App) initializeTailscale() error {
 	tsAuth := a.desktopClient.GetTailscaleAuth(a.authResult)
 	log.Printf("[App] Tunnel auth: control_url=%s", tsAuth.ControlURL)
 
-	a.tsManager = tailscale.NewManager()
+	a.tsManager = tailscale.NewManagerForServer(config.GlobalConfig.ServerAddress)
 
 	hostname := a.authResult.DeviceName
 	if hostname == "" {
@@ -297,6 +337,7 @@ func (a *App) initializeZTNA() error {
 
 	// 2.5 创建 K8S Service gRPC 代理管理器
 	a.svcProxyMgr = proxy.NewSVCProxyManager(a.tsManager.Dial)
+	a.serviceRoutes = serviceroute.NewManager(a.vipAllocator, a.svcProxyMgr)
 
 	// 3. 创建并启动本地 DNS 服务器
 	// 使用平台推荐地址：macOS 用 127.0.0.1:15353（macOS 默认无 127.0.0.2），其他平台用 127.0.0.2
@@ -320,6 +361,17 @@ func (a *App) initializeZTNA() error {
 
 // resolveDomain DNS 解析回调：查询 Server → 分配 VIP → 启动代理
 func (a *App) resolveDomain(domain string) (string, bool) {
+	a.tenantMutex.Lock()
+	_, allowed := a.allowedTenantDomains[domain]
+	hasTenantScope := a.activeTenantID != ""
+	a.tenantMutex.Unlock()
+	if hasTenantScope && !allowed {
+		log.Printf("[App] DNS 解析拒绝: 域名不属于当前 Tenant (%s)", domain)
+		return "", false
+	}
+	if a.vipAllocator == nil {
+		return "", false
+	}
 	// 先检查是否已有 VIP 映射
 	if existingVIP, ok := a.vipAllocator.GetVIP(domain); ok {
 		return existingVIP, true
@@ -470,6 +522,7 @@ func (a *App) Logout() {
 	}
 
 	a.authResult = nil
+	a.clearTenantContext()
 
 	// 清除认证信息（保留服务器地址）
 	config.GlobalConfig.ClearToken()
@@ -1025,21 +1078,137 @@ func (a *App) DeleteDevice(deviceToken string) error {
 // GetResources 获取可访问的资源列表（SSH / K8S API / K8S Service）
 func (a *App) GetResources() ([]*client.ResourceInfo, error) {
 	log.Printf("[App] GetResources called")
+	a.tenantOperationMutex.Lock()
+	defer a.tenantOperationMutex.Unlock()
 
 	if a.desktopClient == nil {
 		return nil, fmt.Errorf("未登录")
 	}
 
-	resources, err := a.desktopClient.GetResources()
+	a.tenantMutex.Lock()
+	tenantID := a.activeTenantID
+	a.tenantMutex.Unlock()
+	resources, err := a.desktopClient.GetResourcesForTenant(tenantID)
 	if err != nil {
 		return nil, err
 	}
-	if err := a.syncContainerSSHRoutes(resources); err != nil {
-		log.Printf("[App] ContainerSSH 路由同步失败: %v", err)
+	if tenantID == "" {
+		// 未选择 Tenant 时只用于发现可选作用域，不建立任何本地路由。
+		return resources, nil
+	}
+	if err := a.applyTenantResources(tenantID, resources); err != nil {
+		a.cleanupZTNA()
+		return nil, err
 	}
 
 	log.Printf("[App] 获取到 %d 个资源", len(resources))
 	return resources, nil
+}
+
+type ResourceTenantInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// GetResourceTenants returns only Tenant identities represented by the
+// caller's currently authorized v2 resources. It never installs routes.
+func (a *App) GetResourceTenants() ([]ResourceTenantInfo, error) {
+	if a.desktopClient == nil {
+		return nil, fmt.Errorf("未登录")
+	}
+	resources, err := a.desktopClient.GetResourcesForTenant("")
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]string)
+	for _, resource := range resources {
+		if resource != nil && resource.TenantID != "" {
+			byID[resource.TenantID] = resource.TenantName
+		}
+	}
+	result := make([]ResourceTenantInfo, 0, len(byID))
+	for id, name := range byID {
+		result = append(result, ResourceTenantInfo{ID: id, Name: name})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].Name == result[j].Name {
+			return result[i].ID < result[j].ID
+		}
+		return result[i].Name < result[j].Name
+	})
+	return result, nil
+}
+
+// SwitchResourceTenant verifies the next scope before removing the previous
+// one, then rebuilds DNS/VIP/proxy state from an empty local network stack.
+func (a *App) SwitchResourceTenant(tenantID string) ([]*client.ResourceInfo, error) {
+	a.tenantOperationMutex.Lock()
+	defer a.tenantOperationMutex.Unlock()
+	if a.desktopClient == nil {
+		return nil, fmt.Errorf("未登录")
+	}
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, fmt.Errorf("Tenant ID 不能为空")
+	}
+	resources, err := a.desktopClient.GetResourcesForTenant(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	for _, resource := range resources {
+		if resource != nil && resource.TenantID != tenantID {
+			return nil, fmt.Errorf("Server 返回了跨 Tenant 资源")
+		}
+	}
+
+	a.cleanupZTNA()
+	a.desktopClient.ClearResourceCaches()
+	a.tenantMutex.Lock()
+	a.activeTenantID = tenantID
+	a.allowedTenantDomains = tenantResourceDomains(resources)
+	a.tenantMutex.Unlock()
+	if a.tsManager != nil && a.tsManager.IsConnected() {
+		if err := a.initializeZTNA(); err != nil {
+			return nil, fmt.Errorf("重建 Tenant 网络栈失败: %w", err)
+		}
+	}
+	if err := a.applyTenantResources(tenantID, resources); err != nil {
+		a.cleanupZTNA()
+		return nil, err
+	}
+	return resources, nil
+}
+
+func tenantResourceDomains(resources []*client.ResourceInfo) map[string]struct{} {
+	allowed := make(map[string]struct{})
+	for _, resource := range resources {
+		if resource != nil && resource.Domain != "" {
+			allowed[resource.Domain] = struct{}{}
+		}
+	}
+	return allowed
+}
+
+func (a *App) applyTenantResources(tenantID string, resources []*client.ResourceInfo) error {
+	for _, resource := range resources {
+		if resource != nil && resource.TenantID != tenantID {
+			return fmt.Errorf("拒绝跨 Tenant 资源: expected=%s actual=%s", tenantID, resource.TenantID)
+		}
+	}
+	a.tenantMutex.Lock()
+	if a.activeTenantID != tenantID {
+		a.tenantMutex.Unlock()
+		return fmt.Errorf("Tenant 已切换")
+	}
+	a.allowedTenantDomains = tenantResourceDomains(resources)
+	a.tenantMutex.Unlock()
+	if err := a.syncContainerSSHRoutes(resources); err != nil {
+		return fmt.Errorf("同步 ContainerSSH 路由: %w", err)
+	}
+	if err := a.syncContainerServiceRoutes(resources); err != nil {
+		return fmt.Errorf("同步 ContainerService 路由: %w", err)
+	}
+	return nil
 }
 
 // KubeconfigResult kubeconfig 生成结果
@@ -1066,8 +1235,11 @@ func (a *App) GenerateKubeconfig() (*KubeconfigResult, error) {
 		return nil, fmt.Errorf("未登录")
 	}
 
-	// 1. 获取资源列表
-	resources, err := a.desktopClient.GetResources()
+	// 1. 获取当前 Tenant 的资源列表；未选择 Tenant 时保留旧客户端行为。
+	a.tenantMutex.Lock()
+	tenantID := a.activeTenantID
+	a.tenantMutex.Unlock()
+	resources, err := a.desktopClient.GetResourcesForTenant(tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("获取资源列表失败: %w", err)
 	}
@@ -1620,6 +1792,9 @@ func (a *App) WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint st
 	log.Printf("[App] Authentication successful with new credentials")
 
 	// 保存 Desktop 客户端（重要：用于后续的 API 调用）
+	if a.desktopClient != nil || a.tsManager != nil {
+		a.teardownLocalSession()
+	}
 	a.desktopClient = desktopClient
 
 	// 设置重连回调
@@ -1684,14 +1859,23 @@ type DomainItem struct {
 // GetDomainList 获取域名列表
 func (a *App) GetDomainList() ([]*DomainItem, error) {
 	log.Printf("[App] GetDomainList called")
+	a.tenantOperationMutex.Lock()
+	defer a.tenantOperationMutex.Unlock()
 
 	if a.desktopClient == nil {
 		return nil, fmt.Errorf("未登录")
 	}
 
-	domains, err := a.desktopClient.GetDomainList()
-	if err != nil {
-		return nil, err
+	a.tenantMutex.Lock()
+	tenantID := a.activeTenantID
+	a.tenantMutex.Unlock()
+	var domains []*client.DomainInfo
+	if tenantID == "" {
+		var err error
+		domains, err = a.desktopClient.GetDomainList()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// 转换为前端格式
@@ -1709,12 +1893,26 @@ func (a *App) GetDomainList() ([]*DomainItem, error) {
 		})
 	}
 
-	resources, resourceErr := a.desktopClient.GetResources()
+	resources, resourceErr := a.desktopClient.GetResourcesForTenant(tenantID)
 	if resourceErr != nil {
+		if tenantID != "" {
+			a.cleanupZTNA()
+			return nil, resourceErr
+		}
 		log.Printf("[App] ContainerSSH 资源查询失败，保留旧资源视图: %v", resourceErr)
 	} else {
-		if err := a.syncContainerSSHRoutes(resources); err != nil {
-			log.Printf("[App] ContainerSSH 路由同步失败: %v", err)
+		if tenantID != "" {
+			if err := a.applyTenantResources(tenantID, resources); err != nil {
+				a.cleanupZTNA()
+				return nil, err
+			}
+		} else {
+			if err := a.syncContainerSSHRoutes(resources); err != nil {
+				log.Printf("[App] ContainerSSH 路由同步失败: %v", err)
+			}
+			if err := a.syncContainerServiceRoutes(resources); err != nil {
+				log.Printf("[App] ContainerService 路由同步失败: %v", err)
+			}
 		}
 		for _, resource := range resources {
 			if resource.Type != "container_ssh" {
@@ -1737,4 +1935,11 @@ func (a *App) syncContainerSSHRoutes(resources []*client.ResourceInfo) error {
 		return nil
 	}
 	return a.containerRoutes.Sync(resources)
+}
+
+func (a *App) syncContainerServiceRoutes(resources []*client.ResourceInfo) error {
+	if a.serviceRoutes == nil {
+		return nil
+	}
+	return a.serviceRoutes.Sync(resources)
 }

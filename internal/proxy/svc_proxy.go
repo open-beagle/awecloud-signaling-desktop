@@ -21,15 +21,23 @@ import (
 
 // SVCTarget K8S Service 代理目标信息
 type SVCTarget struct {
-	Domain       string // 域名（如 postgres.default.beijing.beagle）
-	VIP          string // 本地 VIP 地址（如 127.1.0.1）
-	Port         int    // 监听端口（与目标服务端口相同）
-	AgentIP      string // Agent 的 Tailscale IP
-	GRPCPort     int    // Agent SVCProxy gRPC 端口（默认 50051）
-	Namespace    string // K8S 命名空间
-	ServiceName  string // K8S Service 名称
-	TargetPort   int    // K8S Service 目标端口
-	EndpointName string // Endpoint 名称（非空时走 Endpoint 跳跃路径）
+	Domain                string // 域名（如 postgres.default.beijing.beagle）
+	VIP                   string // 本地 VIP 地址（如 127.1.0.1）
+	Port                  int    // 监听端口（与目标服务端口相同）
+	AgentIP               string // Agent 的 Tailscale IP
+	GRPCPort              int    // Agent SVCProxy gRPC 端口（默认 50051）
+	Namespace             string // K8S 命名空间
+	ServiceName           string // K8S Service 名称
+	TargetPort            int    // K8S Service 目标端口
+	EndpointName          string // Endpoint 名称（非空时走 Endpoint 跳跃路径）
+	SessionID             string
+	ResourceID            string
+	SourceID              string
+	TargetRevisionID      string
+	ServiceUID            string
+	PortName              string
+	Protocol              string
+	AuthorizationRevision int64
 }
 
 // svcEntry 单个 SVCProxy 代理实例
@@ -114,6 +122,25 @@ func (m *SVCProxyManager) StopAll() {
 	log.Printf("[SVCProxy] 所有代理已停止")
 }
 
+// StopSVCProxy removes one resource-scoped listener without cancelling the
+// manager. It is used when a Grant, Target revision, or Session disappears.
+func (m *SVCProxyManager) StopSVCProxy(vip string, port int) {
+	if m == nil {
+		return
+	}
+	key := fmt.Sprintf("%s:%d", vip, port)
+	m.mu.Lock()
+	entry := m.proxies[key]
+	if entry != nil {
+		delete(m.proxies, key)
+	}
+	m.mu.Unlock()
+	if entry != nil {
+		entry.cancel()
+		_ = entry.listener.Close()
+	}
+}
+
 // Count 获取运行中的代理数量
 func (m *SVCProxyManager) Count() int {
 	m.mu.RLock()
@@ -190,11 +217,13 @@ func (m *SVCProxyManager) handleConn(ctx context.Context, clientConn net.Conn, t
 
 	// 3. 发送首包（连接请求，携带 endpoint_name 用于 Endpoint 跳跃路径）
 	if err := stream.Send(&pb.SVCProxyData{
-		Namespace:    target.Namespace,
-		ServiceName:  target.ServiceName,
-		Port:         int32(target.TargetPort),
-		IsConnect:    true,
-		EndpointName: target.EndpointName,
+		Namespace:   target.Namespace,
+		ServiceName: target.ServiceName,
+		Port:        int32(target.TargetPort),
+		IsConnect:   true,
+		SessionId:   target.SessionID, ResourceId: target.ResourceID, SourceId: target.SourceID,
+		TargetRevisionId: target.TargetRevisionID, ServiceUid: target.ServiceUID,
+		PortName: target.PortName, Protocol: target.Protocol, AuthorizationRevision: target.AuthorizationRevision,
 	}); err != nil {
 		log.Printf("[SVCProxy] 发送首包失败 (%s): %v", target.Domain, err)
 		return

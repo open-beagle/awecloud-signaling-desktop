@@ -90,8 +90,7 @@ scripts\build.bat
 
 ```
 desktop\build\bin\
-├── awecloud-signaling-desktop.exe              # 默认输出
-└── awecloud-signaling-v0.2.0-windows-amd64.exe # 带版本号的副本
+└── awecloud-signaling-desktop.exe # Windows 固定输出，重复构建原位覆盖
 ```
 
 ## 管理员权限说明

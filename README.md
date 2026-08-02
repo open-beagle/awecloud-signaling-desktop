@@ -105,7 +105,13 @@ PLATFORMS=darwin/amd64,darwin/arm64 ./scripts/build.sh  # 需 macOS 环境
 - `darwin/amd64` - macOS Intel
 - `darwin/arm64` - macOS Apple Silicon
 
-输出位置: `build/bin/`
+桌面开发产物使用固定名称和固定位置；版本号、提交号与构建时间写入二进制元数据，不进入文件名：
+
+- Windows：`build/bin/awecloud-signaling-desktop.exe`
+- Linux：`build/bin/awecloud-signaling-desktop`
+- macOS：`build/bin/awecloud-signaling-desktop.zip`
+
+重复构建会覆盖同一路径。Windows 开发与验收不得改用随机临时可执行路径，避免产生新的防火墙应用身份。
 
 ## 文档规范
 

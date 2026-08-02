@@ -175,6 +175,21 @@ func (c *DesktopClient) Stop() {
 	if c.grpcConn != nil {
 		c.grpcConn.Close()
 	}
+	c.ClearResourceCaches()
+}
+
+// ClearResourceCaches removes authorization-derived state without clearing the
+// device credential used to authenticate the current Desktop. Tenant switches
+// call this before exposing the next scoped resource snapshot.
+func (c *DesktopClient) ClearResourceCaches() {
+	c.servicesMutex.Lock()
+	c.authorizedServices = make([]*pb.AuthorizedService, 0)
+	c.servicesMutex.Unlock()
+
+	c.cacheMutex.Lock()
+	c.cachedHosts = nil
+	c.cachedHostServices = make(map[string][]*pb.AuthorizedService)
+	c.cacheMutex.Unlock()
 }
 
 // IsAuthenticated 检查是否已认证
@@ -719,7 +734,10 @@ func (c *DesktopClient) GetMyDevices() ([]*DeviceInfo, error) {
 
 // OfflineDevice 设备下线
 func (c *DesktopClient) OfflineDevice(deviceToken string) error {
-	if !c.IsAuthenticated() {
+	c.mu.RLock()
+	desktopID, secret := c.desktopID, c.secret
+	c.mu.RUnlock()
+	if desktopID == 0 || secret == "" {
 		return fmt.Errorf("未认证")
 	}
 
@@ -727,8 +745,9 @@ func (c *DesktopClient) OfflineDevice(deviceToken string) error {
 	defer cancel()
 
 	req := &pb.OfflineDeviceRequest{
-		DesktopId:   c.desktopID,
+		DesktopId:   desktopID,
 		DeviceToken: deviceToken,
+		Secret:      secret,
 	}
 
 	resp, err := c.grpcClient.OfflineDevice(ctx, req)
@@ -745,7 +764,10 @@ func (c *DesktopClient) OfflineDevice(deviceToken string) error {
 
 // DeleteDevice 删除设备
 func (c *DesktopClient) DeleteDevice(deviceToken string) error {
-	if !c.IsAuthenticated() {
+	c.mu.RLock()
+	desktopID, secret := c.desktopID, c.secret
+	c.mu.RUnlock()
+	if desktopID == 0 || secret == "" {
 		return fmt.Errorf("未认证")
 	}
 
@@ -753,8 +775,9 @@ func (c *DesktopClient) DeleteDevice(deviceToken string) error {
 	defer cancel()
 
 	req := &pb.DeleteDeviceRequest{
-		DesktopId:   c.desktopID,
+		DesktopId:   desktopID,
 		DeviceToken: deviceToken,
+		Secret:      secret,
 	}
 
 	resp, err := c.grpcClient.DeleteDevice(ctx, req)
@@ -1202,37 +1225,57 @@ func (c *DesktopClient) ResolveDomain(domain string) (*DomainResolveResult, erro
 
 // ResourceInfo 资源信息（前端展示用）
 type ResourceInfo struct {
-	Type           string   `json:"type"` // ssh / k8sapi / k8ssvc
-	AgentID        uint64   `json:"agent_id"`
-	AgentName      string   `json:"agent_name"`
-	Domain         string   `json:"domain"`
-	SSHUsers       []string `json:"ssh_users,omitempty"`
-	K8SGroups      []string `json:"k8s_groups,omitempty"`
-	Namespaces     []string `json:"namespaces,omitempty"`
-	Namespace      string   `json:"namespace,omitempty"`
-	ServiceName    string   `json:"service_name,omitempty"`
-	Port           int32    `json:"port,omitempty"`
-	ResourceID     string   `json:"resource_id,omitempty"`
-	DisplayName    string   `json:"display_name,omitempty"`
-	TenantName     string   `json:"tenant_name,omitempty"`
-	State          string   `json:"state,omitempty"`
-	TargetRevision int64    `json:"target_revision,omitempty"`
-	AgentIP        string   `json:"agent_ip,omitempty"`
-	ListenPort     uint32   `json:"listen_port,omitempty"`
-	SSHUser        string   `json:"ssh_user,omitempty"`
+	Type                  string   `json:"type"` // ssh / k8sapi / k8ssvc
+	AgentID               uint64   `json:"agent_id"`
+	AgentName             string   `json:"agent_name"`
+	Domain                string   `json:"domain"`
+	SSHUsers              []string `json:"ssh_users,omitempty"`
+	K8SGroups             []string `json:"k8s_groups,omitempty"`
+	Namespaces            []string `json:"namespaces,omitempty"`
+	Namespace             string   `json:"namespace,omitempty"`
+	ServiceName           string   `json:"service_name,omitempty"`
+	Port                  int32    `json:"port,omitempty"`
+	ResourceID            string   `json:"resource_id,omitempty"`
+	DisplayName           string   `json:"display_name,omitempty"`
+	TenantID              string   `json:"tenant_id,omitempty"`
+	TenantName            string   `json:"tenant_name,omitempty"`
+	State                 string   `json:"state,omitempty"`
+	TargetRevision        int64    `json:"target_revision,omitempty"`
+	AgentIP               string   `json:"agent_ip,omitempty"`
+	ListenPort            uint32   `json:"listen_port,omitempty"`
+	SSHUser               string   `json:"ssh_user,omitempty"`
+	SessionID             string   `json:"session_id,omitempty"`
+	SourceID              string   `json:"source_id,omitempty"`
+	TargetRevisionID      string   `json:"target_revision_id,omitempty"`
+	ServiceUID            string   `json:"service_uid,omitempty"`
+	PortName              string   `json:"port_name,omitempty"`
+	Protocol              string   `json:"protocol,omitempty"`
+	AuthorizationRevision int64    `json:"authorization_revision,omitempty"`
+	SVCProxyPort          uint32   `json:"svc_proxy_port,omitempty"`
 }
 
 // GetResources 通过 gRPC 获取可访问的资源列表
 func (c *DesktopClient) GetResources() ([]*ResourceInfo, error) {
+	return c.GetResourcesForTenant("")
+}
+
+// GetResourcesForTenant requests one explicit Tenant scope. An empty Tenant ID
+// preserves the legacy aggregate discovery behavior.
+func (c *DesktopClient) GetResourcesForTenant(tenantID string) ([]*ResourceInfo, error) {
 	if !c.IsAuthenticated() {
 		return nil, fmt.Errorf("未认证")
 	}
+	c.mu.RLock()
+	desktopID := c.desktopID
+	c.mu.RUnlock()
 
 	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
 	defer cancel()
 
 	resp, err := c.grpcClient.GetResources(ctx, &pb.GetResourcesRequest{
-		DesktopId: c.desktopID,
+		DesktopId:        desktopID,
+		ResourceProtocol: "resource_session_v2",
+		TenantId:         tenantID,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("获取资源列表失败: %w", err)
@@ -1279,9 +1322,21 @@ func (c *DesktopClient) GetResources() ([]*ResourceInfo, error) {
 	for _, r := range resp.ContainerSsh {
 		resources = append(resources, &ResourceInfo{
 			Type: "container_ssh", ResourceID: r.ResourceId, DisplayName: r.DisplayName,
-			TenantName: r.TenantName, State: r.State, TargetRevision: r.TargetRevision,
+			TenantID: r.TenantId, TenantName: r.TenantName, State: r.State, TargetRevision: r.TargetRevision,
 			AgentID: r.AgentNodeId, Domain: r.Domain, AgentIP: r.AgentIp,
-			ListenPort: r.ListenPort, SSHUser: r.SshUser,
+			ListenPort: r.ListenPort, SSHUser: r.SshUser, SessionID: r.SessionId,
+			SourceID: r.SourceId, TargetRevisionID: r.TargetRevisionId, AuthorizationRevision: r.AuthorizationRevision,
+		})
+	}
+
+	for _, r := range resp.ContainerService {
+		resources = append(resources, &ResourceInfo{
+			Type: "container_service", ResourceID: r.ResourceId, DisplayName: r.DisplayName,
+			TenantID: r.TenantId, TenantName: r.TenantName, State: r.State, TargetRevision: r.TargetRevision,
+			AgentID: r.AgentNodeId, Domain: r.Domain, AgentIP: r.AgentIp, SVCProxyPort: r.SvcProxyPort,
+			Namespace: r.Namespace, ServiceUID: r.ServiceUid, ServiceName: r.ServiceName,
+			PortName: r.PortName, Port: r.PortNumber, Protocol: r.Protocol, SessionID: r.SessionId,
+			SourceID: r.SourceId, TargetRevisionID: r.TargetRevisionId, AuthorizationRevision: r.AuthorizationRevision,
 		})
 	}
 

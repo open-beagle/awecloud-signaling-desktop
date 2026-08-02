@@ -251,13 +251,17 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
             ;;
     esac
     
-    # 设置输出文件名
-    OUTPUT_NAME="signal_desktop-${BUILD_VERSION}-${OS}-${ARCH}"
+    # Keep the development artifact path stable. Version and commit metadata are
+    # embedded through ldflags instead of being encoded in the filename.
     if [ "$OS" = "windows" ]; then
-        OUTPUT_NAME="${OUTPUT_NAME}.exe"
-        BUILD_OUTPUT="${OUTPUT_DIR}/signal_desktop.exe"
+        OUTPUT_NAME="awecloud-signaling-desktop.exe"
+        BUILD_OUTPUT="${OUTPUT_DIR}/${OUTPUT_NAME}"
+    elif [ "$OS" = "darwin" ]; then
+        OUTPUT_NAME="awecloud-signaling-desktop.zip"
+        BUILD_OUTPUT="${OUTPUT_DIR}/awecloud-signaling-desktop"
     else
-        BUILD_OUTPUT="${OUTPUT_DIR}/signal_desktop"
+        OUTPUT_NAME="awecloud-signaling-desktop"
+        BUILD_OUTPUT="${OUTPUT_DIR}/${OUTPUT_NAME}"
     fi
     
     # 构建 ldflags
@@ -304,7 +308,7 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
             echo -e "${YELLOW}Packaging macOS .app bundle...${NC}"
             
             APP_BUNDLE_NAME="Signal Desktop.app"
-            ZIP_NAME="signal_desktop-${BUILD_VERSION}-${OS}-${ARCH}.zip"
+            ZIP_NAME="${OUTPUT_NAME}"
             
             # 创建 .app 目录结构
             rm -rf "${OUTPUT_DIR}/${APP_BUNDLE_NAME}"
@@ -312,7 +316,7 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
             mkdir -p "${OUTPUT_DIR}/${APP_BUNDLE_NAME}/Contents/Resources"
             
             # 复制可执行文件
-            cp "${BUILD_OUTPUT}" "${OUTPUT_DIR}/${APP_BUNDLE_NAME}/Contents/MacOS/signal_desktop"
+            cp "${BUILD_OUTPUT}" "${OUTPUT_DIR}/${APP_BUNDLE_NAME}/Contents/MacOS/awecloud-signaling-desktop"
             
             # 创建 Info.plist
             cat > "${OUTPUT_DIR}/${APP_BUNDLE_NAME}/Contents/Info.plist" << EOF

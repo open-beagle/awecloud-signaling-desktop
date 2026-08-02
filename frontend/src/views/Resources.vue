@@ -11,13 +11,24 @@
     </div>
 
     <div class="toolbar">
+      <el-select
+        v-if="tenantOptions.length"
+        v-model="activeTenantID"
+        class="tenant-filter"
+        placeholder="选择 Tenant"
+        :disabled="loading"
+        @change="switchTenant"
+      >
+        <el-option v-for="tenant in tenantOptions" :key="tenant.id" :label="tenant.name || tenant.id" :value="tenant.id" />
+      </el-select>
       <el-input v-model="searchQuery" clearable placeholder="搜索名称、域名或 Tenant" class="search-input" />
       <el-select v-model="typeFilter" class="type-filter">
         <el-option label="全部类型" value="all" />
         <el-option label="SSH 主机" value="ssh" />
         <el-option label="ContainerSSH" value="container_ssh" />
         <el-option label="K8S API" value="k8sapi" />
-        <el-option label="K8S 服务" value="k8ssvc" />
+        <el-option label="ContainerService" value="container_service" />
+        <el-option label="K8S 服务（兼容）" value="k8ssvc" />
       </el-select>
       <span class="count">{{ filteredResources.length }} / {{ resources.length }} 个资源</span>
     </div>
@@ -74,7 +85,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CopyDocument, Refresh } from '@element-plus/icons-vue'
-import { GetResources } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import { GetResources, GetResourceTenants, SwitchResourceTenant } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 interface Resource {
   type: string
@@ -86,13 +97,21 @@ interface Resource {
   service_name?: string
   port?: number
   display_name?: string
+  tenant_id?: string
   tenant_name?: string
   state?: string
   target_revision?: number
   ssh_user?: string
 }
 
+interface ResourceTenant {
+  id: string
+  name: string
+}
+
 const resources = ref<Resource[]>([])
+const tenantOptions = ref<ResourceTenant[]>([])
+const activeTenantID = ref('')
 const loading = ref(false)
 const error = ref('')
 const searchQuery = ref('')
@@ -121,23 +140,58 @@ async function loadResources() {
   }
 }
 
+async function loadTenants() {
+  loading.value = true
+  error.value = ''
+  try {
+    tenantOptions.value = ((await GetResourceTenants()) || []) as ResourceTenant[]
+    if (!tenantOptions.value.length) {
+      resources.value = ((await GetResources()) || []).filter(Boolean) as Resource[]
+      return
+    }
+    if (!tenantOptions.value.some(tenant => tenant.id === activeTenantID.value)) {
+      activeTenantID.value = tenantOptions.value[0].id
+    }
+    resources.value = ((await SwitchResourceTenant(activeTenantID.value)) || []).filter(Boolean) as Resource[]
+  } catch (cause: any) {
+    resources.value = []
+    error.value = cause?.message || 'Tenant 资源加载失败'
+  } finally {
+    loading.value = false
+  }
+}
+
+async function switchTenant() {
+  if (!activeTenantID.value) return
+  loading.value = true
+  error.value = ''
+  resources.value = []
+  try {
+    resources.value = ((await SwitchResourceTenant(activeTenantID.value)) || []).filter(Boolean) as Resource[]
+  } catch (cause: any) {
+    error.value = cause?.message || 'Tenant 切换失败'
+  } finally {
+    loading.value = false
+  }
+}
+
 function displayName(resource: Resource) {
   return resource.display_name || resource.service_name || resource.agent_name || resource.domain || '未命名资源'
 }
 
 function typeLabel(type: string) {
-  return ({ ssh: 'SSH 主机', container_ssh: 'ContainerSSH', k8sapi: 'K8S API', k8ssvc: 'K8S 服务' } as Record<string, string>)[type] || type
+  return ({ ssh: 'SSH 主机', container_ssh: 'ContainerSSH', container_service: 'ContainerService', k8sapi: 'K8S API', k8ssvc: 'K8S 服务（兼容）' } as Record<string, string>)[type] || type
 }
 
 function typeTag(type: string) {
-  return ({ container_ssh: 'success', k8sapi: 'warning', k8ssvc: 'info' } as Record<string, string>)[type] || ''
+  return ({ container_ssh: 'success', container_service: 'info', k8sapi: 'warning', k8ssvc: 'info' } as Record<string, string>)[type] || ''
 }
 
 function scopeLabel(resource: Resource) {
   if (resource.type === 'container_ssh') {
     return [resource.tenant_name, resource.target_revision ? `revision ${resource.target_revision}` : ''].filter(Boolean).join(' / ') || '-'
   }
-  if (resource.type === 'k8ssvc') return resource.namespace || '-'
+  if (resource.type === 'container_service' || resource.type === 'k8ssvc') return resource.namespace || '-'
   if (resource.type === 'k8sapi') return resource.namespaces?.length ? resource.namespaces.join(', ') : '全部 Namespace'
   return resource.agent_name || '-'
 }
@@ -156,7 +210,7 @@ function connectionText(resource: Resource) {
   if (resource.type === 'container_ssh') return `ssh ${resource.ssh_user || 'container'}@${resource.domain}`
   if (resource.type === 'ssh') return resource.ssh_users?.length ? `ssh ${resource.ssh_users[0]}@${resource.domain}` : resource.domain
   if (resource.type === 'k8sapi') return `${resource.domain}:6443`
-  if (resource.type === 'k8ssvc') return `${resource.domain}:${resource.port || ''}`
+  if (resource.type === 'container_service' || resource.type === 'k8ssvc') return `${resource.domain}:${resource.port || ''}`
   return resource.domain
 }
 
@@ -168,7 +222,7 @@ async function copyConnection(resource: Resource) {
 }
 
 onMounted(() => {
-  loadResources()
+  loadTenants()
   refreshTimer = window.setInterval(loadResources, 30000)
 })
 
@@ -215,6 +269,7 @@ onUnmounted(() => {
 }
 
 .search-input { width: 280px; }
+.tenant-filter { width: 190px; }
 .type-filter { width: 150px; }
 .count { margin-left: auto; color: #8c8c8c; font-size: 12px; }
 

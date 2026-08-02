@@ -245,8 +245,7 @@ if (-not [string]::IsNullOrEmpty($BuildAddress)) {
     $LdFlags += " -X `"github.com/open-beagle/awecloud-signaling-desktop/internal/config.buildAddress=$BuildAddress`""
 }
 
-$BuildOutput = "build\bin\signal_desktop.exe"
-$OutputName = "signal_desktop-$BuildVersion-windows-$GoArch.exe"
+$BuildOutput = "build\bin\awecloud-signaling-desktop.exe"
 
 Write-Host "Building with: go build -tags production -trimpath -ldflags `"$LdFlags`" -o $BuildOutput"
 go build -tags production -trimpath -ldflags $LdFlags -o $BuildOutput
@@ -261,11 +260,8 @@ if ($LASTEXITCODE -ne 0) {
 # Check build result
 if (Test-Path $BuildOutput) {
     Write-Host "[SUCCESS] Build successful: $BuildOutput" -ForegroundColor Green
-    
-    Copy-Item $BuildOutput "build\bin\$OutputName" -Force
-    Write-Host "[SUCCESS] Output: build\bin\$OutputName" -ForegroundColor Green
-    
-    $FileSize = (Get-Item "build\bin\$OutputName").Length
+
+    $FileSize = (Get-Item $BuildOutput).Length
     Write-Host "  File size: $FileSize bytes"
 } else {
     Write-Host "[ERROR] Build failed - output file not found" -ForegroundColor Red

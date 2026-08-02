@@ -121,7 +121,7 @@ Client Secret: [上面创建时返回的 secret]
 
 **步骤**:
 
-1. 双击 `desktop/build/bin/signal-desktop.exe`
+1. 双击 `desktop/build/bin/awecloud-signaling-desktop.exe`
 2. 等待应用启动
 
 **预期结果**:

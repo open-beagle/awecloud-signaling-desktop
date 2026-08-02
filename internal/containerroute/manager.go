@@ -20,6 +20,7 @@ type ProxyManager interface {
 }
 
 type route struct {
+	tenantID   string
 	resourceID string
 	revision   int64
 	agentIP    string
@@ -44,7 +45,7 @@ func (m *Manager) Sync(resources []*client.ResourceInfo) error {
 	}
 	desired := make(map[string]*client.ResourceInfo)
 	for _, resource := range resources {
-		if resource != nil && resource.Type == "container_ssh" && resource.Domain != "" && resource.AgentIP != "" && resource.ListenPort > 0 && resource.TargetRevision > 0 {
+		if resource != nil && resource.Type == "container_ssh" && resource.TenantID != "" && resource.Domain != "" && resource.AgentIP != "" && resource.ListenPort > 0 && resource.TargetRevision > 0 {
 			desired[resource.Domain] = resource
 		}
 	}
@@ -60,7 +61,7 @@ func (m *Manager) Sync(resources []*client.ResourceInfo) error {
 	}
 	for domain, resource := range desired {
 		current, exists := m.routes[domain]
-		if exists && current.resourceID == resource.ResourceID && current.revision == resource.TargetRevision && current.agentIP == resource.AgentIP && current.listenPort == resource.ListenPort {
+		if exists && current.tenantID == resource.TenantID && current.resourceID == resource.ResourceID && current.revision == resource.TargetRevision && current.agentIP == resource.AgentIP && current.listenPort == resource.ListenPort {
 			continue
 		}
 		vipAddr, err := m.allocator.Allocate(domain)
@@ -75,7 +76,7 @@ func (m *Manager) Sync(resources []*client.ResourceInfo) error {
 			return err
 		}
 		m.routes[domain] = route{
-			resourceID: resource.ResourceID, revision: resource.TargetRevision,
+			tenantID: resource.TenantID, resourceID: resource.ResourceID, revision: resource.TargetRevision,
 			agentIP: resource.AgentIP, listenPort: resource.ListenPort, vip: vipAddr,
 		}
 	}

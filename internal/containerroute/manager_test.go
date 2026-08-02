@@ -32,7 +32,7 @@ func TestSyncReplacesChangedRevisionAndRemovesRevokedRoute(t *testing.T) {
 	proxyManager := &fakeProxy{}
 	manager := NewManager(allocator, proxyManager)
 	resource := &client.ResourceInfo{
-		Type: "container_ssh", ResourceID: "resource-a", Domain: "resource-a.container.beagle",
+		Type: "container_ssh", TenantID: "tenant-a", ResourceID: "resource-a", Domain: "resource-a.container.beagle",
 		AgentIP: "100.64.0.22", ListenPort: 50200, TargetRevision: 3,
 	}
 	if err := manager.Sync([]*client.ResourceInfo{resource}); err != nil {
@@ -47,19 +47,27 @@ func TestSyncReplacesChangedRevisionAndRemovesRevokedRoute(t *testing.T) {
 	if len(proxyManager.started) != 1 {
 		t.Fatal("unchanged revision must not restart proxy")
 	}
+	tenantChanged := *resource
+	tenantChanged.TenantID = "tenant-b"
+	if err := manager.Sync([]*client.ResourceInfo{&tenantChanged}); err != nil {
+		t.Fatal(err)
+	}
+	if len(proxyManager.started) != 2 || len(proxyManager.stopped) != 1 {
+		t.Fatal("Tenant change must replace proxy even when target metadata is unchanged")
+	}
 
-	changed := *resource
+	changed := tenantChanged
 	changed.TargetRevision = 4
 	if err := manager.Sync([]*client.ResourceInfo{&changed}); err != nil {
 		t.Fatal(err)
 	}
-	if len(proxyManager.started) != 2 || len(proxyManager.stopped) != 1 {
+	if len(proxyManager.started) != 3 || len(proxyManager.stopped) != 2 {
 		t.Fatal("changed revision must replace proxy")
 	}
 	if err := manager.Sync(nil); err != nil {
 		t.Fatal(err)
 	}
-	if len(proxyManager.stopped) != 2 || len(allocator.released) != 1 {
+	if len(proxyManager.stopped) != 3 || len(allocator.released) != 1 {
 		t.Fatal("revoked resource must stop proxy and release DNS mapping")
 	}
 }

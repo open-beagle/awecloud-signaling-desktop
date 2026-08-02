@@ -4,28 +4,31 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
 // buildAddress 默认服务器地址（通过 ldflags 注入）
-var buildAddress = "localhost:8080"
+const defaultBuildAddress = "localhost:8080"
+
+var buildAddress = defaultBuildAddress
 
 // GlobalConfig 全局配置对象（由 App 初始化时设置）
 var GlobalConfig *Config
 
 // Config 是 Desktop 应用的配置（内存中使用）
 type Config struct {
-	ServerAddress   string        `json:"server_address"`   // Server gRPC 地址，例如 "localhost:8081"
-	ClientID        string        `json:"client_id"`        // Client ID（用户名/邮箱）
-	ClientSecret    string        `json:"client_secret"`    // Client Secret（加密存储）
-	DeviceToken     string        `json:"device_token"`     // Device Token（用于自动登录）
-	RememberMe      bool          `json:"remember_me"`      // 是否记住登录
-	TokenExpiresAt  int64         `json:"token_expires_at"` // Token 过期时间（Unix 时间戳）
-	TunnelToken     string        `json:"tunnel_token"`     // 隧道认证 Token
-	TunnelServer    string        `json:"tunnel_server"`    // 隧道服务器地址
-	TunnelPort      int           `json:"tunnel_port"`      // 隧道服务器端口
-	PortPreferences map[int64]int `json:"port_preferences"` // 服务 ID -> 本地端口映射
-	Telemetry       TelemetryConfig `json:"telemetry"`      // OpenTelemetry 配置
+	ServerAddress   string          `json:"server_address"`   // Server gRPC 地址，例如 "localhost:8081"
+	ClientID        string          `json:"client_id"`        // Client ID（用户名/邮箱）
+	ClientSecret    string          `json:"client_secret"`    // Client Secret（加密存储）
+	DeviceToken     string          `json:"device_token"`     // Device Token（用于自动登录）
+	RememberMe      bool            `json:"remember_me"`      // 是否记住登录
+	TokenExpiresAt  int64           `json:"token_expires_at"` // Token 过期时间（Unix 时间戳）
+	TunnelToken     string          `json:"tunnel_token"`     // 隧道认证 Token
+	TunnelServer    string          `json:"tunnel_server"`    // 隧道服务器地址
+	TunnelPort      int             `json:"tunnel_port"`      // 隧道服务器端口
+	PortPreferences map[int64]int   `json:"port_preferences"` // 服务 ID -> 本地端口映射
+	Telemetry       TelemetryConfig `json:"telemetry"`        // OpenTelemetry 配置
 }
 
 // TelemetryConfig OpenTelemetry 配置
@@ -119,12 +122,19 @@ func Load() (*Config, error) {
 		}, nil
 	}
 
-	// 转换为 Config
+	// 转换为 Config。正式构建地址代表当前发行渠道；本地保存的凭据只能
+	// 在同一 Server 内复用，不能静默把新版本带回另一个控制面。
+	serverAddress := strings.TrimSpace(localConfig.Server)
+	deviceToken := localConfig.Token
+	if preferred := preferredBuildAddress(); preferred != "" && !sameServerAddress(serverAddress, preferred) {
+		serverAddress = preferred
+		deviceToken = ""
+	}
 	config := &Config{
-		ServerAddress:   localConfig.Server,
+		ServerAddress:   serverAddress,
 		ClientID:        localConfig.Client,
-		DeviceToken:     localConfig.Token,
-		RememberMe:      localConfig.Token != "", // 有 token 就是记住登录
+		DeviceToken:     deviceToken,
+		RememberMe:      deviceToken != "", // 有 token 就是记住登录
 		PortPreferences: make(map[int64]int),
 	}
 
@@ -134,6 +144,34 @@ func Load() (*Config, error) {
 	}
 
 	return config, nil
+}
+
+func preferredBuildAddress() string {
+	address := strings.TrimSpace(buildAddress)
+	if address == "" || sameServerAddress(address, defaultBuildAddress) {
+		return ""
+	}
+	return address
+}
+
+func sameServerAddress(left, right string) bool {
+	normalize := func(value string) string {
+		return strings.ToLower(strings.TrimRight(strings.TrimSpace(value), "/"))
+	}
+	return normalize(left) == normalize(right)
+}
+
+// SelectServer changes the active control plane and invalidates credentials
+// that were issued by a different Server.
+func (c *Config) SelectServer(address string) bool {
+	address = strings.TrimSpace(address)
+	changed := !sameServerAddress(c.ServerAddress, address)
+	if changed {
+		c.ClearToken()
+		c.RememberMe = false
+	}
+	c.ServerAddress = address
+	return changed
 }
 
 // Save 保存配置到文件

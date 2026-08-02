@@ -120,9 +120,22 @@ const form = reactive({
   rememberMe: true
 })
 
+const validateServerAddress = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
+  try {
+    const address = new URL(value.trim())
+    if (!['http:', 'https:'].includes(address.protocol) || !address.hostname) {
+      throw new Error('unsupported server address')
+    }
+    callback()
+  } catch {
+    callback(new Error('请输入有效的 HTTP(S) 服务器地址'))
+  }
+}
+
 const rules: FormRules = {
   server: [
-    { required: true, message: '请输入服务器地址', trigger: 'blur' }
+    { required: true, message: '请输入服务器地址', trigger: 'blur' },
+    { validator: validateServerAddress, trigger: 'blur' }
   ]
 }
 
@@ -149,6 +162,7 @@ const handleLogin = async () => {
       return
     }
 
+    form.server = form.server.trim().replace(/\/+$/, '')
     logtoLoading.value = true
     try {
       // 第一步：通过 gRPC 创建登录会话

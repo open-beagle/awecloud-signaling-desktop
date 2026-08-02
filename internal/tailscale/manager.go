@@ -4,6 +4,7 @@ package tailscale
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"net"
@@ -21,7 +22,8 @@ import (
 // Manager 管理 Desktop 端 Tailscale 客户端 (tsnet 用户态模式)
 // 不需要管理员/root 权限，不创建 TUN 设备
 type Manager struct {
-	tsServer *tsnet.Server
+	tsServer   *tsnet.Server
+	stateScope string
 
 	// 状态
 	tailscaleIP string
@@ -42,6 +44,15 @@ func NewManager() *Manager {
 	}
 }
 
+// NewManagerForServer isolates persistent tsnet identity by Desktop Server.
+// Credentials and Headscale identities from another control plane must never
+// be reused merely because both releases run on the same Windows account.
+func NewManagerForServer(serverAddress string) *Manager {
+	manager := NewManager()
+	manager.stateScope = strings.TrimSpace(serverAddress)
+	return manager
+}
+
 // Connect 连接隧道网络（tsnet 用户态模式）
 func (m *Manager) Connect(controlURL, authKey, hostname string) error {
 	log.Printf("[INFO] [Tunnel] 正在连接: %s (tsnet 用户态模式)", controlURL)
@@ -58,7 +69,7 @@ func (m *Manager) Connect(controlURL, authKey, hostname string) error {
 		Dir:        stateDir,
 		ControlURL: controlURL,
 		AuthKey:    authKey,
-		Ephemeral:  false,          // Desktop 需要持久化节点
+		Ephemeral:  false,           // Desktop 需要持久化节点
 		Logf:       m.tailscaleLogf, // 自定义日志函数
 	}
 
@@ -264,7 +275,7 @@ func (m *Manager) IsConnected() bool {
 func (m *Manager) getStateDir() string {
 	// 使用 config 包提供的统一目录
 	if stateDir, err := config.GetTunnelStateDir(); err == nil {
-		return stateDir
+		return scopedStateDir(stateDir, m.stateScope)
 	}
 
 	// 回退方案
@@ -276,7 +287,16 @@ func (m *Manager) getStateDir() string {
 	} else {
 		baseDir = "/tmp"
 	}
-	return filepath.Join(baseDir, "signaling-desktop", "tunnel")
+	return scopedStateDir(filepath.Join(baseDir, "signaling-desktop", "tunnel"), m.stateScope)
+}
+
+func scopedStateDir(baseDir, scope string) string {
+	canonical := strings.ToLower(strings.TrimRight(strings.TrimSpace(scope), "/"))
+	if canonical == "" {
+		return baseDir
+	}
+	digest := sha256.Sum256([]byte(canonical))
+	return filepath.Join(baseDir, "servers", fmt.Sprintf("%x", digest[:8]))
 }
 
 // tailscaleLogf 自定义日志函数，过滤 tailscale 内部日志

@@ -69,8 +69,10 @@ func (c *DesktopClient) Authenticate(desktopID uint64, secret string) (*AuthResu
 		log.Printf("[DesktopClient] Authentication successful via REST fallback")
 
 		// 保存认证信息
+		c.mu.Lock()
 		c.desktopID = desktopID
 		c.secret = secret
+		c.mu.Unlock()
 		c.httpFallback.SetCredentials(desktopID, secret)
 
 		// REST 模式下启动轮询心跳
@@ -88,8 +90,10 @@ func (c *DesktopClient) Authenticate(desktopID uint64, secret string) (*AuthResu
 	log.Printf("[DesktopClient] Authentication successful")
 
 	// 保存认证信息
+	c.mu.Lock()
 	c.desktopID = desktopID
 	c.secret = secret
+	c.mu.Unlock()
 
 	// 启动心跳（初始状态：隧道未连接）
 	if err := c.startHeartbeat("", false); err != nil {

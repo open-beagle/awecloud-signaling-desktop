@@ -133,8 +133,7 @@ if not "%BUILD_ADDRESS%"=="" (
     set LDFLAGS=!LDFLAGS! -X "github.com/open-beagle/awecloud-signaling-desktop/internal/config.buildAddress=%BUILD_ADDRESS%"
 )
 
-set BUILD_OUTPUT=%OUTPUT_DIR%\signal_desktop.exe
-set OUTPUT_NAME=signal_desktop-%BUILD_VERSION%-windows-%GOARCH%.exe
+set BUILD_OUTPUT=%OUTPUT_DIR%\awecloud-signaling-desktop.exe
 
 echo Building with: go build -tags production -trimpath -ldflags "%LDFLAGS%" -o %BUILD_OUTPUT%
 go build -tags production -trimpath -ldflags "%LDFLAGS%" -o %BUILD_OUTPUT%
@@ -148,13 +147,9 @@ if %ERRORLEVEL% neq 0 (
 REM 检查构建结果
 if exist "%BUILD_OUTPUT%" (
     echo [SUCCESS] Build successful: %BUILD_OUTPUT%
-    
-    REM 复制并重命名
-    copy "%BUILD_OUTPUT%" "%OUTPUT_DIR%\%OUTPUT_NAME%" >nul
-    echo [SUCCESS] Output: %OUTPUT_DIR%\%OUTPUT_NAME%
-    
+
     REM 显示文件大小
-    for %%A in ("%OUTPUT_DIR%\%OUTPUT_NAME%") do echo   File size: %%~zA bytes
+    for %%A in ("%BUILD_OUTPUT%") do echo   File size: %%~zA bytes
 ) else (
     echo [ERROR] Build failed - output file not found
     call :cleanWindowsResources

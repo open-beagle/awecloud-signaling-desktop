@@ -8,7 +8,7 @@
 
 ### Windows 版本
 
-**文件**: `build/bin/signal-desktop.exe`  
+**文件**: `build/bin/awecloud-signaling-desktop.exe`
 **大小**: 22MB  
 **平台**: Windows 10/11 (64位)  
 **架构**: amd64
@@ -69,7 +69,7 @@
 
 ### 安装
 
-1. 下载 `signal-desktop.exe`
+1. 下载 `awecloud-signaling-desktop.exe`
 2. 双击运行（无需安装）
 3. 如提示安装 WebView2，按提示操作
 
