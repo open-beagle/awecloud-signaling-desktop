@@ -2,7 +2,7 @@
   <div class="resources-page">
     <div class="page-header">
       <div>
-        <h1>资源浏览</h1>
+        <h1>资源</h1>
         <p>当前账号可访问的主机、容器、K8S 集群和服务</p>
       </div>
       <button class="icon-btn" title="刷新资源" :disabled="loading" @click="loadResources">

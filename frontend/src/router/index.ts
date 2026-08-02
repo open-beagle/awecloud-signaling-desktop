@@ -2,7 +2,6 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import Login from '../views/Login.vue'
 import Layout from '../components/Layout.vue'
-import Services from '../views/Services.vue'
 import Hosts from '../views/Hosts.vue'
 import K8S from '../views/K8S.vue'
 import K8SDetail from '../views/K8SDetail.vue'
@@ -32,8 +31,7 @@ const routes = [
       },
       {
         path: 'services',
-        name: 'Services',
-        component: Services
+        redirect: '/resources'
       },
       {
         path: 'hosts',

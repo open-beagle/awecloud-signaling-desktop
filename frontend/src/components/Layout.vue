@@ -1,132 +1,114 @@
 <template>
   <div class="app-layout">
-    <!-- 顶部导航栏 -->
-    <div class="navbar">
-      <div class="navbar-left">
-        <img src="../assets/logo.png" alt="Logo" class="logo" />
-        <span class="app-name">信令桌面</span>
-        
-        <!-- gRPC 状态 -->
-        <el-tooltip :content="grpcTooltip" placement="bottom">
-          <div class="status-indicator grpc-status">
-            <el-icon v-if="grpcStatus.connected" class="status-icon connected"><CircleCheck /></el-icon>
-            <el-icon v-else-if="grpcReconnecting" class="status-icon reconnecting is-loading"><Loading /></el-icon>
-            <el-icon v-else class="status-icon disconnected"><CircleClose /></el-icon>
-            <span class="status-text">gRPC</span>
-          </div>
-        </el-tooltip>
-        
-        <!-- 隧道状态 -->
-        <el-tooltip :content="tunnelTooltip" placement="bottom">
-          <div class="tunnel-status" @click="handleTunnelClick">
-            <el-icon v-if="tunnelLoading" class="is-loading tunnel-icon"><Loading /></el-icon>
-            <el-icon v-else-if="tunnelStatus.connected" class="tunnel-icon connected"><CircleCheck /></el-icon>
-            <el-icon v-else class="tunnel-icon disconnected"><CircleClose /></el-icon>
-            <span v-if="tunnelStatus.connected" class="tunnel-ip">{{ tunnelStatus.ip }}</span>
-            <span v-else class="tunnel-text">Tunnel</span>
-          </div>
-        </el-tooltip>
+    <header class="titlebar">
+      <div class="brand">
+        <img src="../assets/logo.png" alt="Beagle Signal" class="logo" />
+        <span>Beagle Signal</span>
       </div>
-      
-      <div class="navbar-right">
-        <!-- 资源浏览 -->
-        <div
-          class="nav-item"
-          :class="{ active: currentRoute === '/resources' }"
-          @click="navigateTo('/resources')"
-        >
-          <el-icon><Collection /></el-icon>
-          <span>资源浏览</span>
+      <span class="window-title">安全访问客户端</span>
+    </header>
+
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="identity">
+          <span class="identity-label">当前身份</span>
+          <strong :title="authStore.clientId">{{ authStore.clientId || '已登录用户' }}</strong>
+          <small>实名用户</small>
         </div>
 
-        <!-- 我的服务 -->
-        <div 
-          class="nav-item"
-          :class="{ active: currentRoute === '/services' }"
-          @click="navigateTo('/services')"
-        >
-          <el-icon><Grid /></el-icon>
-          <span>我的服务</span>
-        </div>
-        
-        <!-- 我的主机 -->
-        <div 
-          class="nav-item"
-          :class="{ active: currentRoute.startsWith('/hosts') }"
-          @click="navigateTo('/hosts')"
-        >
-          <el-icon><Monitor /></el-icon>
-          <span>我的主机</span>
-        </div>
+        <nav class="nav" aria-label="Desktop 主导航">
+          <span class="nav-label">访问</span>
+          <button
+            v-for="item in accessNavigation"
+            :key="item.path"
+            class="nav-item"
+            :class="{ active: isActive(item.path) }"
+            type="button"
+            @click="navigateTo(item.path)"
+          >
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span>{{ item.label }}</span>
+          </button>
 
-        <!-- 我的设备 -->
-        <div 
-          class="nav-item"
-          :class="{ active: currentRoute.startsWith('/devices') }"
-          @click="navigateTo('/devices')"
-        >
-          <el-icon><Iphone /></el-icon>
-          <span>我的设备</span>
-        </div>
-        
-        <!-- 我的K8S -->
-        <div 
-          class="nav-item"
-          :class="{ active: currentRoute.startsWith('/k8s') }"
-          @click="navigateTo('/k8s')"
-        >
-          <el-icon><Compass /></el-icon>
-          <span>我的K8S</span>
-        </div>
-        
-        <!-- 用户菜单 -->
-        <el-dropdown trigger="hover" @command="handleUserCommand">
-          <div class="user-menu">
-            <el-icon class="user-icon"><User /></el-icon>
-          </div>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item disabled>
-                <div class="user-info">
+          <span class="nav-label account-label">账号与客户端</span>
+          <button
+            v-for="item in accountNavigation"
+            :key="item.path"
+            class="nav-item"
+            :class="{ active: isActive(item.path) }"
+            type="button"
+            @click="navigateTo(item.path)"
+          >
+            <el-icon><component :is="item.icon" /></el-icon>
+            <span>{{ item.label }}</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <button class="connection-summary" type="button" @click="navigateTo('/logs')">
+            <span class="connection-copy">
+              <strong>连接状态</strong>
+              <small>{{ connectionDescription }}</small>
+            </span>
+            <el-icon v-if="connectionLoading" class="is-loading status-loading"><Loading /></el-icon>
+            <span v-else class="status-dot" :class="connectionTone" aria-hidden="true"></span>
+          </button>
+
+          <el-dropdown trigger="click" placement="top-start" @command="handleUserCommand">
+            <button class="account-menu" type="button">
+              <el-icon><User /></el-icon>
+              <span>账号操作</span>
+              <el-icon class="account-chevron"><ArrowUp /></el-icon>
+            </button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="logout">
+                  <el-icon><SwitchButton /></el-icon>
+                  <span>注销</span>
+                </el-dropdown-item>
+                <el-dropdown-item command="switchUser">
                   <el-icon><User /></el-icon>
-                  <span>{{ authStore.clientId }}</span>
-                </div>
-              </el-dropdown-item>
-              <el-dropdown-item divided command="logs">
-                <el-icon><Document /></el-icon>
-                <span>查看日志</span>
-              </el-dropdown-item>
-              <el-dropdown-item divided command="logout">
-                <el-icon><SwitchButton /></el-icon>
-                <span>注销</span>
-              </el-dropdown-item>
-              <el-dropdown-item command="switchUser">
-                <el-icon><User /></el-icon>
-                <span>切换用户</span>
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-      </div>
-    </div>
-    
-    <!-- 主内容区域 -->
-    <div class="main-content">
-      <router-view />
+                  <span>切换用户</span>
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <router-view />
+      </main>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { computed, markRaw, onMounted, onUnmounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Collection, Grid, Document, Monitor, User, SwitchButton, CircleCheck, CircleClose, Loading, Iphone, Compass } from '@element-plus/icons-vue'
+import {
+  ArrowUp,
+  Collection,
+  Compass,
+  Document,
+  Iphone,
+  Loading,
+  Monitor,
+  SwitchButton,
+  User
+} from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
 import { useDomainsStore } from '../stores/domains'
 import type { DomainItem } from '../stores/domains'
-import { GetTunnelStatus, ReconnectTunnel, GetGRPCStatus, GetDomainList, Logout, ClearCredentials } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import {
+  ClearCredentials,
+  GetDomainList,
+  GetGRPCStatus,
+  GetTunnelStatus,
+  Logout
+} from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 const router = useRouter()
 const route = useRoute()
@@ -134,37 +116,37 @@ const authStore = useAuthStore()
 const servicesStore = useServicesStore()
 const domainsStore = useDomainsStore()
 
-// 隧道状态
-const tunnelStatus = ref({ connected: false, ip: '', error: '' })
-const tunnelLoading = ref(false)
-let tunnelTimer: number | null = null
+const accessNavigation = [
+  { path: '/resources', label: '资源', icon: markRaw(Collection) },
+  { path: '/hosts', label: 'SSH', icon: markRaw(Monitor) },
+  { path: '/k8s', label: 'Kubernetes', icon: markRaw(Compass) }
+]
 
-// gRPC 状态
+const accountNavigation = [
+  { path: '/devices', label: '我的设备', icon: markRaw(Iphone) },
+  { path: '/logs', label: '连接诊断', icon: markRaw(Document) }
+]
+
+const tunnelStatus = ref({ connected: false, ip: '', error: '' })
 const grpcStatus = ref({ connected: false, server_address: '', error: '' })
+const connectionLoading = ref(true)
+let tunnelTimer: number | null = null
 let grpcTimer: number | null = null
 let domainsTimer: number | null = null
-// gRPC 重连中状态：之前连接过但现在断开
-const grpcWasConnected = ref(false)
-const grpcReconnecting = computed(() => {
-  return grpcWasConnected.value && !grpcStatus.value.connected
+
+const connectionDescription = computed(() => {
+  if (connectionLoading.value) return '正在检测'
+  if (grpcStatus.value.connected && tunnelStatus.value.connected) {
+    return tunnelStatus.value.ip || '服务与网络已连接'
+  }
+  if (grpcStatus.value.connected || tunnelStatus.value.connected) return '部分连接可用'
+  return '连接中断'
 })
 
-const tunnelTooltip = computed(() => {
-  if (tunnelLoading.value) return '正在连接隧道...'
-  if (tunnelStatus.value.connected) {
-    return `隧道已连接\n点击可重连`
-  }
-  return `${tunnelStatus.value.error || '隧道未连接'}\n点击连接`
-})
-
-const grpcTooltip = computed(() => {
-  if (grpcStatus.value.connected) {
-    return `gRPC 已连接\n服务器: ${grpcStatus.value.server_address}`
-  }
-  if (grpcReconnecting.value) {
-    return `gRPC 重连中...\n${grpcStatus.value.error || ''}`
-  }
-  return `gRPC 未连接\n${grpcStatus.value.error || ''}`
+const connectionTone = computed(() => {
+  if (grpcStatus.value.connected && tunnelStatus.value.connected) return 'connected'
+  if (grpcStatus.value.connected || tunnelStatus.value.connected) return 'warning'
+  return 'disconnected'
 })
 
 const loadTunnelStatus = async () => {
@@ -186,9 +168,6 @@ const loadGRPCStatus = async () => {
   try {
     const status = await GetGRPCStatus()
     if (status) {
-      if (status.connected) {
-        grpcWasConnected.value = true
-      }
       grpcStatus.value = {
         connected: status.connected,
         server_address: status.server_address || '',
@@ -200,6 +179,11 @@ const loadGRPCStatus = async () => {
   }
 }
 
+const loadConnectionStatus = async () => {
+  await Promise.all([loadTunnelStatus(), loadGRPCStatus()])
+  connectionLoading.value = false
+}
+
 const loadDomains = async () => {
   try {
     const domains = await GetDomainList()
@@ -209,59 +193,30 @@ const loadDomains = async () => {
   }
 }
 
-const handleTunnelClick = async () => {
-  if (tunnelLoading.value) return
-  tunnelLoading.value = true
-  try {
-    await ReconnectTunnel()
-    await loadTunnelStatus()
-    if (tunnelStatus.value.connected) {
-      ElMessage.success(`隧道已连接: ${tunnelStatus.value.ip}`)
-    } else {
-      ElMessage.error(tunnelStatus.value.error || '连接失败')
-    }
-  } catch (error: any) {
-    ElMessage.error(error.message || '重连失败')
-    await loadTunnelStatus()
-  } finally {
-    tunnelLoading.value = false
-  }
-}
-
 onMounted(() => {
-  loadTunnelStatus()
-  loadGRPCStatus()
+  loadConnectionStatus()
   loadDomains()
   tunnelTimer = window.setInterval(loadTunnelStatus, 5000)
   grpcTimer = window.setInterval(loadGRPCStatus, 5000)
-  domainsTimer = window.setInterval(loadDomains, 30000) // 30秒刷新一次域名列表
+  domainsTimer = window.setInterval(loadDomains, 30000)
 })
 
 onUnmounted(() => {
-  if (tunnelTimer) {
-    clearInterval(tunnelTimer)
-  }
-  if (grpcTimer) {
-    clearInterval(grpcTimer)
-  }
-  if (domainsTimer) {
-    clearInterval(domainsTimer)
-  }
+  if (tunnelTimer) clearInterval(tunnelTimer)
+  if (grpcTimer) clearInterval(grpcTimer)
+  if (domainsTimer) clearInterval(domainsTimer)
 })
 
-const currentRoute = computed(() => route.path)
+const isActive = (path: string) => {
+  return route.path === path || (path !== '/resources' && route.path.startsWith(`${path}/`))
+}
 
 const navigateTo = (path: string) => {
-  if (currentRoute.value !== path) {
-    router.push(path)
-  }
+  if (route.path !== path) router.push(path)
 }
 
 const handleUserCommand = async (command: string) => {
-  if (command === 'logs') {
-    navigateTo('/logs')
-  } else if (command === 'switchUser') {
-    // 切换用户：注销 + 清除所有凭据，强制重新走完整登录流程
+  if (command === 'switchUser') {
     await Logout()
     await ClearCredentials()
     authStore.logout()
@@ -283,182 +238,237 @@ const handleUserCommand = async (command: string) => {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: #f5f5f5;
+  color: #303133;
+  background: #f4f6f8;
 }
 
-.navbar {
-  background: white;
-  height: 60px;
+.titlebar {
+  height: 44px;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
+  flex: 0 0 44px;
   padding: 0 16px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  z-index: 100;
-}
-
-.navbar-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.logo {
-  width: 32px;
-  height: 32px;
-  object-fit: contain;
-}
-
-.app-name {
-  font-size: 16px;
-  font-weight: 500;
-  color: #333;
-}
-
-.status-indicator {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  margin-left: 8px;
-}
-
-.grpc-status {
-  cursor: default;
-}
-
-.status-icon {
-  font-size: 14px;
-}
-
-.status-icon.connected {
-  color: #67c23a;
-}
-
-.status-icon.disconnected {
-  color: #f56c6c;
-}
-
-.status-icon.reconnecting {
-  color: #e6a23c;
-}
-
-.status-text {
-  font-size: 12px;
-  color: #666;
-  font-weight: 500;
-}
-
-.tunnel-status {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.2s;
-  margin-left: 8px;
-}
-
-.tunnel-status:hover {
-  background: #f5f5f5;
-}
-
-.tunnel-icon {
-  font-size: 14px;
-}
-
-.tunnel-icon.connected {
-  color: #67c23a;
-}
-
-.tunnel-icon.disconnected {
-  color: #f56c6c;
-}
-
-.tunnel-ip {
-  font-size: 12px;
-  color: #67c23a;
-  font-family: monospace;
-}
-
-.tunnel-text {
-  font-size: 12px;
-  color: #666;
-  font-weight: 500;
-}
-
-.navbar-right {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-  color: #666;
-  font-size: 14px;
+  background: #fff;
+  border-bottom: 1px solid #e4e7ed;
   user-select: none;
 }
 
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.logo {
+  width: 26px;
+  height: 26px;
+  object-fit: contain;
+}
+
+.window-title {
+  color: #909399;
+  font-size: 12px;
+}
+
+.app-shell {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+}
+
+.sidebar {
+  width: 216px;
+  display: flex;
+  flex: 0 0 216px;
+  flex-direction: column;
+  padding: 14px 10px 10px;
+  background: #fff;
+  border-right: 1px solid #e4e7ed;
+}
+
+.identity {
+  min-width: 0;
+  padding: 10px 10px 12px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.identity-label,
+.nav-label {
+  display: block;
+  color: #909399;
+  font-size: 11px;
+}
+
+.identity strong {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.identity small {
+  display: block;
+  margin-top: 3px;
+  color: #909399;
+  font-size: 11px;
+}
+
+.nav {
+  padding-top: 10px;
+}
+
+.nav-label {
+  margin: 8px 11px 5px;
+  font-weight: 600;
+}
+
+.account-label {
+  margin-top: 18px;
+}
+
+.nav-item {
+  width: 100%;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 11px;
+  color: #606266;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.15s, background-color 0.15s, transform 0.15s;
+}
+
 .nav-item:hover {
-  background: #f5f5f5;
   color: #409eff;
+  background: #f1f5f9;
+}
+
+.nav-item:active,
+.account-menu:active,
+.connection-summary:active {
+  transform: translateY(1px);
+}
+
+.nav-item:focus-visible,
+.account-menu:focus-visible,
+.connection-summary:focus-visible {
+  outline: 2px solid #409eff;
+  outline-offset: 2px;
 }
 
 .nav-item.active {
-  background: #e6f4ff;
   color: #409eff;
-  font-weight: 500;
+  background: #ecf5ff;
+  font-weight: 600;
 }
 
 .nav-item .el-icon {
   font-size: 18px;
 }
 
-.user-menu {
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid #ebeef5;
+}
+
+.connection-summary,
+.account-menu {
+  width: 100%;
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s;
-  color: #666;
+  transition: background-color 0.15s, transform 0.15s;
 }
 
-.user-menu:hover {
-  background: #f5f5f5;
-  color: #409eff;
+.connection-summary {
+  justify-content: space-between;
+  padding: 8px 10px;
+  text-align: left;
 }
 
-.user-icon {
-  font-size: 20px;
+.connection-summary:hover,
+.account-menu:hover {
+  background: #f5f7fa;
 }
 
-.user-info {
+.connection-copy {
+  min-width: 0;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.connection-copy strong {
+  color: #606266;
+  font-size: 12px;
+}
+
+.connection-copy small {
+  max-width: 145px;
+  overflow: hidden;
+  color: #909399;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 50%;
+}
+
+.status-dot.connected {
+  background: #67c23a;
+}
+
+.status-dot.warning {
+  background: #e6a23c;
+}
+
+.status-dot.disconnected {
+  background: #f56c6c;
+}
+
+.status-loading {
+  color: #909399;
+}
+
+.account-menu {
+  height: 38px;
   gap: 8px;
-  padding: 4px 0;
-  color: #333;
-  font-weight: 500;
+  margin-top: 4px;
+  padding: 0 10px;
+  color: #606266;
+  font-size: 12px;
+}
+
+.account-chevron {
+  margin-left: auto;
 }
 
 .main-content {
-  flex: 1;
-  overflow: auto;
+  min-width: 0;
+  min-height: 0;
   display: flex;
+  flex: 1;
   flex-direction: column;
+  overflow: auto;
 }
 </style>

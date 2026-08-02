@@ -1,5 +1,10 @@
 ﻿<template>
   <div class="hosts-page">
+    <div class="page-header">
+      <h1>SSH</h1>
+      <p>从当前组织授权的主机中选择目标并打开终端。</p>
+    </div>
+
     <div v-if="hostsDomains.length === 0" class="empty">
       暂无可用主机
     </div>
@@ -55,6 +60,23 @@ const filteredDomains = computed(() => {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+}
+
+.page-header {
+  margin-bottom: 18px;
+}
+
+.page-header h1 {
+  margin: 0;
+  color: #303133;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.page-header p {
+  margin: 6px 0 0;
+  color: #909399;
+  font-size: 13px;
 }
 
 .empty {

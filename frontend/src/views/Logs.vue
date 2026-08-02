@@ -1,9 +1,11 @@
 <template>
   <div class="logs-page">
-    <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-left">
-        <h2>查看日志</h2>
+        <div>
+          <h2>连接诊断</h2>
+          <p>查看服务同步、安全网络、本地代理和客户端日志。</p>
+        </div>
         <el-tag v-if="logs.length > 0">
           共 {{ logs.length }} 条
         </el-tag>
@@ -13,6 +15,7 @@
           <el-button 
             :icon="Refresh" 
             :type="autoRefresh ? 'primary' : 'default'"
+            aria-label="切换日志自动刷新"
             @click="toggleAutoRefresh"
             circle
           />
@@ -20,6 +23,7 @@
         <el-tooltip content="滚动到底部" placement="bottom">
           <el-button 
             :icon="Bottom" 
+            aria-label="滚动到日志底部"
             @click="scrollToBottom"
             circle
           />
@@ -27,6 +31,7 @@
         <el-tooltip content="清空" placement="bottom">
           <el-button 
             :icon="Delete" 
+            aria-label="清空日志"
             @click="handleClear"
             circle
           />
@@ -34,6 +39,7 @@
         <el-tooltip content="下载" placement="bottom">
           <el-button 
             :icon="Download" 
+            aria-label="下载日志"
             @click="handleDownload"
             circle
           />
@@ -41,7 +47,38 @@
       </div>
     </div>
 
-    <!-- 日志内容 -->
+    <div class="diagnostic-summary" v-loading="statusLoading">
+      <div class="diagnostic-item">
+        <span class="diagnostic-label">服务同步</span>
+        <strong>{{ grpcStatus.connected ? '正常' : '未连接' }}</strong>
+        <small>{{ grpcStatus.server_address || grpcStatus.error || '等待服务状态' }}</small>
+      </div>
+      <div class="diagnostic-item">
+        <span class="diagnostic-label">安全网络</span>
+        <strong>{{ tunnelStatus.connected ? '已连接' : '未连接' }}</strong>
+        <small>{{ tunnelStatus.ip || tunnelStatus.error || '等待网络状态' }}</small>
+        <el-button
+          v-if="!tunnelStatus.connected"
+          class="reconnect-button"
+          size="small"
+          :loading="reconnecting"
+          @click="handleReconnect"
+        >
+          重新连接
+        </el-button>
+      </div>
+      <div class="diagnostic-item">
+        <span class="diagnostic-label">本地代理</span>
+        <strong>{{ proxyStatus.length }} 个活动监听</strong>
+        <small>{{ proxyStatus.length ? '按已访问资源建立' : '访问资源时自动建立' }}</small>
+      </div>
+    </div>
+
+    <div class="log-section-title">
+      <h3>客户端日志</h3>
+      <span>仅保留本次运行期间的事件</span>
+    </div>
+
     <div class="logs-content" ref="logsContainer">
       <div v-if="logs.length === 0" class="empty">
         暂无日志
@@ -64,13 +101,68 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Delete, Download, Bottom } from '@element-plus/icons-vue'
-import { GetLogs } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import {
+  GetGRPCStatus,
+  GetLogs,
+  GetProxyStatus,
+  GetTunnelStatus,
+  ReconnectTunnel
+} from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
 
 const logs = ref<string[]>([])
 const logsContainer = ref<HTMLElement | null>(null)
 const autoRefresh = ref(true)
 const isUserAtBottom = ref(true)
 let refreshInterval: number | null = null
+let statusInterval: number | null = null
+const statusLoading = ref(true)
+const reconnecting = ref(false)
+const grpcStatus = ref({ connected: false, server_address: '', error: '' })
+const tunnelStatus = ref({ connected: false, ip: '', error: '' })
+const proxyStatus = ref<any[]>([])
+
+const loadStatus = async () => {
+  try {
+    const [grpc, tunnel, proxies] = await Promise.all([
+      GetGRPCStatus(),
+      GetTunnelStatus(),
+      GetProxyStatus()
+    ])
+    grpcStatus.value = {
+      connected: Boolean(grpc?.connected),
+      server_address: grpc?.server_address || '',
+      error: grpc?.error || ''
+    }
+    tunnelStatus.value = {
+      connected: Boolean(tunnel?.connected),
+      ip: tunnel?.ip || '',
+      error: tunnel?.error || ''
+    }
+    proxyStatus.value = (proxies || []).filter(Boolean)
+  } catch (error: any) {
+    ElMessage.error('加载连接状态失败: ' + (error?.message || error))
+  } finally {
+    statusLoading.value = false
+  }
+}
+
+const handleReconnect = async () => {
+  if (reconnecting.value) return
+  reconnecting.value = true
+  try {
+    await ReconnectTunnel()
+    await loadStatus()
+    if (tunnelStatus.value.connected) {
+      ElMessage.success('安全网络已重新连接')
+    } else {
+      ElMessage.error(tunnelStatus.value.error || '安全网络连接失败')
+    }
+  } catch (error: any) {
+    ElMessage.error(error?.message || '安全网络重连失败')
+  } finally {
+    reconnecting.value = false
+  }
+}
 
 // 检查用户是否在底部（允许 50px 误差）
 const checkIfAtBottom = () => {
@@ -188,6 +280,7 @@ watch(autoRefresh, (newVal) => {
 })
 
 onMounted(() => {
+  loadStatus()
   // 首次加载，滚动到底部
   loadLogs(true)
   
@@ -204,11 +297,15 @@ onMounted(() => {
       loadLogs()
     }, 2000)
   }
+  statusInterval = window.setInterval(loadStatus, 5000)
 })
 
 onUnmounted(() => {
   if (refreshInterval) {
     clearInterval(refreshInterval)
+  }
+  if (statusInterval) {
+    clearInterval(statusInterval)
   }
   
   const container = logsContainer.value
@@ -241,6 +338,12 @@ onUnmounted(() => {
   gap: 12px;
 }
 
+.header-left p {
+  margin: 5px 0 0;
+  color: #909399;
+  font-size: 13px;
+}
+
 .header-left h2 {
   margin: 0;
   font-size: 20px;
@@ -254,10 +357,74 @@ onUnmounted(() => {
   gap: 10px;
 }
 
+.diagnostic-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 20px 24px 0;
+  overflow: hidden;
+  background: #e4e7ed;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+}
+
+.diagnostic-item {
+  min-height: 104px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 16px 18px;
+  background: #fff;
+}
+
+.diagnostic-label {
+  color: #909399;
+  font-size: 12px;
+}
+
+.diagnostic-item strong {
+  margin-top: 8px;
+  color: #303133;
+  font-size: 16px;
+}
+
+.diagnostic-item small {
+  max-width: 100%;
+  overflow: hidden;
+  margin-top: 5px;
+  color: #909399;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reconnect-button {
+  margin-top: 10px;
+}
+
+.log-section-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 22px 24px 0;
+}
+
+.log-section-title h3 {
+  margin: 0;
+  color: #303133;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.log-section-title span {
+  color: #909399;
+  font-size: 12px;
+}
+
 .logs-content {
   flex: 1;
   overflow-y: auto;
-  padding: 24px;
+  padding: 12px 24px 24px;
 }
 
 .empty {

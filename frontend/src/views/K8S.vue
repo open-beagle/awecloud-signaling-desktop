@@ -1,5 +1,10 @@
 <template>
   <div class="k8s-page">
+    <div class="page-header">
+      <h1>Kubernetes</h1>
+      <p>使用当前组织授权的集群生成或复制 kubeconfig。</p>
+    </div>
+
     <div v-if="k8sDomains.length === 0" class="empty">
       暂无可用的 K8S 集群
     </div>
@@ -92,6 +97,23 @@ function copyAllKubeconfig() {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
+}
+
+.page-header {
+  margin-bottom: 18px;
+}
+
+.page-header h1 {
+  margin: 0;
+  color: #303133;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.page-header p {
+  margin: 6px 0 0;
+  color: #909399;
+  font-size: 13px;
 }
 
 .empty {
