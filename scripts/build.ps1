@@ -246,6 +246,26 @@ if (-not [string]::IsNullOrEmpty($BuildAddress)) {
 }
 
 $BuildOutput = "build\bin\awecloud-signaling-desktop.exe"
+$BuildOutputFull = [System.IO.Path]::GetFullPath((Join-Path $DesktopDir $BuildOutput))
+$BuildBackup = "$BuildOutputFull~"
+
+# Windows may rename an in-use output to .exe~ and leave a second artifact.
+# Refuse to build over the running fixed output so every successful build has
+# exactly one canonical filename and location.
+$RunningBuild = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath) -eq $BuildOutputFull) }
+if ($RunningBuild) {
+    $RunningPids = ($RunningBuild | Select-Object -ExpandProperty ProcessId) -join ", "
+    Write-Host "[ERROR] Fixed output is running (PID: $RunningPids): $BuildOutputFull" -ForegroundColor Red
+    Write-Host "Close the Desktop process before rebuilding." -ForegroundColor Yellow
+    Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
+    Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
+    exit 1
+}
+
+if (Test-Path -LiteralPath $BuildBackup) {
+    Remove-Item -LiteralPath $BuildBackup -Force
+}
 
 Write-Host "Building with: go build -tags production -trimpath -ldflags `"$LdFlags`" -o $BuildOutput"
 go build -tags production -trimpath -ldflags $LdFlags -o $BuildOutput
@@ -259,6 +279,12 @@ if ($LASTEXITCODE -ne 0) {
 
 # Check build result
 if (Test-Path $BuildOutput) {
+    if (Test-Path -LiteralPath $BuildBackup) {
+        Write-Host "[ERROR] Unexpected backup artifact created: $BuildBackup" -ForegroundColor Red
+        Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
+        Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
+        exit 1
+    }
     Write-Host "[SUCCESS] Build successful: $BuildOutput" -ForegroundColor Green
 
     $FileSize = (Get-Item $BuildOutput).Length
