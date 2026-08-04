@@ -13,11 +13,15 @@ NC='\033[0m' # No Color
 # 切换到脚本所在目录的上级目录（desktop/）
 cd "$(dirname "$0")/.."
 
-# 发布地址是公开构建配置，统一从仓库 .env 加载。
-if [ -f ".env" ]; then
+# 本地配置优先；CI 使用仓库中的公开示例配置。
+ENV_FILE=".env"
+if [ ! -f "${ENV_FILE}" ]; then
+    ENV_FILE=".env.example"
+fi
+if [ -f "${ENV_FILE}" ]; then
     set -a
     # shellcheck disable=SC1091
-    . ./.env
+    . "./${ENV_FILE}"
     set +a
 fi
 

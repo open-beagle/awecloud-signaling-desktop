@@ -29,6 +29,7 @@ go.work.sum
 .DS_Store
 
 # Config
+/.env
 config/config.json
 *.local.json
 
