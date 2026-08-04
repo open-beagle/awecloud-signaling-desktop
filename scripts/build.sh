@@ -13,6 +13,14 @@ NC='\033[0m' # No Color
 # 切换到脚本所在目录的上级目录（desktop/）
 cd "$(dirname "$0")/.."
 
+# 发布地址是公开构建配置，统一从仓库 .env 加载。
+if [ -f ".env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . ./.env
+    set +a
+fi
+
 # 读取版本号
 if [ -z "$BUILD_VERSION" ]; then
     if [ -f "version" ]; then
@@ -22,7 +30,7 @@ if [ -z "$BUILD_VERSION" ]; then
     fi
 fi
 
-BUILD_ADDRESS="${BUILD_ADDRESS:-}"  # 默认 Server 地址（可选）
+BUILD_ADDRESS="${BUILD_ADDRESS:-${SIGNALING_ADDRESS:-}}"  # 默认 Server 地址（可选）
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo "0")
 BUILD_DATE=$(TZ=Asia/Shanghai date '+%Y-%m-%d_%H:%M:%S')
