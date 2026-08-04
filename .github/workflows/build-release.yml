@@ -57,6 +57,7 @@ jobs:
       - name: Build Desktop Applications (Linux and Windows)
         run: |
           PLATFORMS=linux/amd64,windows/amd64 \
+          RELEASE_ARTIFACTS=true \
           BUILD_VERSION=${{ needs.read-version.outputs.BUILD_VERSION }} \
           BUILD_ADDRESS=${{ secrets.SIGNALING_ADDRESS }} \
           bash ./scripts/build.sh
@@ -94,6 +95,7 @@ jobs:
       - name: Build Desktop Application (macOS)
         run: |
           PLATFORMS=darwin/arm64,darwin/amd64 \
+          RELEASE_ARTIFACTS=true \
           BUILD_VERSION=${{ needs.read-version.outputs.BUILD_VERSION }} \
           BUILD_ADDRESS=${{ secrets.SIGNALING_ADDRESS }} \
           bash ./scripts/build.sh

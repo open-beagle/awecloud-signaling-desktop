@@ -251,9 +251,20 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
             ;;
     esac
     
-    # Keep the development artifact path stable. Version and commit metadata are
-    # embedded through ldflags instead of being encoded in the filename.
-    if [ "$OS" = "windows" ]; then
+    # Local builds use a stable path. Release builds retain platform and version
+    # in the filename so multi-platform artifacts cannot overwrite each other.
+    if [ "${RELEASE_ARTIFACTS:-false}" = "true" ]; then
+        OUTPUT_NAME="signal_desktop-${BUILD_VERSION}-${OS}-${ARCH}"
+        if [ "$OS" = "windows" ]; then
+            OUTPUT_NAME="${OUTPUT_NAME}.exe"
+            BUILD_OUTPUT="${OUTPUT_DIR}/${OUTPUT_NAME}"
+        elif [ "$OS" = "darwin" ]; then
+            OUTPUT_NAME="${OUTPUT_NAME}.zip"
+            BUILD_OUTPUT="${OUTPUT_DIR}/signal_desktop-${BUILD_VERSION}-${OS}-${ARCH}"
+        else
+            BUILD_OUTPUT="${OUTPUT_DIR}/${OUTPUT_NAME}"
+        fi
+    elif [ "$OS" = "windows" ]; then
         OUTPUT_NAME="awecloud-signaling-desktop.exe"
         BUILD_OUTPUT="${OUTPUT_DIR}/${OUTPUT_NAME}"
     elif [ "$OS" = "darwin" ]; then
@@ -329,7 +340,7 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
     <key>CFBundleName</key>
     <string>Signal Desktop</string>
     <key>CFBundleExecutable</key>
-    <string>signal_desktop</string>
+    <string>awecloud-signaling-desktop</string>
     <key>CFBundleIdentifier</key>
     <string>com.awecloud.signaling.desktop</string>
     <key>CFBundleVersion</key>
