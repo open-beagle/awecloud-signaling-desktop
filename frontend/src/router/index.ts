@@ -8,6 +8,8 @@ import K8SDetail from '../views/K8SDetail.vue'
 import Logs from '../views/Logs.vue'
 import Devices from '../views/Devices.vue'
 import Resources from '../views/Resources.vue'
+import Services from '../views/Services.vue'
+import Containers from '../views/Containers.vue'
 
 const routes = [
   {
@@ -31,7 +33,13 @@ const routes = [
       },
       {
         path: 'services',
-        redirect: '/resources'
+        name: 'Services',
+        component: Services
+      },
+      {
+        path: 'containers',
+        name: 'Containers',
+        component: Containers
       },
       {
         path: 'hosts',

@@ -85,35 +85,19 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CopyDocument, Refresh } from '@element-plus/icons-vue'
-import { GetResources, GetResourceTenants, SwitchResourceTenant } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import { useResourceCatalog } from '../composables/useResourceCatalog'
+import type { Resource } from '../composables/useResourceCatalog'
 
-interface Resource {
-  type: string
-  agent_name?: string
-  domain?: string
-  ssh_users?: string[]
-  namespaces?: string[]
-  namespace?: string
-  service_name?: string
-  port?: number
-  display_name?: string
-  tenant_id?: string
-  tenant_name?: string
-  state?: string
-  target_revision?: number
-  ssh_user?: string
-}
-
-interface ResourceTenant {
-  id: string
-  name: string
-}
-
-const resources = ref<Resource[]>([])
-const tenantOptions = ref<ResourceTenant[]>([])
-const activeTenantID = ref('')
-const loading = ref(false)
-const error = ref('')
+const {
+  resources,
+  tenantOptions,
+  activeTenantID,
+  loading,
+  error,
+  loadResources,
+  loadTenants,
+  switchTenant
+} = useResourceCatalog()
 const searchQuery = ref('')
 const typeFilter = ref('all')
 let refreshTimer: number | null = null
@@ -127,53 +111,6 @@ const filteredResources = computed(() => {
       .some(value => value?.toLowerCase().includes(query))
   })
 })
-
-async function loadResources() {
-  loading.value = true
-  error.value = ''
-  try {
-    resources.value = ((await GetResources()) || []).filter(Boolean) as Resource[]
-  } catch (cause: any) {
-    error.value = cause?.message || '资源加载失败'
-  } finally {
-    loading.value = false
-  }
-}
-
-async function loadTenants() {
-  loading.value = true
-  error.value = ''
-  try {
-    tenantOptions.value = ((await GetResourceTenants()) || []) as ResourceTenant[]
-    if (!tenantOptions.value.length) {
-      resources.value = ((await GetResources()) || []).filter(Boolean) as Resource[]
-      return
-    }
-    if (!tenantOptions.value.some(tenant => tenant.id === activeTenantID.value)) {
-      activeTenantID.value = tenantOptions.value[0].id
-    }
-    resources.value = ((await SwitchResourceTenant(activeTenantID.value)) || []).filter(Boolean) as Resource[]
-  } catch (cause: any) {
-    resources.value = []
-    error.value = cause?.message || 'Tenant 资源加载失败'
-  } finally {
-    loading.value = false
-  }
-}
-
-async function switchTenant() {
-  if (!activeTenantID.value) return
-  loading.value = true
-  error.value = ''
-  resources.value = []
-  try {
-    resources.value = ((await SwitchResourceTenant(activeTenantID.value)) || []).filter(Boolean) as Resource[]
-  } catch (cause: any) {
-    error.value = cause?.message || 'Tenant 切换失败'
-  } finally {
-    loading.value = false
-  }
-}
 
 function displayName(resource: Resource) {
   return resource.display_name || resource.service_name || resource.agent_name || resource.domain || '未命名资源'

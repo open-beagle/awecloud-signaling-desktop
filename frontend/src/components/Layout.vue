@@ -89,8 +89,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   ArrowUp,
+  Box,
   Collection,
   Compass,
+  Connection,
   Document,
   Iphone,
   Loading,
@@ -119,7 +121,9 @@ const domainsStore = useDomainsStore()
 const accessNavigation = [
   { path: '/resources', label: '资源', icon: markRaw(Collection) },
   { path: '/hosts', label: 'SSH', icon: markRaw(Monitor) },
-  { path: '/k8s', label: 'Kubernetes', icon: markRaw(Compass) }
+  { path: '/k8s', label: 'Kubernetes', icon: markRaw(Compass) },
+  { path: '/services', label: 'SVC', icon: markRaw(Connection) },
+  { path: '/containers', label: 'Container', icon: markRaw(Box) }
 ]
 
 const accountNavigation = [

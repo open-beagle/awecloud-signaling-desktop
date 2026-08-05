@@ -1291,6 +1291,7 @@ func (c *DesktopClient) GetResourcesForTenant(tenantID string) ([]*ResourceInfo,
 			AgentName: r.AgentName,
 			Domain:    r.Domain,
 			SSHUsers:  r.SshUsers,
+			TenantID:  tenantID,
 		})
 	}
 
@@ -1303,6 +1304,7 @@ func (c *DesktopClient) GetResourcesForTenant(tenantID string) ([]*ResourceInfo,
 			Domain:     r.Domain,
 			K8SGroups:  r.K8SGroups,
 			Namespaces: r.Namespaces,
+			TenantID:   tenantID,
 		})
 	}
 
@@ -1316,6 +1318,7 @@ func (c *DesktopClient) GetResourcesForTenant(tenantID string) ([]*ResourceInfo,
 			Namespace:   r.Namespace,
 			ServiceName: r.ServiceName,
 			Port:        r.Port,
+			TenantID:    tenantID,
 		})
 	}
 

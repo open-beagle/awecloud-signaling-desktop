@@ -3,7 +3,7 @@ name: Build and Release Desktop
 on:
   push:
     branches:
-      - main
+      - release-v1.0
   workflow_dispatch: # 允许手动触发
 
 jobs:

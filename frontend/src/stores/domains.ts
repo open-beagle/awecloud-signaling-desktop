@@ -19,11 +19,6 @@ export const useDomainsStore = defineStore('domains', () => {
   const domains = ref<DomainItem[]>([])
   const loading = ref(false)
 
-  // 计算属性：K8S Service 域名列表（我的服务）
-  const servicesDomains = computed(() => {
-    return domains.value.filter(d => d.type === 'k8ssvc')
-  })
-
   // 计算属性：SSH 域名列表（我的主机）
   // 按 domain 聚合，因为一个主机可能有多个用户
   const hostsDomains = computed(() => {
@@ -60,7 +55,6 @@ export const useDomainsStore = defineStore('domains', () => {
   return {
     domains,
     loading,
-    servicesDomains,
     hostsDomains,
     k8sDomains,
     setDomains,

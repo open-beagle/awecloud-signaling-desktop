@@ -2,10 +2,10 @@
   <div class="resource-page">
     <div class="page-header">
       <div>
-        <h1>SVC</h1>
-        <p>当前账号可访问的 Kubernetes Service</p>
+        <h1>Container</h1>
+        <p>当前 Tenant 授权的容器终端和容器服务</p>
       </div>
-      <button class="icon-btn" title="刷新服务" :disabled="loading" @click="loadResources">
+      <button class="icon-btn" title="刷新容器资源" :disabled="loading" @click="loadResources">
         <el-icon :class="{ 'is-loading': loading }"><Refresh /></el-icon>
       </button>
     </div>
@@ -21,8 +21,13 @@
       >
         <el-option v-for="tenant in tenantOptions" :key="tenant.id" :label="tenant.name || tenant.id" :value="tenant.id" />
       </el-select>
-      <el-input v-model="searchQuery" clearable placeholder="搜索域名、Namespace 或服务" class="search-input" />
-      <span class="count">{{ filteredServices.length }} / {{ services.length }} 个服务</span>
+      <el-input v-model="searchQuery" clearable placeholder="搜索名称、域名或服务" class="search-input" />
+      <el-radio-group v-model="typeFilter" size="default">
+        <el-radio-button label="all">全部</el-radio-button>
+        <el-radio-button label="container_ssh">SSH</el-radio-button>
+        <el-radio-button label="container_service">Service</el-radio-button>
+      </el-radio-group>
+      <span class="count">{{ filteredContainers.length }} / {{ containers.length }} 个资源</span>
     </div>
 
     <div v-if="error" class="error-state">
@@ -30,28 +35,32 @@
       <button @click="loadTenants">重试</button>
     </div>
 
-    <el-table v-else v-loading="loading" :data="filteredServices" stripe height="100%" empty-text="暂无可访问服务">
-      <el-table-column label="服务" min-width="220">
+    <el-table v-else v-loading="loading" :data="filteredContainers" stripe height="100%" empty-text="暂无可访问容器资源">
+      <el-table-column label="资源" min-width="220">
         <template #default="{ row }">
-          <div class="primary">{{ row.service_name || row.display_name || '未命名服务' }}</div>
+          <div class="primary">{{ row.display_name || row.service_name || row.domain || '未命名资源' }}</div>
           <div class="secondary">{{ row.domain || '-' }}</div>
         </template>
       </el-table-column>
-      <el-table-column label="Namespace" min-width="150" prop="namespace" />
-      <el-table-column label="端口" width="110">
-        <template #default="{ row }">{{ row.port || '-' }}</template>
+      <el-table-column label="类型" width="110">
+        <template #default="{ row }">
+          <el-tag size="small" :type="row.type === 'container_ssh' ? 'success' : 'info'">{{ row.type === 'container_ssh' ? 'SSH' : 'Service' }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="目标" min-width="170">
+        <template #default="{ row }">{{ targetLabel(row) }}</template>
       </el-table-column>
       <el-table-column label="状态" width="110">
         <template #default="{ row }">
           <span class="status"><i :class="isAvailable(row) ? 'online' : 'offline'"></i>{{ statusLabel(row) }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="访问地址" min-width="260">
-        <template #default="{ row }"><code>{{ address(row) || '-' }}</code></template>
+      <el-table-column label="连接信息" min-width="260">
+        <template #default="{ row }"><code>{{ connectionText(row) || '-' }}</code></template>
       </el-table-column>
       <el-table-column label="操作" width="72" fixed="right" align="center">
         <template #default="{ row }">
-          <button class="icon-btn table-action" title="复制访问地址" :disabled="!address(row)" @click="copyAddress(row)">
+          <button class="icon-btn table-action" title="复制连接信息" :disabled="!connectionText(row)" @click="copyConnection(row)">
             <el-icon><CopyDocument /></el-icon>
           </button>
         </template>
@@ -78,17 +87,29 @@ const {
   switchTenant
 } = useResourceCatalog()
 const searchQuery = ref('')
+const typeFilter = ref('all')
 let refreshTimer: number | null = null
 
-const services = computed(() => resources.value.filter(resource => resource.type === 'k8ssvc'))
-const filteredServices = computed(() => {
+const containers = computed(() => resources.value.filter(resource =>
+  resource.type === 'container_ssh' || resource.type === 'container_service'
+))
+const filteredContainers = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
-  if (!query) return services.value
-  return services.value.filter(resource =>
-    [resource.domain, resource.namespace, resource.service_name, resource.display_name]
+  return containers.value.filter(resource => {
+    if (typeFilter.value !== 'all' && resource.type !== typeFilter.value) return false
+    if (!query) return true
+    return [resource.display_name, resource.domain, resource.namespace, resource.service_name, resource.tenant_name]
       .some(value => value?.toLowerCase().includes(query))
-  )
+  })
 })
+
+function targetLabel(resource: Resource) {
+  if (resource.type === 'container_service') {
+    return [resource.namespace, resource.service_name, resource.port_name || resource.port]
+      .filter(Boolean).join(' / ') || '-'
+  }
+  return resource.target_revision ? `Revision ${resource.target_revision}` : '-'
+}
 
 function isAvailable(resource: Resource) {
   return !resource.state || resource.state === 'available' || resource.state === 'degraded'
@@ -99,16 +120,17 @@ function statusLabel(resource: Resource) {
   return ({ available: '可用', degraded: '降级', pending: '等待目标', stopped: '已停止', revoked: '已撤销' } as Record<string, string>)[resource.state] || resource.state
 }
 
-function address(resource: Resource) {
+function connectionText(resource: Resource) {
   if (!resource.domain) return ''
+  if (resource.type === 'container_ssh') return `ssh ${resource.ssh_user || 'container'}@${resource.domain}`
   return resource.port ? `${resource.domain}:${resource.port}` : resource.domain
 }
 
-async function copyAddress(resource: Resource) {
-  const value = address(resource)
+async function copyConnection(resource: Resource) {
+  const value = connectionText(resource)
   if (!value) return
   await navigator.clipboard.writeText(value)
-  ElMessage.success('访问地址已复制')
+  ElMessage.success('连接信息已复制')
 }
 
 onMounted(() => {
