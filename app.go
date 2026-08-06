@@ -1869,13 +1869,9 @@ func (a *App) GetDomainList() ([]*DomainItem, error) {
 	a.tenantMutex.Lock()
 	tenantID := a.activeTenantID
 	a.tenantMutex.Unlock()
-	var domains []*client.DomainInfo
-	if tenantID == "" {
-		var err error
-		domains, err = a.desktopClient.GetDomainList()
-		if err != nil {
-			return nil, err
-		}
+	domains, err := a.desktopClient.GetDomainList()
+	if err != nil {
+		return nil, err
 	}
 
 	// 转换为前端格式
@@ -1906,6 +1902,9 @@ func (a *App) GetDomainList() ([]*DomainItem, error) {
 				a.cleanupZTNA()
 				return nil, err
 			}
+			a.tenantMutex.Lock()
+			a.allowedTenantDomains = tenantDomainAllowlist(resources, domains)
+			a.tenantMutex.Unlock()
 		} else {
 			if err := a.syncContainerSSHRoutes(resources); err != nil {
 				log.Printf("[App] ContainerSSH 路由同步失败: %v", err)
@@ -1928,6 +1927,16 @@ func (a *App) GetDomainList() ([]*DomainItem, error) {
 
 	log.Printf("[App] Returning %d domains", len(result))
 	return result, nil
+}
+
+func tenantDomainAllowlist(resources []*client.ResourceInfo, domains []*client.DomainInfo) map[string]struct{} {
+	allowed := tenantResourceDomains(resources)
+	for _, domain := range domains {
+		if domain != nil && domain.Domain != "" {
+			allowed[domain.Domain] = struct{}{}
+		}
+	}
+	return allowed
 }
 
 func (a *App) syncContainerSSHRoutes(resources []*client.ResourceInfo) error {

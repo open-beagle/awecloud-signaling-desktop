@@ -29,3 +29,20 @@ func TestTenantResourceDomainsDropsEmptyEntries(t *testing.T) {
 		t.Fatal("authorized Tenant domain is missing")
 	}
 }
+
+func TestTenantDomainAllowlistKeepsServerDomainsInTenantScope(t *testing.T) {
+	allowlist := tenantDomainAllowlist([]*client.ResourceInfo{
+		{TenantID: "tenant-a", Domain: "ssh.container.beagle"},
+	}, []*client.DomainInfo{
+		nil,
+		{Domain: ""},
+		{Domain: "aliyun-119.ali.szzy.beagle", Type: "ssh", SSHUsers: []string{"root"}},
+	})
+
+	if _, ok := allowlist["ssh.container.beagle"]; !ok {
+		t.Fatal("Tenant resource domain is missing")
+	}
+	if _, ok := allowlist["aliyun-119.ali.szzy.beagle"]; !ok {
+		t.Fatal("server authorized HostSSH domain is missing")
+	}
+}
