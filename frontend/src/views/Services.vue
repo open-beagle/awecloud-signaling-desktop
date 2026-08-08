@@ -80,7 +80,7 @@ const {
 const searchQuery = ref('')
 let refreshTimer: number | null = null
 
-const services = computed(() => resources.value.filter(resource => resource.type === 'k8ssvc'))
+const services = computed(() => resources.value.filter(resource => resource.type === 'container_service'))
 const filteredServices = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   if (!query) return services.value

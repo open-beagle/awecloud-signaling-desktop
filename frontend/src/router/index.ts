@@ -7,14 +7,13 @@ import K8S from '../views/K8S.vue'
 import K8SDetail from '../views/K8SDetail.vue'
 import Logs from '../views/Logs.vue'
 import Devices from '../views/Devices.vue'
-import Resources from '../views/Resources.vue'
 import Services from '../views/Services.vue'
 import Containers from '../views/Containers.vue'
 
 const routes = [
   {
     path: '/',
-    redirect: '/resources'
+    redirect: '/hosts'
   },
   {
     path: '/login',
@@ -26,11 +25,6 @@ const routes = [
     component: Layout,
     meta: { requiresAuth: true },
     children: [
-      {
-        path: 'resources',
-        name: 'Resources',
-        component: Resources
-      },
       {
         path: 'services',
         name: 'Services',
@@ -82,7 +76,7 @@ router.beforeEach((to, from, next) => {
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     next('/login')
   } else if (to.path === '/login' && authStore.isAuthenticated) {
-    next('/resources')
+    next('/hosts')
   } else {
     next()
   }

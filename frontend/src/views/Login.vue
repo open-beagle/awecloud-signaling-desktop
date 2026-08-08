@@ -204,7 +204,7 @@ const handleLogin = async () => {
 
         ElMessage.success('登录成功')
         await new Promise(resolve => setTimeout(resolve, 100))
-        await router.push('/resources')
+        await router.push('/hosts')
       } else if (loginResult.IsDisabled) {
         // 用户被禁用/待审批
         ElMessage.warning(loginResult.Message || '用户未注册或已禁用，请联系管理员审批')
@@ -260,7 +260,7 @@ const handleAutoLogin = async () => {
     await new Promise(resolve => setTimeout(resolve, 100))
     
     // 导航到资源总览
-    await router.push('/resources')
+    await router.push('/hosts')
   } catch (error: any) {
     console.error('Auto login failed:', error)
     // 自动登录失败，切换到 saved 模式
@@ -317,7 +317,7 @@ const determineLoginMode = (savedCreds: any) => {
 onMounted(async () => {
   // 如果已认证，直接导航到资源总览
   if (authStore.isAuthenticated) {
-    await router.push('/resources')
+    await router.push('/hosts')
     return
   }
 

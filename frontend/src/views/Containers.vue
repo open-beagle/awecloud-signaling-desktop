@@ -2,8 +2,8 @@
   <div class="resource-page">
     <div class="page-header">
       <div>
-        <h1>Container</h1>
-        <p>当前 Tenant 授权的容器终端和容器服务</p>
+        <h1>Pods</h1>
+        <p>当前 Tenant 授权的容器终端</p>
       </div>
       <button class="icon-btn" title="刷新容器资源" :disabled="loading" @click="loadResources">
         <el-icon :class="{ 'is-loading': loading }"><Refresh /></el-icon>
@@ -21,12 +21,7 @@
       >
         <el-option v-for="tenant in tenantOptions" :key="tenant.id" :label="tenant.name || tenant.id" :value="tenant.id" />
       </el-select>
-      <el-input v-model="searchQuery" clearable placeholder="搜索名称、域名或服务" class="search-input" />
-      <el-radio-group v-model="typeFilter" size="default">
-        <el-radio-button label="all">全部</el-radio-button>
-        <el-radio-button label="container_ssh">SSH</el-radio-button>
-        <el-radio-button label="container_service">Service</el-radio-button>
-      </el-radio-group>
+      <el-input v-model="searchQuery" clearable placeholder="搜索名称或域名" class="search-input" />
       <span class="count">{{ filteredContainers.length }} / {{ containers.length }} 个资源</span>
     </div>
 
@@ -40,11 +35,6 @@
         <template #default="{ row }">
           <div class="primary">{{ row.display_name || row.service_name || row.domain || '未命名资源' }}</div>
           <div class="secondary">{{ row.domain || '-' }}</div>
-        </template>
-      </el-table-column>
-      <el-table-column label="类型" width="110">
-        <template #default="{ row }">
-          <el-tag size="small" :type="row.type === 'container_ssh' ? 'success' : 'info'">{{ row.type === 'container_ssh' ? 'SSH' : 'Service' }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="目标" min-width="170">
@@ -87,27 +77,19 @@ const {
   switchTenant
 } = useResourceCatalog()
 const searchQuery = ref('')
-const typeFilter = ref('all')
 let refreshTimer: number | null = null
 
-const containers = computed(() => resources.value.filter(resource =>
-  resource.type === 'container_ssh' || resource.type === 'container_service'
-))
+const containers = computed(() => resources.value.filter(resource => resource.type === 'container_ssh'))
 const filteredContainers = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   return containers.value.filter(resource => {
-    if (typeFilter.value !== 'all' && resource.type !== typeFilter.value) return false
     if (!query) return true
-    return [resource.display_name, resource.domain, resource.namespace, resource.service_name, resource.tenant_name]
+    return [resource.display_name, resource.domain, resource.tenant_name]
       .some(value => value?.toLowerCase().includes(query))
   })
 })
 
 function targetLabel(resource: Resource) {
-  if (resource.type === 'container_service') {
-    return [resource.namespace, resource.service_name, resource.port_name || resource.port]
-      .filter(Boolean).join(' / ') || '-'
-  }
   return resource.target_revision ? `Revision ${resource.target_revision}` : '-'
 }
 
@@ -122,8 +104,7 @@ function statusLabel(resource: Resource) {
 
 function connectionText(resource: Resource) {
   if (!resource.domain) return ''
-  if (resource.type === 'container_ssh') return resource.ssh_users?.length ? `ssh ${resource.ssh_users[0]}@${resource.domain}` : resource.domain || '-'
-  return resource.port ? `${resource.domain}:${resource.port}` : resource.domain
+  return resource.ssh_users?.length ? `ssh ${resource.ssh_users[0]}@${resource.domain}` : resource.domain
 }
 
 async function copyConnection(resource: Resource) {

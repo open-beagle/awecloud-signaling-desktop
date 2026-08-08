@@ -90,7 +90,6 @@ import { ElMessage } from 'element-plus'
 import {
   ArrowUp,
   Box,
-  Collection,
   Compass,
   Connection,
   Document,
@@ -119,7 +118,6 @@ const servicesStore = useServicesStore()
 const domainsStore = useDomainsStore()
 
 const accessNavigation = [
-  { path: '/resources', label: '资源', icon: markRaw(Collection) },
   { path: '/hosts', label: 'SSH', icon: markRaw(Monitor) },
   { path: '/k8s', label: 'Kubernetes', icon: markRaw(Compass) },
   { path: '/services', label: 'Kubernetes SVC', icon: markRaw(Connection) },
@@ -212,7 +210,7 @@ onUnmounted(() => {
 })
 
 const isActive = (path: string) => {
-  return route.path === path || (path !== '/resources' && route.path.startsWith(`${path}/`))
+  return route.path === path || route.path.startsWith(`${path}/`)
 }
 
 const navigateTo = (path: string) => {
