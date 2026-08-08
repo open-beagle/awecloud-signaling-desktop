@@ -122,7 +122,7 @@ function statusLabel(resource: Resource) {
 
 function connectionText(resource: Resource) {
   if (!resource.domain) return ''
-  if (resource.type === 'container_ssh') return `ssh ${resource.ssh_user || 'container'}@${resource.domain}`
+  if (resource.type === 'container_ssh') return resource.ssh_users?.length ? `ssh ${resource.ssh_users[0]}@${resource.domain}` : resource.domain || '-'
   return resource.port ? `${resource.domain}:${resource.port}` : resource.domain
 }
 

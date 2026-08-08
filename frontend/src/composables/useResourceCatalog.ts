@@ -15,7 +15,6 @@ export interface Resource {
   tenant_name?: string
   state?: string
   target_revision?: number
-  ssh_user?: string
   port_name?: string
   protocol?: string
 }

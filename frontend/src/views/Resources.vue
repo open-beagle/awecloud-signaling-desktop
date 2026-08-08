@@ -144,7 +144,7 @@ function statusLabel(resource: Resource) {
 
 function connectionText(resource: Resource) {
   if (!resource.domain) return ''
-  if (resource.type === 'container_ssh') return `ssh ${resource.ssh_user || 'container'}@${resource.domain}`
+  if (resource.type === 'container_ssh') return resource.ssh_users?.length ? `ssh ${resource.ssh_users[0]}@${resource.domain}` : resource.domain || '-'
   if (resource.type === 'ssh') return resource.ssh_users?.length ? `ssh ${resource.ssh_users[0]}@${resource.domain}` : resource.domain
   if (resource.type === 'k8sapi') return `${resource.domain}:6443`
   if (resource.type === 'container_service' || resource.type === 'k8ssvc') return `${resource.domain}:${resource.port || ''}`

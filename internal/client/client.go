@@ -1243,7 +1243,6 @@ type ResourceInfo struct {
 	TargetRevision        int64    `json:"target_revision,omitempty"`
 	AgentIP               string   `json:"agent_ip,omitempty"`
 	ListenPort            uint32   `json:"listen_port,omitempty"`
-	SSHUser               string   `json:"ssh_user,omitempty"`
 	SessionID             string   `json:"session_id,omitempty"`
 	SourceID              string   `json:"source_id,omitempty"`
 	TargetRevisionID      string   `json:"target_revision_id,omitempty"`
@@ -1327,7 +1326,7 @@ func (c *DesktopClient) GetResourcesForTenant(tenantID string) ([]*ResourceInfo,
 			Type: "container_ssh", ResourceID: r.ResourceId, DisplayName: r.DisplayName,
 			TenantID: r.TenantId, TenantName: r.TenantName, State: r.State, TargetRevision: r.TargetRevision,
 			AgentID: r.AgentNodeId, Domain: r.Domain, AgentIP: r.AgentIp,
-			ListenPort: r.ListenPort, SSHUser: r.SshUser, SessionID: r.SessionId,
+			ListenPort: r.ListenPort, SSHUsers: r.SshUsers, SessionID: r.SessionId,
 			SourceID: r.SourceId, TargetRevisionID: r.TargetRevisionId, AuthorizationRevision: r.AuthorizationRevision,
 		})
 	}

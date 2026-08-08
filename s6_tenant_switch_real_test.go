@@ -150,7 +150,8 @@ func assertOpenSSHExit37(t *testing.T, resource *client.ResourceInfo) {
 	// Redirected Windows stdin has no console dimensions, so OpenSSH emits a
 	// 0x0 pty-req that RFC-aware servers correctly reject. -T still requests
 	// an interactive shell and lets this automated probe verify its exit status.
-	cmd := exec.Command("ssh.exe", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=NUL", "-o", "LogLevel=ERROR", "-T", resource.SSHUser+"@"+resource.Domain)
+	require.NotEmpty(t, resource.SSHUsers)
+	cmd := exec.Command("ssh.exe", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=NUL", "-o", "LogLevel=ERROR", "-T", resource.SSHUsers[0]+"@"+resource.Domain)
 	cmd.Stdin = strings.NewReader("printf '" + marker + "\\n'; sleep 2; exit 37\n")
 	output, err := cmd.CombinedOutput()
 	exitErr, ok := err.(*exec.ExitError)

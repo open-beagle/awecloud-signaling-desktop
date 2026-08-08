@@ -1919,7 +1919,7 @@ func (a *App) GetDomainList() ([]*DomainItem, error) {
 			}
 			result = append(result, &DomainItem{
 				Domain: resource.Domain, Type: "container_ssh", Status: "online",
-				SSHUsers: []string{resource.SSHUser}, Region: resource.TenantName,
+				SSHUsers: resource.SSHUsers, Region: resource.TenantName,
 				DisplayName: resource.DisplayName, ResourceID: resource.ResourceID,
 			})
 		}
