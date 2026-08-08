@@ -122,8 +122,8 @@ const accessNavigation = [
   { path: '/resources', label: '资源', icon: markRaw(Collection) },
   { path: '/hosts', label: 'SSH', icon: markRaw(Monitor) },
   { path: '/k8s', label: 'Kubernetes', icon: markRaw(Compass) },
-  { path: '/services', label: 'SVC', icon: markRaw(Connection) },
-  { path: '/containers', label: 'Container', icon: markRaw(Box) }
+  { path: '/services', label: 'Kubernetes SVC', icon: markRaw(Connection) },
+  { path: '/containers', label: 'Kubernetes Pods', icon: markRaw(Box) }
 ]
 
 const accountNavigation = [
