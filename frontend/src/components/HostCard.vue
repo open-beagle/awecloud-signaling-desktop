@@ -11,7 +11,7 @@
       <!-- SSH 用户列表 -->
       <div v-if="domain.ssh_users && domain.ssh_users.length > 0" class="users-list">
         <div v-for="user in domain.ssh_users" :key="user" class="user-item">
-          <span class="user-label">{{ domain.type === 'container_ssh' ? 'Container' : 'SSH' }}</span>
+          <span class="user-label">SSH</span>
           <span class="user-command">{{ user }}@{{ domain.domain }}</span>
           <button class="copy-btn" @click.stop="copySSHCommand(user)">
             {{ copiedUser === user ? '已复制' : '复制' }}

@@ -4,7 +4,7 @@ import { ref, computed } from 'vue'
 // 域名记录类型
 export interface DomainItem {
   domain: string              // 域名（如 beagle-242.beijing.beagle）
-  type: string                // 类型：ssh / k8sapi / k8ssvc
+  type: string                // 类型：ssh / container_ssh / container_service / k8sapi / k8ssvc
   status: string              // 状态：online / offline
   service_ports?: number[]    // K8S Service 端口列表（k8ssvc 类型时）
   ssh_users?: string[]        // SSH 用户列表（ssh 类型时）
@@ -22,7 +22,7 @@ export const useDomainsStore = defineStore('domains', () => {
   // 计算属性：SSH 域名列表（我的主机）
   // 按 domain 聚合，因为一个主机可能有多个用户
   const hostsDomains = computed(() => {
-    const sshDomains = domains.value.filter(d => d.type === 'ssh' || d.type === 'container_ssh')
+    const sshDomains = domains.value.filter(d => d.type === 'ssh')
     // 已经按 domain 聚合了，直接返回
     return sshDomains
   })
