@@ -51,18 +51,6 @@ jobs:
             nsis \
             unzip
 
-      - name: Install Wails v3
-        run: |
-          WAILS_VERSION="$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
-          for attempt in 1 2 3; do
-            if GOMAXPROCS=2 go install -p=1 "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}"; then
-              exit 0
-            fi
-            echo "Wails installation attempt ${attempt} failed" >&2
-            sleep $((attempt * 5))
-          done
-          exit 1
-
       - name: Create Desktop environment
         env:
           SIGNALING_ADDRESS: ${{ secrets.SIGNALING_ADDRESS }}
@@ -111,18 +99,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Install Wails v3
-        run: |
-          WAILS_VERSION="$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
-          for attempt in 1 2 3; do
-            if GOMAXPROCS=2 go install -p=1 "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}"; then
-              exit 0
-            fi
-            echo "Wails installation attempt ${attempt} failed" >&2
-            sleep $((attempt * 5))
-          done
-          exit 1
 
       - name: Create Desktop environment
         env:

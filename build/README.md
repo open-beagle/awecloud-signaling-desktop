@@ -71,11 +71,12 @@ xcode-select --install
 
 ### 安装 Wails CLI
 
-所有平台都需要安装 Wails CLI：
+开发和重新生成前端绑定时需要安装 Wails CLI；正式构建使用仓库中已提交的 `frontend/bindings`：
 
 ```bash
 WAILS_VERSION="$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
 go install "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}"
+wails3 generate bindings -clean=true ./...
 ```
 
 ## 构建命令

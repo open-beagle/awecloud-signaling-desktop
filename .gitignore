@@ -8,7 +8,6 @@
 /internal/assets/frontend/*
 /frontend/.vite/
 /frontend/.vscode/
-/frontend/bindings/
 /frontend/package-lock.json.bak
 
 # Go

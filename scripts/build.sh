@@ -60,12 +60,6 @@ echo "Build Date:   ${BUILD_DATE}"
 echo "Platforms:    ${PLATFORMS}"
 echo ""
 
-# 检查 wails3 是否安装（仅在需要生成绑定时必需）
-WAILS3_AVAILABLE=false
-if command -v wails3 &> /dev/null; then
-    WAILS3_AVAILABLE=true
-fi
-
 # 检查 Node.js 是否安装
 if ! command -v node &> /dev/null; then
     echo -e "${RED}Error: node command not found${NC}"
@@ -217,16 +211,13 @@ else
     echo "Frontend dependencies already installed, skipping..."
 fi
 
-# 生成绑定（优先尝试 wails3，失败时平滑回退至预置的 frontend/bindings）
-if [ "$WAILS3_AVAILABLE" = true ] && wails3 generate bindings ./...; then
-    echo -e "${GREEN}✓ Generated bindings with wails3${NC}"
-elif [ -d "frontend/bindings" ]; then
-    echo -e "${YELLOW}Using existing frontend/bindings...${NC}"
-else
-    echo -e "${RED}Error: wails3 not available and no existing bindings found${NC}"
-    echo "Please install wails3 or ensure frontend/bindings directory exists"
+# 发布构建使用已提交的绑定，避免在 CI 中编译完整的 Wails CLI。
+if [ ! -d "frontend/bindings" ]; then
+    echo -e "${RED}Error: frontend/bindings is required${NC}"
+    echo "Regenerate it with: wails3 generate bindings -clean=true ./..."
     exit 1
 fi
+echo -e "${GREEN}✓ Using frontend/bindings${NC}"
 
 # 构建前端（在 bindings 准备完成之后）
 echo -e "${YELLOW}Building frontend...${NC}"

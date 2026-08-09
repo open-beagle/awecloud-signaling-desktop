@@ -23,6 +23,12 @@ WAILS_VERSION="$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
 go install "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}"
 ```
 
+正式构建直接使用仓库中的 `frontend/bindings`。修改 Go 服务接口后，需要重新生成并提交绑定：
+
+```bash
+wails3 generate bindings -clean=true ./...
+```
+
 Windows PowerShell：
 
 ```powershell
