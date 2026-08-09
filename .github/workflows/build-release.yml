@@ -63,6 +63,11 @@ jobs:
           printf 'SIGNALING_ADDRESS=%s\n' "$SIGNALING_ADDRESS" > .env
 
       - name: Build Desktop Applications (Linux and Windows)
+        env:
+          GOMAXPROCS: '2'
+          GOMEMLIMIT: 2GiB
+          GOGC: '20'
+          GOFLAGS: -p=1
         run: |
           PLATFORMS=linux/amd64,windows/amd64 \
           RELEASE_ARTIFACTS=true \
