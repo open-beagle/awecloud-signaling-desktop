@@ -104,7 +104,7 @@ if (Get-Command wails3 -ErrorAction SilentlyContinue) {
         Write-Host "[INFO] wails3 not available, using existing bindings..."
     } else {
         Write-Host "[ERROR] wails3 not available and no existing bindings found" -ForegroundColor Red
-        Write-Host "Please install wails3: go install github.com/wailsapp/wails/v3/cmd/wails3@latest"
+        Write-Host "Please install wails3: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.5"
         Read-Host "Press Enter to exit"
         exit 1
     }
@@ -128,7 +128,7 @@ $OutputExe = "$TmpBinDir\signal_desktop.exe"
 $BuildFlags = "-buildvcs=false -gcflags=all=-l"
 $LdFlags = "-X 'github.com/open-beagle/awecloud-signaling-desktop/internal/version.Version=$BuildVersion'"
 
-go build -o $OutputExe -ldflags $LdFlags -gcflags=all=-l .
+go build -o $OutputExe -ldflags $LdFlags -gcflags=all=-l ./cmd/desktop
 $BuildResult = $LASTEXITCODE
 
 if ($BuildResult -ne 0) {

@@ -314,8 +314,8 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
     fi
     
     # 执行构建
-    echo "Building with: go build -tags production -trimpath -ldflags \"${LDFLAGS}\" -o ${BUILD_OUTPUT}"
-    go build -tags production -trimpath -ldflags "${LDFLAGS}" -o "${BUILD_OUTPUT}"
+    echo "Building with: go build -tags production -trimpath -ldflags \"${LDFLAGS}\" -o ${BUILD_OUTPUT} ./cmd/desktop"
+    go build -tags production -trimpath -ldflags "${LDFLAGS}" -o "${BUILD_OUTPUT}" ./cmd/desktop
     
     # 检查构建结果
     if [ -f "${BUILD_OUTPUT}" ]; then

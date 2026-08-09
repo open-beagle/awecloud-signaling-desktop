@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"fmt"
@@ -25,6 +25,10 @@ import (
 
 // App struct
 type App struct {
+	mainApp    *application.App
+	mainWindow *application.WebviewWindow
+	appIcon    []byte
+
 	desktopClient *client.DesktopClient
 	tsManager     *tailscale.Manager
 	authResult    *client.AuthResult
@@ -47,11 +51,19 @@ type App struct {
 }
 
 // NewApp creates a new App application struct
-func NewApp() *App {
+func New() *App {
 	return &App{}
 }
 
-func (a *App) startup() {
+// SetRuntime attaches the Wails application resources used by window and tray actions.
+func (a *App) SetRuntime(mainApp *application.App, mainWindow *application.WebviewWindow, appIcon []byte) {
+	a.mainApp = mainApp
+	a.mainWindow = mainWindow
+	a.appIcon = appIcon
+}
+
+// Startup initializes the desktop service after the Wails runtime is ready.
+func (a *App) Startup() {
 	log.SetOutput(&logWriter{})
 	log.SetFlags(0) // 移除默认的时间戳，使用自定义格式
 
@@ -72,32 +84,32 @@ func (a *App) startup() {
 }
 
 func (a *App) setupSystemTray() {
-	if mainApp == nil {
+	if a.mainApp == nil {
 		log.Printf("[App] mainApp is nil, cannot setup system tray")
 		return
 	}
 
-	systray := mainApp.SystemTray.New()
-	systray.SetIcon(appIcon)
+	systray := a.mainApp.SystemTray.New()
+	systray.SetIcon(a.appIcon)
 
-	menu := mainApp.NewMenu()
+	menu := a.mainApp.NewMenu()
 	menu.Add("显示窗口").OnClick(func(ctx *application.Context) {
-		if mainWindow != nil {
-			mainWindow.Show()
-			mainWindow.Focus()
+		if a.mainWindow != nil {
+			a.mainWindow.Show()
+			a.mainWindow.Focus()
 		}
 	})
 	menu.AddSeparator()
 	menu.Add("退出").OnClick(func(ctx *application.Context) {
 		a.shutdown()
-		mainApp.Quit()
+		a.mainApp.Quit()
 	})
 	systray.SetMenu(menu)
 
 	systray.OnClick(func() {
-		if mainWindow != nil {
-			mainWindow.Show()
-			mainWindow.Focus()
+		if a.mainWindow != nil {
+			a.mainWindow.Show()
+			a.mainWindow.Focus()
 		}
 	})
 
@@ -720,8 +732,8 @@ func (a *App) GetLogLevel() string {
 
 func (a *App) HideToTray() {
 	log.Printf("[App] HideToTray called")
-	if mainWindow != nil {
-		mainWindow.Hide()
+	if a.mainWindow != nil {
+		a.mainWindow.Hide()
 	}
 }
 
@@ -888,17 +900,17 @@ func (a *App) ReconnectTunnel() error {
 
 func (a *App) ShowFromTray() {
 	log.Printf("[App] ShowFromTray called")
-	if mainWindow != nil {
-		mainWindow.Show()
-		mainWindow.Focus()
+	if a.mainWindow != nil {
+		a.mainWindow.Show()
+		a.mainWindow.Focus()
 	}
 }
 
 func (a *App) QuitApp() {
 	log.Printf("[App] QuitApp called")
 	a.shutdown()
-	if mainApp != nil {
-		mainApp.Quit()
+	if a.mainApp != nil {
+		a.mainApp.Quit()
 	}
 }
 
@@ -1611,12 +1623,12 @@ func (a *App) OpenBrowser(url string) error {
 func (a *App) OpenLoginWindow(loginURL string) error {
 	log.Printf("[App] OpenLoginWindow: %s", loginURL)
 
-	if mainApp == nil {
+	if a.mainApp == nil {
 		return fmt.Errorf("mainApp is nil")
 	}
 
 	// 创建新的 WebView 窗口用于登录
-	loginWindow := mainApp.Window.NewWithOptions(application.WebviewWindowOptions{
+	loginWindow := a.mainApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "登录 - Signaling Desktop",
 		Width:     600,
 		Height:    700,

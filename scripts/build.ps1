@@ -267,8 +267,8 @@ if (Test-Path -LiteralPath $BuildBackup) {
     Remove-Item -LiteralPath $BuildBackup -Force
 }
 
-Write-Host "Building with: go build -tags production -trimpath -ldflags `"$LdFlags`" -o $BuildOutput"
-go build -tags production -trimpath -ldflags $LdFlags -o $BuildOutput
+Write-Host "Building with: go build -tags production -trimpath -ldflags `"$LdFlags`" -o $BuildOutput ./cmd/desktop"
+go build -tags production -trimpath -ldflags $LdFlags -o $BuildOutput ./cmd/desktop
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] Build failed" -ForegroundColor Red

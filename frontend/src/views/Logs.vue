@@ -107,7 +107,7 @@ import {
   GetProxyStatus,
   GetTunnelStatus,
   ReconnectTunnel
-} from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+} from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/internal/app/app'
 
 const logs = ref<string[]>([])
 const logsContainer = ref<HTMLElement | null>(null)

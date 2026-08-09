@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { GetResources, GetResourceTenants, SwitchResourceTenant } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import { GetResources, GetResourceTenants, SwitchResourceTenant } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/internal/app/app'
 
 export interface Resource {
   type: string

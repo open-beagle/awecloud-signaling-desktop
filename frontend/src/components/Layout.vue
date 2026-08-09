@@ -109,7 +109,7 @@ import {
   GetGRPCStatus,
   GetTunnelStatus,
   Logout
-} from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+} from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/internal/app/app'
 
 const router = useRouter()
 const route = useRoute()

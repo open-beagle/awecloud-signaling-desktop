@@ -5,6 +5,7 @@
 # Frontend
 /frontend/node_modules/
 /frontend/dist/
+/internal/assets/frontend/*
 /frontend/.vite/
 /frontend/.vscode/
 /frontend/bindings/github.com/

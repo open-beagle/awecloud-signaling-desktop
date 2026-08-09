@@ -1,6 +1,6 @@
 //go:build s6real
 
-package main
+package app
 
 import (
 	"bufio"

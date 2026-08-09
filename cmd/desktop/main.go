@@ -1,11 +1,7 @@
-// awecloud-signaling-desktop 主入口
-// 负责初始化应用、加载配置、启动 Wails 窗口及托盘
 package main
 
 import (
 	"context"
-	"embed"
-	"io/fs"
 	"log"
 	"os"
 	"runtime"
@@ -14,22 +10,13 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 
+	desktopapp "github.com/open-beagle/awecloud-signaling-desktop/internal/app"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/assets"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/singleton"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/telemetry"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/tray"
 	appVersion "github.com/open-beagle/awecloud-signaling-desktop/internal/version"
-)
-
-//go:embed frontend/dist
-var assets embed.FS
-
-//go:embed build/appicon.png
-var appIcon []byte
-
-// 全局变量，供 app.go 使用
-var (
-	mainApp    *application.App
-	mainWindow *application.WebviewWindow
 )
 
 func main() {
@@ -87,19 +74,18 @@ func main() {
 	}()
 
 	// 创建应用实例
-	app := NewApp()
+	app := desktopapp.New()
 
-	// 从 embed.FS 中提取 frontend/dist 子目录
-	frontendFS, err := fs.Sub(assets, "frontend/dist")
+	frontendFS, err := assets.Frontend()
 	if err != nil {
-		log.Fatalf("Failed to get frontend/dist from embedded assets: %v", err)
+		log.Fatalf("Failed to get embedded frontend assets: %v", err)
 	}
 
 	// 创建 Wails v3 应用
-	mainApp = application.New(application.Options{
+	mainApp := application.New(application.Options{
 		Name:        "awecloud-signaling",
 		Description: "AWECloud Signaling Desktop Client",
-		Icon:        appIcon,
+		Icon:        tray.IconPng,
 		Services: []application.Service{
 			application.NewService(app),
 		},
@@ -118,7 +104,7 @@ func main() {
 	})
 
 	// 创建主窗口
-	mainWindow = mainApp.Window.NewWithOptions(application.WebviewWindowOptions{
+	mainWindow := mainApp.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:     "awecloud-signaling",
 		Width:     1024,
 		Height:    768,
@@ -137,8 +123,8 @@ func main() {
 		mainWindow.Hide()
 	})
 
-	// 调用 startup
-	app.startup()
+	app.SetRuntime(mainApp, mainWindow, tray.IconPng)
+	app.Startup()
 
 	// 运行应用
 	err = mainApp.Run()

@@ -97,7 +97,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
-import { App } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop'
+import { App } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/internal/app'
 import UpgradeDialog from '../components/UpgradeDialog.vue'
 
 const { Login, GetVersion, CheckSavedCredentials, ClearCredentials, CreateLoginSession, OpenLoginWindow, WaitForLoginResultGRPC } = App

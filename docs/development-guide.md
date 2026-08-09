@@ -235,6 +235,6 @@ awecloud-signaling-server\          # 项目根目录（PowerShell 脚本工作�
 
 ## 参考资料
 
-- [Wails v3 文档](https://v3alpha.wails.io/)
+- [Wails v3 文档](https://v3.wails.io/)
 - [Wintun 驱动](https://www.wintun.net/)
 - [Headscale 文档](https://headscale.net/stable/)

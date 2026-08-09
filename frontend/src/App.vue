@@ -4,7 +4,7 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
-import { GetWindowTitle } from '../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import { GetWindowTitle } from '../bindings/github.com/open-beagle/awecloud-signaling-desktop/internal/app/app'
 import { Window, Events } from '@wailsio/runtime'
 import { ElMessageBox } from 'element-plus'
 

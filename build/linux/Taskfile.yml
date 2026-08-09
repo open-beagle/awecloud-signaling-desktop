@@ -15,7 +15,7 @@ tasks:
           PRODUCTION:
             ref: .PRODUCTION
     cmds:
-      - go build {{.BUILD_FLAGS}} -o {{.BIN_DIR}}/{{.APP_NAME}}
+      - go build {{.BUILD_FLAGS}} -o {{.BIN_DIR}}/{{.APP_NAME}} ./cmd/desktop
     vars:
       BUILD_FLAGS: '{{.BUILD_FLAGS | default (printf "-tags production -trimpath -buildvcs=false -ldflags=\"-w -s %s\"" .LDFLAGS)}}'
       LDFLAGS: '{{.LDFLAGS | default ""}}'

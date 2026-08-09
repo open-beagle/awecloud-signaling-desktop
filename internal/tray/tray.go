@@ -1,5 +1,5 @@
 // Package tray 提供系统托盘相关的资源
-// 注意：Wails v3 使用原生系统托盘支持，托盘逻辑已移至 app.go
+// 注意：Wails v3 使用原生系统托盘支持，托盘逻辑位于 internal/app。
 package tray
 
 import (

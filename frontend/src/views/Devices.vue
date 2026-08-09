@@ -109,7 +109,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh, SwitchButton, Delete } from '@element-plus/icons-vue'
-import { GetDevices, OfflineDevice, DeleteDevice } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/app'
+import { GetDevices, OfflineDevice, DeleteDevice } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/internal/app/app'
 
 interface Device {
   device_token: string

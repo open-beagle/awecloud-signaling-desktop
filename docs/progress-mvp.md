@@ -48,8 +48,8 @@ Desktop MVP 的后端和前端核心功能已完成，可以进行集成测试�
 
 #### 应用集成
 
-- [x] `app.go` - Wails 应用主结构
-- [x] `main.go` - 应用入口
+- [x] `internal/app/app.go` - Wails 应用主结构
+- [x] `cmd/desktop/main.go` - 应用入口
 - [x] 进程内通信（Go channel）
 - [x] 生命周期管理
 
@@ -151,7 +151,7 @@ Desktop MVP 的后端和前端核心功能已完成，可以进行集成测试�
 ### 后端
 
 - **语言**: Go 1.25
-- **框架**: Wails v3.0.0
+- **框架**: Wails v3.0.0-beta.5
 - **依赖**:
   - FRP v0.65.0
   - gRPC v1.77.0

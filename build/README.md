@@ -58,7 +58,7 @@ CC=x86_64-w64-mingw32-gcc \
 CXX=x86_64-w64-mingw32-g++ \
 GOOS=windows \
 GOARCH=amd64 \
-go build -o build/bin/app.exe
+go build -o build/bin/app.exe ./cmd/desktop
 ```
 
 ### macOS
@@ -74,7 +74,7 @@ xcode-select --install
 所有平台都需要安装 Wails CLI：
 
 ```bash
-go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.5
 ```
 
 ## 构建命令

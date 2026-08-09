@@ -4,7 +4,7 @@ Desktop 客户端应用 - 基于 Wails 的跨平台桌面应用
 
 ## 项目信息
 
-- **技术栈**: Wails v2 + Go + Vue 3 + TypeScript
+- **技术栈**: Wails v3 + Go + Vue 3 + TypeScript
 - **主项目**: https://github.com/open-beagle/awecloud-signaling-server
 - **设计文档**: 见主项目 `docs/design_desktop.md`
 
@@ -14,12 +14,12 @@ Desktop 客户端应用 - 基于 Wails 的跨平台桌面应用
 
 - Go 1.25+
 - Node.js 18+
-- Wails CLI v3.0.0+
+- Wails CLI v3.0.0-beta.5
 
 安装 Wails CLI:
 
 ```bash
-go install github.com/wailsapp/wails/v3/cmd/wails3@latest
+go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.5
 ```
 
 ### 开发模式

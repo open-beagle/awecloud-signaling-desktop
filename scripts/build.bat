@@ -135,8 +135,8 @@ if not "%BUILD_ADDRESS%"=="" (
 
 set BUILD_OUTPUT=%OUTPUT_DIR%\awecloud-signaling-desktop.exe
 
-echo Building with: go build -tags production -trimpath -ldflags "%LDFLAGS%" -o %BUILD_OUTPUT%
-go build -tags production -trimpath -ldflags "%LDFLAGS%" -o %BUILD_OUTPUT%
+echo Building with: go build -tags production -trimpath -ldflags "%LDFLAGS%" -o %BUILD_OUTPUT% ./cmd/desktop
+go build -tags production -trimpath -ldflags "%LDFLAGS%" -o %BUILD_OUTPUT% ./cmd/desktop
 
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Build failed
