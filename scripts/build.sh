@@ -217,8 +217,12 @@ else
     echo "Frontend dependencies already installed, skipping..."
 fi
 
-# 生成绑定（必须在前端构建之前，确保方法 ID 正确）
-if [ "$WAILS3_AVAILABLE" = true ] && wails3 generate bindings 2>/dev/null; then
+# 生成绑定（必须从实际 main 包扫描，确保服务方法 ID 正确）
+if [ "$WAILS3_AVAILABLE" = true ]; then
+    if ! wails3 generate bindings ./cmd/desktop; then
+        echo -e "${RED}Error: failed to generate Wails bindings from ./cmd/desktop${NC}"
+        exit 1
+    fi
     echo -e "${GREEN}✓ Generated bindings with wails3${NC}"
 elif [ -d "frontend/bindings" ]; then
     echo -e "${YELLOW}Using existing frontend/bindings...${NC}"

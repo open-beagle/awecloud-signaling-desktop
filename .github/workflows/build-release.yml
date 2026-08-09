@@ -54,7 +54,14 @@ jobs:
       - name: Install Wails v3
         run: |
           WAILS_VERSION="$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
-          go install "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}"
+          for attempt in 1 2 3; do
+            if go install "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}"; then
+              exit 0
+            fi
+            echo "Wails installation attempt ${attempt} failed" >&2
+            sleep $((attempt * 5))
+          done
+          exit 1
 
       - name: Create Desktop environment
         env:
@@ -108,7 +115,14 @@ jobs:
       - name: Install Wails v3
         run: |
           WAILS_VERSION="$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
-          go install "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}"
+          for attempt in 1 2 3; do
+            if go install "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}"; then
+              exit 0
+            fi
+            echo "Wails installation attempt ${attempt} failed" >&2
+            sleep $((attempt * 5))
+          done
+          exit 1
 
       - name: Create Desktop environment
         env:
