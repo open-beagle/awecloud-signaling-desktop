@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build linux || darwin
 
 package launcheripc
 
@@ -8,9 +8,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"syscall"
-
-	"golang.org/x/sys/unix"
 )
 
 func listenLocal(endpoint string) (net.Listener, func() error, error) {
@@ -49,6 +46,17 @@ func dialLocal(ctx context.Context, endpoint string) (net.Conn, error) {
 }
 
 func verifyLocalPeer(conn net.Conn, expectedUID uint32) error {
+	peerUID, err := localPeerUID(conn)
+	if err != nil {
+		return err
+	}
+	if peerUID != expectedUID {
+		return fmt.Errorf("peer UID %d does not match expected UID %d", peerUID, expectedUID)
+	}
+	return nil
+}
+
+func controlUnixSocket(conn net.Conn, control func(int) error) error {
 	unixConn, ok := conn.(*net.UnixConn)
 	if !ok {
 		return fmt.Errorf("connection is not a Unix domain socket")
@@ -59,29 +67,12 @@ func verifyLocalPeer(conn net.Conn, expectedUID uint32) error {
 		return fmt.Errorf("get raw socket connection failed: %w", err)
 	}
 
-	var peerUID uint32
-	var sysErr error
-
+	var controlErr error
 	err = rawConn.Control(func(fd uintptr) {
-		ucred, err := unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
-		if err != nil {
-			sysErr = err
-			return
-		}
-		peerUID = ucred.Uid
+		controlErr = control(int(fd))
 	})
-
 	if err != nil {
 		return err
 	}
-	if sysErr != nil {
-		return fmt.Errorf("getsockopt SO_PEERCRED failed: %w", sysErr)
-	}
-
-	if peerUID != expectedUID {
-		return fmt.Errorf("peer UID %d does not match expected UID %d", peerUID, expectedUID)
-	}
-	return nil
+	return controlErr
 }
-
-var _ = syscall.SIGTERM
