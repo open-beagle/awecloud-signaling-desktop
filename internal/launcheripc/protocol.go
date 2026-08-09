@@ -19,7 +19,7 @@ const (
 const (
 	ErrInvalidRequest           = "invalid_request"
 	ErrUnsupportedSchema        = "unsupported_schema"
-	ErrUnsupportedIPCVersion   = "unsupported_ipc_version"
+	ErrUnsupportedIPCVersion    = "unsupported_ipc_version"
 	ErrIPCConnectTimeout        = "ipc_connect_timeout"
 	ErrSessionMismatch          = "session_mismatch"
 	ErrConcurrentPoll           = "concurrent_poll"
@@ -29,7 +29,6 @@ const (
 	ErrDownloadFailed           = "download_failed"
 	ErrArtifactSizeMismatch     = "artifact_size_mismatch"
 	ErrChecksumMismatch         = "checksum_mismatch"
-	ErrSignatureInvalid         = "signature_invalid"
 	ErrPlatformSignatureInvalid = "platform_signature_invalid"
 	ErrArchiveInvalid           = "archive_invalid"
 	ErrVersionConflict          = "version_conflict"
@@ -87,8 +86,6 @@ type ArtifactPayload struct {
 	DownloadURL string `json:"download_url"`
 	Size        int64  `json:"size"`
 	SHA256      string `json:"sha256"`
-	Signature   string `json:"signature"`
-	KeyID       string `json:"key_id"`
 }
 
 type UpdateRequest struct {

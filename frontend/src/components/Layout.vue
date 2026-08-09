@@ -152,7 +152,7 @@ const handleRequestUpdate = async () => {
       manifest: {},
       artifact: {
         id: '', role: 'app', os: '', arch: '', package_type: 'binary',
-        filename: '', download_url: '', size: 0, sha256: '', signature: '', key_id: ''
+        filename: '', download_url: '', size: 0, sha256: ''
       }
     })
     ElMessage.success('已触发更新请求')

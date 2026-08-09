@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/ed25519"
-	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
@@ -21,16 +19,7 @@ func main() {
 		log.Fatalf("Initialize paths failed: %v", err)
 	}
 
-	pubKeyBase64 := os.Getenv("SIGNAL_UPDATER_PUBLIC_KEY")
-	var pubKey ed25519.PublicKey
-	if pubKeyBase64 != "" {
-		decoded, err := base64.StdEncoding.DecodeString(pubKeyBase64)
-		if err == nil && len(decoded) == ed25519.PublicKeySize {
-			pubKey = ed25519.PublicKey(decoded)
-		}
-	}
-
-	coord, err := launcher.NewCoordinator(paths, pubKey)
+	coord, err := launcher.NewCoordinator(paths)
 	if err != nil {
 		log.Fatalf("Initialize coordinator failed: %v", err)
 	}

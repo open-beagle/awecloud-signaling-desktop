@@ -2,7 +2,6 @@ package launcher
 
 import (
 	"context"
-	"crypto/ed25519"
 	"errors"
 	"fmt"
 	"os"
@@ -14,7 +13,6 @@ import (
 
 type Coordinator struct {
 	paths         *Paths
-	pubKey        ed25519.PublicKey
 	sessionID     string
 	launcherPID   int
 	currentAppPID int
@@ -29,10 +27,9 @@ type Coordinator struct {
 	appReadyCh    chan struct{}
 }
 
-func NewCoordinator(paths *Paths, pubKey ed25519.PublicKey) (*Coordinator, error) {
+func NewCoordinator(paths *Paths) (*Coordinator, error) {
 	c := &Coordinator{
 		paths:       paths,
-		pubKey:      pubKey,
 		sessionID:   fmt.Sprintf("session-%d", time.Now().UnixNano()),
 		launcherPID: os.Getpid(),
 		appReadyCh:  make(chan struct{}, 1),
@@ -158,7 +155,7 @@ func (c *Coordinator) HandleUpdateRequest(ctx context.Context, req *launcheripc.
 func (c *Coordinator) runBackgroundDownload(art launcheripc.ArtifactPayload) {
 	c.updatePhase("downloading", 10, nil)
 
-	res, err := DownloadAndVerifyArtifact(context.Background(), c.paths.DownloadsDir, &art, c.pubKey, func(p int) {
+	res, err := DownloadAndVerifyArtifact(context.Background(), c.paths.DownloadsDir, &art, func(p int) {
 		c.updatePhase("downloading", p, nil)
 	})
 

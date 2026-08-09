@@ -2,9 +2,7 @@ package launcher
 
 import (
 	"context"
-	"crypto/ed25519"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -22,7 +20,7 @@ type DownloadResult struct {
 	Size     int64
 }
 
-func DownloadAndVerifyArtifact(ctx context.Context, downloadsDir string, artifact *launcheripc.ArtifactPayload, pubKey ed25519.PublicKey, progressCallback func(int)) (*DownloadResult, error) {
+func DownloadAndVerifyArtifact(ctx context.Context, downloadsDir string, artifact *launcheripc.ArtifactPayload, progressCallback func(int)) (*DownloadResult, error) {
 	if artifact.Size <= 0 {
 		return nil, errors.New("artifact size must be > 0")
 	}
@@ -99,14 +97,6 @@ func DownloadAndVerifyArtifact(ctx context.Context, downloadsDir string, artifac
 	if digest != artifact.SHA256 {
 		_ = os.Remove(partPath)
 		return nil, fmt.Errorf("downloaded sha256 %s does not match expected %s", digest, artifact.SHA256)
-	}
-
-	if len(pubKey) > 0 && artifact.Signature != "" {
-		sigBytes, err := base64.StdEncoding.DecodeString(artifact.Signature)
-		if err != nil || !ed25519.Verify(pubKey, []byte(digest), sigBytes) {
-			_ = os.Remove(partPath)
-			return nil, errors.New("ed25519 signature verification failed")
-		}
 	}
 
 	return &DownloadResult{

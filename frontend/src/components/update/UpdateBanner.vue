@@ -46,7 +46,7 @@ const bannerText = computed(() => {
     return `正在后台下载新版本 (${props.progress || 0}%)...`
   }
   if (props.phase === 'verifying') {
-    return '正在验证新版本制品与签名...'
+    return '正在验证新版本制品完整性...'
   }
   return '发现新版本可用。'
 })

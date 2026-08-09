@@ -21,7 +21,7 @@
 
       <div v-if="phase === 'downloading' || phase === 'verifying'" class="progress-section">
         <div class="progress-title">
-          <span>{{ phase === 'downloading' ? '正在后台下载...' : '正在校验签名...' }}</span>
+          <span>{{ phase === 'downloading' ? '正在后台下载...' : '正在校验制品...' }}</span>
           <span>{{ progress }}%</span>
         </div>
         <el-progress :percentage="progress" :status="phase === 'verifying' ? 'success' : ''" />

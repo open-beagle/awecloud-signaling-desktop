@@ -1,10 +1,7 @@
 package launcher
 
 import (
-	"crypto/ed25519"
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
@@ -54,16 +51,10 @@ func TestDownloadAndVerifyArtifactSuccess(t *testing.T) {
 	downloadsDir := filepath.Join(tmpDir, "downloads")
 	require.NoError(t, os.MkdirAll(downloadsDir, 0700))
 
-	pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-
 	content := []byte("binary-content-v1.1.1")
 	h := sha256.New()
 	h.Write(content)
 	digest := hex.EncodeToString(h.Sum(nil))
-
-	sigBytes := ed25519.Sign(privKey, []byte(digest))
-	sigBase64 := base64.StdEncoding.EncodeToString(sigBytes)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/octet-stream")
@@ -82,11 +73,9 @@ func TestDownloadAndVerifyArtifactSuccess(t *testing.T) {
 		DownloadURL: server.URL,
 		Size:        int64(len(content)),
 		SHA256:      digest,
-		Signature:   sigBase64,
-		KeyID:       "key-1",
 	}
 
-	res, err := DownloadAndVerifyArtifact(t.Context(), downloadsDir, &art, pubKey, nil)
+	res, err := DownloadAndVerifyArtifact(t.Context(), downloadsDir, &art, nil)
 	require.NoError(t, err)
 	require.Equal(t, digest, res.SHA256)
 	require.Equal(t, int64(len(content)), res.Size)
@@ -97,10 +86,7 @@ func TestCoordinatorStateTransitions(t *testing.T) {
 	paths, err := NewPaths(tmpDir)
 	require.NoError(t, err)
 
-	pubKey, _, err := ed25519.GenerateKey(rand.Reader)
-	require.NoError(t, err)
-
-	coord, err := NewCoordinator(paths, pubKey)
+	coord, err := NewCoordinator(paths)
 	require.NoError(t, err)
 
 	ctx := t.Context()
