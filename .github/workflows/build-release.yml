@@ -46,8 +46,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
+            libgtk-4-dev \
+            libwebkitgtk-6.0-dev \
+            libsoup-3.0-dev \
+            pkg-config \
             nsis \
             unzip
 
@@ -63,11 +65,6 @@ jobs:
           printf 'SIGNALING_ADDRESS=%s\n' "$SIGNALING_ADDRESS" > .env
 
       - name: Build Desktop Applications (Linux and Windows)
-        env:
-          GOMAXPROCS: '2'
-          GOMEMLIMIT: 2GiB
-          GOGC: '20'
-          GOFLAGS: -p=1
         run: |
           PLATFORMS=linux/amd64,windows/amd64 \
           RELEASE_ARTIFACTS=true \

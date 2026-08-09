@@ -67,20 +67,22 @@ if ! command -v node &> /dev/null; then
     exit 1
 fi
 
-# installLinuxDeps 安装Linux构建依赖
+# installLinuxDeps 检查 Linux 构建依赖
 installLinuxDeps() {
     echo -e "${YELLOW}Checking Linux build dependencies...${NC}"
-    
-    if ! pkg-config --exists gtk+-3.0 2>/dev/null; then
-        echo "GTK3 not found, skipping installation (run manually if needed)"
-        return
+
+    if ! pkg-config --exists gtk4 2>/dev/null; then
+        echo -e "${RED}Error: GTK4 development files not found${NC}" >&2
+        echo "Install libgtk-4-dev before building for Linux" >&2
+        return 1
     fi
-    
-    if ! pkg-config --exists webkit2gtk-4.1 2>/dev/null && ! pkg-config --exists webkit2gtk-4.0 2>/dev/null; then
-        echo "WebKit2GTK not found, skipping installation (run manually if needed)"
-        return
+
+    if ! pkg-config --exists webkitgtk-6.0 2>/dev/null; then
+        echo -e "${RED}Error: WebKitGTK 6.0 development files not found${NC}" >&2
+        echo "Install libwebkitgtk-6.0-dev before building for Linux" >&2
+        return 1
     fi
-    
+
     echo -e "${GREEN}✓ Linux build dependencies OK${NC}"
 }
 

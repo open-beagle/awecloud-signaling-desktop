@@ -19,7 +19,7 @@ build/
 
 ### Ubuntu / Debian
 
-构建 Linux 原生应用需要安装 GTK3 和 WebKit2GTK：
+Wails v3 默认使用 GTK4 和 WebKitGTK 6.0：
 
 ```bash
 # 更新包列表
@@ -27,8 +27,8 @@ sudo apt update
 
 # 安装 Linux 构建依赖
 sudo apt install -y \
-    libgtk-3-dev \
-    libwebkit2gtk-4.1-dev \
+    libgtk-4-dev \
+    libwebkitgtk-6.0-dev \
     libsoup-3.0-dev \
     build-essential \
     pkg-config
@@ -123,28 +123,28 @@ cd desktop
 
 ## 常见问题
 
-### GTK3 not found
+### GTK4 not found
 
 ```
-Package gtk+-3.0 was not found in the pkg-config search path.
+Package gtk4 was not found in the pkg-config search path.
 ```
 
-解决方案：安装 GTK3 开发库
+解决方案：安装 GTK4 开发库
 
 ```bash
-sudo apt install libgtk-3-dev
+sudo apt install libgtk-4-dev
 ```
 
-### webkit2gtk-4.1 not found
+### webkitgtk-6.0 not found
 
 ```
-Package 'webkit2gtk-4.1', required by 'virtual:world', not found
+Package 'webkitgtk-6.0', required by 'virtual:world', not found
 ```
 
-解决方案：安装 WebKit2GTK 开发库
+解决方案：安装 WebKitGTK 6.0 开发库
 
 ```bash
-sudo apt install libwebkit2gtk-4.1-dev
+sudo apt install libwebkitgtk-6.0-dev
 ```
 
 ### libsoup-3.0 not found
@@ -163,8 +163,8 @@ sudo apt install libsoup-3.0-dev
 
 ```bash
 sudo apt install -y \
-    libgtk-3-dev \
-    libwebkit2gtk-4.1-dev \
+    libgtk-4-dev \
+    libwebkitgtk-6.0-dev \
     libsoup-3.0-dev \
     build-essential \
     pkg-config \
