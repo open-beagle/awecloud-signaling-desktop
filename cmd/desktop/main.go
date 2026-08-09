@@ -13,6 +13,7 @@ import (
 	desktopapp "github.com/open-beagle/awecloud-signaling-desktop/internal/app"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/assets"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcheripc"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/singleton"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/telemetry"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/tray"
@@ -125,6 +126,22 @@ func main() {
 
 	app.SetRuntime(mainApp, mainWindow, tray.IconPng)
 	app.Startup()
+
+	// Launcher IPC 握手与就绪上报
+	if ipcClient, err := launcheripc.NewClientFromEnv(); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if _, err := ipcClient.Connect(ctx, &launcheripc.ConnectRequest{
+			PID:              os.Getpid(),
+			Version:          appVersion.Version,
+			ProcessStartedAt: time.Now().UTC().Format(time.RFC3339),
+		}); err != nil {
+			log.Printf("[IPC] Connect to Launcher failed: %v", err)
+		} else {
+			_ = ipcClient.SendAppReady(ctx, appVersion.Version, os.Getpid())
+			log.Printf("[IPC] Connected to Launcher & sent SendAppReady")
+		}
+		cancel()
+	}
 
 	// 运行应用
 	err = mainApp.Run()

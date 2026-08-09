@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/containerroute"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/dns"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcheripc"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/proxy"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/serviceroute"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/tailscale"
@@ -650,6 +652,36 @@ func (a *App) GetVersion() *VersionInfo {
 		BuildDate:   appVersion.BuildTime,
 		BuildNumber: appVersion.BuildNumber,
 	}
+}
+
+func (a *App) GetIPCUpdateState() (any, error) {
+	ipcClient, err := launcheripc.NewClientFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	return ipcClient.GetState(ctx)
+}
+
+func (a *App) RequestIPCUpdate(req *launcheripc.UpdateRequest) (any, error) {
+	ipcClient, err := launcheripc.NewClientFromEnv()
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return ipcClient.RequestUpdate(ctx, req)
+}
+
+func (a *App) ConfirmIPCUpdate(operationID string) error {
+	ipcClient, err := launcheripc.NewClientFromEnv()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return ipcClient.ConfirmUpdate(ctx, operationID)
 }
 
 func (a *App) GetWindowTitle() string {

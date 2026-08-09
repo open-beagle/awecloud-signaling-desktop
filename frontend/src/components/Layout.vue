@@ -77,7 +77,22 @@
       </aside>
 
       <main class="main-content">
+        <UpdateBanner
+          :phase="updateStore.activeUpdate?.phase"
+          :progress="updateStore.activeUpdate?.progress"
+          @open-modal="updateModalRef?.show()"
+        />
         <router-view />
+        <UpdateModal
+          ref="updateModalRef"
+          :current-version="updateStore.currentVersion"
+          :target-version="updateStore.activeUpdate?.operation_id"
+          :phase="updateStore.activeUpdate?.phase"
+          :progress="updateStore.activeUpdate?.progress"
+          :operation-id="updateStore.activeUpdate?.operation_id"
+          @request-update="handleRequestUpdate"
+          @confirm-update="handleConfirmUpdate"
+        />
       </main>
     </div>
   </div>
@@ -102,13 +117,19 @@ import {
 import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
 import { useDomainsStore } from '../stores/domains'
+import { useUpdateStore } from '../stores/update'
 import type { DomainItem } from '../stores/domains'
+import UpdateBanner from './update/UpdateBanner.vue'
+import UpdateModal from './update/UpdateModal.vue'
 import {
   ClearCredentials,
+  ConfirmIPCUpdate,
   GetDomainList,
   GetGRPCStatus,
+  GetIPCUpdateState,
   GetTunnelStatus,
-  Logout
+  Logout,
+  RequestIPCUpdate
 } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/internal/app/app'
 
 const router = useRouter()
@@ -116,6 +137,39 @@ const route = useRoute()
 const authStore = useAuthStore()
 const servicesStore = useServicesStore()
 const domainsStore = useDomainsStore()
+const updateStore = useUpdateStore()
+const updateModalRef = ref<InstanceType<typeof UpdateModal> | null>(null)
+
+const handleRequestUpdate = async () => {
+  try {
+    await RequestIPCUpdate({
+      schema_version: 1,
+      request_id: `req-${Date.now()}`,
+      source: 'manual',
+      task_id: undefined,
+      force: false,
+      target_version: 'latest',
+      manifest: {},
+      artifact: {
+        id: '', role: 'app', os: '', arch: '', package_type: 'binary',
+        filename: '', download_url: '', size: 0, sha256: '', signature: '', key_id: ''
+      }
+    })
+    ElMessage.success('已触发更新请求')
+  } catch (err: any) {
+    ElMessage.error(err.message || '更新请求失败')
+  }
+}
+
+const handleConfirmUpdate = async (opId?: string) => {
+  if (!opId) return
+  try {
+    await ConfirmIPCUpdate(opId)
+    ElMessage.success('正在重启安装新版本...')
+  } catch (err: any) {
+    ElMessage.error(err.message || '确认更新失败')
+  }
+}
 
 const accessNavigation = [
   { path: '/hosts', label: 'SSH', icon: markRaw(Monitor) },

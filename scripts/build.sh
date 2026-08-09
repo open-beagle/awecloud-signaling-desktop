@@ -218,11 +218,10 @@ else
 fi
 
 # 生成绑定（必须在前端构建之前，确保方法 ID 正确）
-if [ "$WAILS3_AVAILABLE" = true ]; then
-    echo -e "${YELLOW}Generating bindings...${NC}"
-    wails3 generate bindings
+if [ "$WAILS3_AVAILABLE" = true ] && wails3 generate bindings 2>/dev/null; then
+    echo -e "${GREEN}✓ Generated bindings with wails3${NC}"
 elif [ -d "frontend/bindings" ]; then
-    echo -e "${YELLOW}wails3 not available, using existing bindings...${NC}"
+    echo -e "${YELLOW}Using existing frontend/bindings...${NC}"
 else
     echo -e "${RED}Error: wails3 not available and no existing bindings found${NC}"
     echo "Please install wails3 or ensure frontend/bindings directory exists"
@@ -316,9 +315,18 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
         export CGO_ENABLED=1
     fi
     
-    # 执行构建
-    echo "Building desktop for ${OS}/${ARCH}: ${BUILD_OUTPUT}"
+    # 执行构建 App
+    echo "Building App for ${OS}/${ARCH}: ${BUILD_OUTPUT}"
     go build -tags production -trimpath -ldflags "${LDFLAGS}" -o "${BUILD_OUTPUT}" ./cmd/desktop
+
+    # 执行构建 Launcher
+    LAUNCHER_NAME="beagle-signal.launcher"
+    if [ "$OS" = "windows" ]; then
+        LAUNCHER_NAME="beagle-signal.launcher.exe"
+    fi
+    LAUNCHER_OUTPUT="${OUTPUT_DIR}/${LAUNCHER_NAME}"
+    echo "Building Launcher for ${OS}/${ARCH}: ${LAUNCHER_OUTPUT}"
+    go build -tags production -trimpath -ldflags "${LDFLAGS}" -o "${LAUNCHER_OUTPUT}" ./cmd/launcher
     
     # 检查构建结果
     if [ -f "${BUILD_OUTPUT}" ]; then
