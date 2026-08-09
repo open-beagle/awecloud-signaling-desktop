@@ -6,6 +6,21 @@ REM Desktop 构建脚本 (Wails v3) - Windows 版本
 REM 切换到脚本所在目录的上级目录（desktop/）
 cd /d "%~dp0.."
 
+REM 本地和 CI 打包统一从 .env 读取；.env.example 只作为字段模板。
+if not exist ".env" (
+    echo [ERROR] desktop/.env is required for packaging
+    exit /b 1
+)
+set "SIGNALING_ADDRESS="
+for /f "usebackq tokens=1,* delims==" %%A in (".env") do (
+    if /I "%%A"=="SIGNALING_ADDRESS" set "SIGNALING_ADDRESS=%%B"
+)
+if "%SIGNALING_ADDRESS%"=="" (
+    echo [ERROR] SIGNALING_ADDRESS is required in desktop/.env
+    exit /b 1
+)
+set "BUILD_ADDRESS=%SIGNALING_ADDRESS%"
+
 REM 读取版本号
 if "%BUILD_VERSION%"=="" (
     if exist "version" (
@@ -14,8 +29,6 @@ if "%BUILD_VERSION%"=="" (
         set BUILD_VERSION=dev
     )
 )
-if "%BUILD_ADDRESS%"=="" set BUILD_ADDRESS=
-
 REM 获取 Git 信息
 for /f "tokens=*" %%i in ('git rev-parse --short HEAD 2^>nul') do set GIT_COMMIT=%%i
 if "%GIT_COMMIT%"=="" set GIT_COMMIT=unknown
@@ -36,7 +49,7 @@ echo ========================================
 echo.
 echo Version:      %BUILD_VERSION%
 echo Build Number: %BUILD_NUMBER%
-echo Address:      %BUILD_ADDRESS%
+echo Environment:  .env loaded
 echo Git Commit:   %GIT_COMMIT%
 echo Build Date:   %BUILD_DATE%
 echo Architecture: %GOARCH%
@@ -135,7 +148,7 @@ if not "%BUILD_ADDRESS%"=="" (
 
 set BUILD_OUTPUT=%OUTPUT_DIR%\awecloud-signaling-desktop.exe
 
-echo Building with: go build -tags production -trimpath -ldflags "%LDFLAGS%" -o %BUILD_OUTPUT% ./cmd/desktop
+echo Building Desktop binary: %BUILD_OUTPUT%
 go build -tags production -trimpath -ldflags "%LDFLAGS%" -o %BUILD_OUTPUT% ./cmd/desktop
 
 if %ERRORLEVEL% neq 0 (

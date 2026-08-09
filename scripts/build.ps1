@@ -3,7 +3,6 @@
 
 param(
     [string]$BuildVersion = $env:BUILD_VERSION,
-    [string]$BuildAddress = $env:BUILD_ADDRESS,
     [string]$GoArch = $env:GOARCH
 )
 
@@ -12,19 +11,34 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $DesktopDir = Split-Path -Parent $ScriptDir
 Set-Location $DesktopDir
 
+# Local and CI packaging both read .env. .env.example is only a template.
+$EnvPath = Join-Path $DesktopDir ".env"
+if (-not (Test-Path -LiteralPath $EnvPath)) {
+    Write-Host "[ERROR] desktop/.env is required for packaging" -ForegroundColor Red
+    exit 1
+}
+
+$EnvConfig = @{}
+Get-Content -LiteralPath $EnvPath | ForEach-Object {
+    $Line = $_.Trim()
+    if ($Line -eq "" -or $Line.StartsWith("#")) { return }
+    $Pair = $Line.Split("=", 2)
+    if ($Pair.Count -eq 2) {
+        $EnvConfig[$Pair[0].Trim()] = $Pair[1].Trim()
+    }
+}
+$BuildAddress = $EnvConfig["SIGNALING_ADDRESS"]
+if ([string]::IsNullOrWhiteSpace($BuildAddress)) {
+    Write-Host "[ERROR] SIGNALING_ADDRESS is required in desktop/.env" -ForegroundColor Red
+    exit 1
+}
+
 # Read version from file if not provided
 if ([string]::IsNullOrEmpty($BuildVersion)) {
     if (Test-Path "version") {
         $BuildVersion = (Get-Content "version" -Raw).Trim()
     } else {
         $BuildVersion = "dev"
-    }
-}
-if ([string]::IsNullOrEmpty($BuildAddress)) { 
-    # 尝试从 SIGNALING_ADDRESS 环境变量读取（与 Linux 版本保持一致）
-    $BuildAddress = $env:SIGNALING_ADDRESS
-    if ([string]::IsNullOrEmpty($BuildAddress)) { 
-        $BuildAddress = "" 
     }
 }
 if ([string]::IsNullOrEmpty($GoArch)) { $GoArch = "amd64" }
@@ -55,7 +69,7 @@ Write-Host ""
 Write-Host "Desktop Directory: $DesktopDir"
 Write-Host "Version:           $BuildVersion"
 Write-Host "Build Number:      $BuildNumber"
-Write-Host "Address:           $BuildAddress"
+Write-Host "Environment:       .env loaded"
 Write-Host "Git Commit:        $GitCommit"
 Write-Host "Build Date:        $BuildDate"
 Write-Host "Architecture:      $GoArch"
@@ -267,7 +281,7 @@ if (Test-Path -LiteralPath $BuildBackup) {
     Remove-Item -LiteralPath $BuildBackup -Force
 }
 
-Write-Host "Building with: go build -tags production -trimpath -ldflags `"$LdFlags`" -o $BuildOutput ./cmd/desktop"
+Write-Host "Building Desktop binary: $BuildOutput"
 go build -tags production -trimpath -ldflags $LdFlags -o $BuildOutput ./cmd/desktop
 
 if ($LASTEXITCODE -ne 0) {

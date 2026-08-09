@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/denisbrodbeck/machineid"
-	"github.com/shirou/gopsutil/host"
+	"github.com/shirou/gopsutil/v4/host"
 )
 
 // Fingerprint 设备指纹信息

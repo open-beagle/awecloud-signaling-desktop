@@ -104,7 +104,7 @@ if (Get-Command wails3 -ErrorAction SilentlyContinue) {
         Write-Host "[INFO] wails3 not available, using existing bindings..."
     } else {
         Write-Host "[ERROR] wails3 not available and no existing bindings found" -ForegroundColor Red
-        Write-Host "Please install wails3: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.5"
+        Write-Host "Please install the Wails CLI version declared in go.mod (see README.md)"
         Read-Host "Press Enter to exit"
         exit 1
     }

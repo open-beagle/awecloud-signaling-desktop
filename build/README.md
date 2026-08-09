@@ -74,10 +74,18 @@ xcode-select --install
 所有平台都需要安装 Wails CLI：
 
 ```bash
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.5
+WAILS_VERSION="$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
+go install "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}"
 ```
 
 ## 构建命令
+
+所有正式打包都要求 `desktop/.env` 存在且包含非空的 `SIGNALING_ADDRESS`。`.env.example` 只作为模板：
+
+```bash
+cd desktop
+cp .env.example .env
+```
 
 ```bash
 # 开发模式

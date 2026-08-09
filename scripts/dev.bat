@@ -63,7 +63,7 @@ REM 检查 wails3 是否安装
 where wails3 >nul 2>nul
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] wails3 command not found
-    echo Please install Wails v3 first: go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.5
+    echo Please install the Wails CLI version declared in go.mod ^(see README.md^)
     exit /b 1
 )
 

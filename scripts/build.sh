@@ -13,16 +13,19 @@ NC='\033[0m' # No Color
 # 切换到脚本所在目录的上级目录（desktop/）
 cd "$(dirname "$0")/.."
 
-# 本地配置优先；CI 使用仓库中的公开示例配置。
-ENV_FILE=".env"
-if [ ! -f "${ENV_FILE}" ]; then
-    ENV_FILE=".env.example"
+# 本地和 CI 打包统一从 .env 读取；.env.example 只作为字段模板。
+if [ ! -f ".env" ]; then
+    echo "Error: desktop/.env is required for packaging" >&2
+    exit 1
 fi
-if [ -f "${ENV_FILE}" ]; then
-    set -a
-    # shellcheck disable=SC1091
-    . "./${ENV_FILE}"
-    set +a
+set -a
+# shellcheck disable=SC1091
+. "./.env"
+set +a
+
+if [ -z "${SIGNALING_ADDRESS:-}" ]; then
+    echo "Error: SIGNALING_ADDRESS is required in desktop/.env" >&2
+    exit 1
 fi
 
 # 读取版本号
@@ -34,7 +37,7 @@ if [ -z "$BUILD_VERSION" ]; then
     fi
 fi
 
-BUILD_ADDRESS="${BUILD_ADDRESS:-${SIGNALING_ADDRESS:-}}"  # 默认 Server 地址（可选）
+BUILD_ADDRESS="${SIGNALING_ADDRESS}"
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo "0")
 BUILD_DATE=$(TZ=Asia/Shanghai date '+%Y-%m-%d_%H:%M:%S')
@@ -51,7 +54,7 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo "Version:      ${BUILD_VERSION}"
 echo "Build Number: ${BUILD_NUMBER}"
-echo "Address:      ${BUILD_ADDRESS:-<not set>}"
+echo "Environment:  .env loaded"
 echo "Git Commit:   ${GIT_COMMIT}"
 echo "Build Date:   ${BUILD_DATE}"
 echo "Platforms:    ${PLATFORMS}"
@@ -314,7 +317,7 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
     fi
     
     # 执行构建
-    echo "Building with: go build -tags production -trimpath -ldflags \"${LDFLAGS}\" -o ${BUILD_OUTPUT} ./cmd/desktop"
+    echo "Building desktop for ${OS}/${ARCH}: ${BUILD_OUTPUT}"
     go build -tags production -trimpath -ldflags "${LDFLAGS}" -o "${BUILD_OUTPUT}" ./cmd/desktop
     
     # 检查构建结果

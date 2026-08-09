@@ -14,12 +14,20 @@ Desktop 客户端应用 - 基于 Wails 的跨平台桌面应用
 
 - Go 1.25+
 - Node.js 18+
-- Wails CLI v3.0.0-beta.5
+- 与 `go.mod` 一致的 Wails CLI
 
 安装 Wails CLI:
 
 ```bash
-go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.5
+WAILS_VERSION="$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
+go install "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}"
+```
+
+Windows PowerShell：
+
+```powershell
+$WailsVersion = go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3
+go install "github.com/wailsapp/wails/v3/cmd/wails3@$WailsVersion"
 ```
 
 ### 开发模式
@@ -85,11 +93,16 @@ scripts\dev.bat
 
 ### 构建
 
-```bash
-# 构建当前平台
-wails3 build
+打包前必须从模板创建本地配置：
 
-# 或使用脚本（支持多平台）
+```bash
+cp .env.example .env
+```
+
+`SIGNALING_ADDRESS` 必须非空。`.env.example` 只作为字段模板，正式打包不会回退读取它。
+
+```bash
+# Linux/macOS，支持多平台
 ./scripts/build.sh
 
 # 指定平台构建
@@ -97,6 +110,8 @@ PLATFORMS=windows/amd64 ./scripts/build.sh
 PLATFORMS=linux/amd64,windows/amd64 ./scripts/build.sh
 PLATFORMS=darwin/amd64,darwin/arm64 ./scripts/build.sh  # 需 macOS 环境
 ```
+
+Windows 本地打包使用 `scripts\build.ps1` 或 `scripts\build.bat`。GitHub Actions 使用组织级 `SIGNALING_ADDRESS` Secret 生成 `.env` 后调用同一构建脚本。
 
 支持的平台：
 
