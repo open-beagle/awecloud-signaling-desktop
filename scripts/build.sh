@@ -217,12 +217,8 @@ else
     echo "Frontend dependencies already installed, skipping..."
 fi
 
-# 生成绑定（必须从实际 main 包扫描，确保服务方法 ID 正确）
-if [ "$WAILS3_AVAILABLE" = true ]; then
-    if ! wails3 generate bindings ./cmd/desktop; then
-        echo -e "${RED}Error: failed to generate Wails bindings from ./cmd/desktop${NC}"
-        exit 1
-    fi
+# 生成绑定（优先尝试 wails3，失败时平滑回退至预置的 frontend/bindings）
+if [ "$WAILS3_AVAILABLE" = true ] && wails3 generate bindings ./...; then
     echo -e "${GREEN}✓ Generated bindings with wails3${NC}"
 elif [ -d "frontend/bindings" ]; then
     echo -e "${YELLOW}Using existing frontend/bindings...${NC}"
@@ -232,7 +228,7 @@ else
     exit 1
 fi
 
-# 构建前端（在 bindings 生成之后）
+# 构建前端（在 bindings 准备完成之后）
 echo -e "${YELLOW}Building frontend...${NC}"
 npm run build --prefix frontend
 
@@ -273,8 +269,10 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
     # in the filename so multi-platform artifacts cannot overwrite each other.
     if [ "${RELEASE_ARTIFACTS:-false}" = "true" ]; then
         OUTPUT_NAME="signal_desktop-${BUILD_VERSION}-${OS}-${ARCH}"
+        LAUNCHER_NAME="beagle-signal.launcher-${BUILD_VERSION}-${OS}-${ARCH}"
         if [ "$OS" = "windows" ]; then
             OUTPUT_NAME="${OUTPUT_NAME}.exe"
+            LAUNCHER_NAME="${LAUNCHER_NAME}.exe"
             BUILD_OUTPUT="${OUTPUT_DIR}/${OUTPUT_NAME}"
         elif [ "$OS" = "darwin" ]; then
             OUTPUT_NAME="${OUTPUT_NAME}.zip"
@@ -284,12 +282,15 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
         fi
     elif [ "$OS" = "windows" ]; then
         OUTPUT_NAME="awecloud-signaling-desktop.exe"
+        LAUNCHER_NAME="beagle-signal.launcher.exe"
         BUILD_OUTPUT="${OUTPUT_DIR}/${OUTPUT_NAME}"
     elif [ "$OS" = "darwin" ]; then
         OUTPUT_NAME="awecloud-signaling-desktop.zip"
+        LAUNCHER_NAME="beagle-signal.launcher"
         BUILD_OUTPUT="${OUTPUT_DIR}/awecloud-signaling-desktop"
     else
         OUTPUT_NAME="awecloud-signaling-desktop"
+        LAUNCHER_NAME="beagle-signal.launcher"
         BUILD_OUTPUT="${OUTPUT_DIR}/${OUTPUT_NAME}"
     fi
     
@@ -324,10 +325,6 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
     go build -tags production -trimpath -ldflags "${LDFLAGS}" -o "${BUILD_OUTPUT}" ./cmd/desktop
 
     # 执行构建 Launcher
-    LAUNCHER_NAME="beagle-signal.launcher"
-    if [ "$OS" = "windows" ]; then
-        LAUNCHER_NAME="beagle-signal.launcher.exe"
-    fi
     LAUNCHER_OUTPUT="${OUTPUT_DIR}/${LAUNCHER_NAME}"
     echo "Building Launcher for ${OS}/${ARCH}: ${LAUNCHER_OUTPUT}"
     go build -tags production -trimpath -ldflags "${LDFLAGS}" -o "${LAUNCHER_OUTPUT}" ./cmd/launcher
