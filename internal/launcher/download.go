@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcheripc"
 )
@@ -25,7 +27,10 @@ func DownloadAndVerifyArtifact(ctx context.Context, downloadsDir string, artifac
 		return nil, errors.New("artifact size must be > 0")
 	}
 
-	partPath := filepath.Join(downloadsDir, fmt.Sprintf("%s.part", artifact.ID))
+	if len(artifact.SHA256) != 64 {
+		return nil, errors.New("artifact sha256 must contain 64 hexadecimal characters")
+	}
+	partPath := filepath.Join(downloadsDir, fmt.Sprintf("app-%s.part", strings.ToLower(artifact.SHA256)))
 	_ = os.Remove(partPath)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, artifact.DownloadURL, nil)
@@ -33,7 +38,22 @@ func DownloadAndVerifyArtifact(ctx context.Context, downloadsDir string, artifac
 		return nil, fmt.Errorf("create download request failed: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	originURL, err := url.Parse(artifact.DownloadURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse artifact URL failed: %w", err)
+	}
+	client := &http.Client{
+		CheckRedirect: func(redirected *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return errors.New("too many artifact redirects")
+			}
+			if !strings.EqualFold(redirected.URL.Scheme, originURL.Scheme) || !strings.EqualFold(redirected.URL.Host, originURL.Host) {
+				return errors.New("cross-origin artifact redirect is forbidden")
+			}
+			return nil
+		},
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("download request failed: %w", err)
 	}
@@ -86,7 +106,15 @@ func DownloadAndVerifyArtifact(ctx context.Context, downloadsDir string, artifac
 		}
 	}
 
-	file.Close()
+	if err := file.Sync(); err != nil {
+		file.Close()
+		_ = os.Remove(partPath)
+		return nil, fmt.Errorf("sync part file failed: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(partPath)
+		return nil, fmt.Errorf("close part file failed: %w", err)
+	}
 
 	if downloaded != artifact.Size {
 		_ = os.Remove(partPath)
@@ -94,7 +122,7 @@ func DownloadAndVerifyArtifact(ctx context.Context, downloadsDir string, artifac
 	}
 
 	digest := hex.EncodeToString(h.Sum(nil))
-	if digest != artifact.SHA256 {
+	if !strings.EqualFold(digest, artifact.SHA256) {
 		_ = os.Remove(partPath)
 		return nil, fmt.Errorf("downloaded sha256 %s does not match expected %s", digest, artifact.SHA256)
 	}

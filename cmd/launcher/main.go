@@ -1,50 +1,96 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
+	"path/filepath"
 
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcher"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcheripc"
 )
 
 func main() {
-	fmt.Println("=== Beagle Signal Launcher Starting ===")
+	if err := run(); err != nil {
+		log.Printf("Launcher failed: %v", err)
+		showStartupError(err.Error())
+	}
+}
 
+func run() error {
 	paths, err := launcher.NewPaths("")
 	if err != nil {
-		log.Fatalf("Initialize paths failed: %v", err)
+		return err
+	}
+	instanceLock, err := launcher.AcquireInstanceLock(paths.LauncherLockFile)
+	if err != nil {
+		return err
+	}
+	defer instanceLock.Release()
+
+	logFile, err := os.OpenFile(paths.LauncherLogFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	defer logFile.Close()
+	logger := log.New(io.MultiWriter(logFile, os.Stderr), "", log.Ldate|log.Ltime|log.Lmicroseconds)
+	log.SetOutput(io.MultiWriter(logFile, os.Stderr))
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+	logger.Printf("Beagle Signal Launcher starting from %s", paths.RootDir)
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+
+	current, err := launcher.EnsureCurrentApp(context.Background(), paths, cfg.ServerAddress, logger, showInitialInstallNotice)
+	if err != nil {
+		return err
 	}
 
 	coord, err := launcher.NewCoordinator(paths)
 	if err != nil {
-		log.Fatalf("Initialize coordinator failed: %v", err)
+		return err
 	}
 
-	endpoint := os.Getenv(launcheripc.EnvLauncherEndpoint)
-	if endpoint == "" {
-		endpoint = fmt.Sprintf("/tmp/beagle-signal-%d/l-%d.sock", os.Getuid(), os.Getpid())
+	endpoint, err := launcheripc.NewEndpoint()
+	if err != nil {
+		return err
+	}
+	token, err := launcheripc.NewSessionToken()
+	if err != nil {
+		return err
 	}
 
-	token := os.Getenv(launcheripc.EnvLauncherToken)
-	if token == "" {
-		token = fmt.Sprintf("token-%d", os.Getpid())
-	}
-
-	ipcServer := launcheripc.NewServer(endpoint, token, uint32(os.Getuid()), coord)
+	ipcServer := launcheripc.NewServer(endpoint, token, launcheripc.ExpectedPeerUID(), coord)
 	if err := ipcServer.Start(); err != nil {
-		log.Fatalf("Start IPC Server failed: %v", err)
+		return err
 	}
 	defer ipcServer.Stop()
+	logger.Printf("Launcher IPC server started")
 
-	fmt.Printf("Launcher running on endpoint: %s\n", endpoint)
+	launcherPath, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	if resolvedPath, resolveErr := filepath.EvalSymlinks(launcherPath); resolveErr == nil {
+		launcherPath = resolvedPath
+	}
+	appPath := paths.AppPath(current.Version)
+	processManager := launcher.NewProcessManager()
+	pid, err := processManager.StartApp(appPath, endpoint, token, current.Version, launcherPath)
+	if err != nil {
+		return err
+	}
+	logger.Printf("Desktop App version %s started with PID %d", current.Version, pid)
 
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-
-	fmt.Println("Launcher shutting down cleanly.")
+	if err := processManager.Wait(); err != nil {
+		logger.Printf("Desktop App exited with error: %v", err)
+		return fmt.Errorf("Desktop App exited unexpectedly: %w", err)
+	}
+	logger.Printf("Desktop App exited normally")
+	return nil
 }

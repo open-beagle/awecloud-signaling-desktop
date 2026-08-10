@@ -89,12 +89,6 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-# Check wails3
-$Wails3Available = $false
-if (Get-Command wails3 -ErrorAction SilentlyContinue) {
-    $Wails3Available = $true
-}
-
 # Install frontend dependencies
 Write-Host "[INFO] Installing frontend dependencies..."
 Set-Location "frontend"
@@ -110,23 +104,15 @@ if (-not (Test-Path "node_modules")) {
 }
 Set-Location $DesktopDir
 
-# Generate bindings (必须在构建前端之前)
-if ($Wails3Available) {
-    Write-Host "[INFO] Generating bindings..."
-    wails3 generate bindings
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[ERROR] Failed to generate bindings" -ForegroundColor Red
-        exit 1
-    }
-} else {
-    if (Test-Path "frontend\bindings") {
-        Write-Host "[INFO] wails3 not available, using existing bindings..."
-    } else {
-        Write-Host "[ERROR] wails3 not available and no existing bindings found" -ForegroundColor Red
-        Write-Host "Please install wails3 or ensure frontend\bindings directory exists"
-        exit 1
-    }
+# Release and local builds use the bindings committed for the exact Wails
+# runtime in go.mod. A globally installed wails3 may be a different version
+# and must not replace these files during packaging.
+if (-not (Test-Path "frontend\bindings")) {
+    Write-Host "[ERROR] frontend\bindings is required" -ForegroundColor Red
+    Write-Host "Regenerate it with the Wails version pinned in go.mod before packaging"
+    exit 1
 }
+Write-Host "[INFO] Using committed frontend bindings..."
 
 # Build frontend
 Write-Host "[INFO] Building frontend..."
@@ -262,6 +248,8 @@ if (-not [string]::IsNullOrEmpty($BuildAddress)) {
 $BuildOutput = "build\bin\awecloud-signaling-desktop.exe"
 $BuildOutputFull = [System.IO.Path]::GetFullPath((Join-Path $DesktopDir $BuildOutput))
 $BuildBackup = "$BuildOutputFull~"
+$LauncherOutput = "build\bin\beagle-signal.launcher.exe"
+$LauncherOutputFull = [System.IO.Path]::GetFullPath((Join-Path $DesktopDir $LauncherOutput))
 
 # Windows may rename an in-use output to .exe~ and leave a second artifact.
 # Refuse to build over the running fixed output so every successful build has
@@ -291,6 +279,26 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
+$RunningLauncher = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.ExecutablePath -and ([System.IO.Path]::GetFullPath($_.ExecutablePath) -eq $LauncherOutputFull) }
+if ($RunningLauncher) {
+    $RunningPids = ($RunningLauncher | Select-Object -ExpandProperty ProcessId) -join ", "
+    Write-Host "[ERROR] Launcher output is running (PID: $RunningPids): $LauncherOutputFull" -ForegroundColor Red
+    Write-Host "Close the Launcher before rebuilding." -ForegroundColor Yellow
+    Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
+    Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
+    exit 1
+}
+
+Write-Host "Building Launcher binary: $LauncherOutput"
+go build -tags production -trimpath -ldflags $LdFlags -o $LauncherOutput ./cmd/launcher
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[ERROR] Launcher build failed" -ForegroundColor Red
+    Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
+    Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
+    exit 1
+}
+
 # Check build result
 if (Test-Path $BuildOutput) {
     if (Test-Path -LiteralPath $BuildBackup) {
@@ -303,6 +311,16 @@ if (Test-Path $BuildOutput) {
 
     $FileSize = (Get-Item $BuildOutput).Length
     Write-Host "  File size: $FileSize bytes"
+
+    if (-not (Test-Path $LauncherOutput)) {
+        Write-Host "[ERROR] Launcher output file not found" -ForegroundColor Red
+        Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
+        Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
+        exit 1
+    }
+    $LauncherFileSize = (Get-Item $LauncherOutput).Length
+    Write-Host "[SUCCESS] Launcher build successful: $LauncherOutput" -ForegroundColor Green
+    Write-Host "  File size: $LauncherFileSize bytes"
 } else {
     Write-Host "[ERROR] Build failed - output file not found" -ForegroundColor Red
     Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue

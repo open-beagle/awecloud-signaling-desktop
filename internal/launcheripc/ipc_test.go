@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,8 +12,8 @@ import (
 )
 
 type mockCoordinator struct {
-	connectCalled      bool
-	appReadyCalled     bool
+	connectCalled       bool
+	appReadyCalled      bool
 	serverHealthyCalled bool
 }
 
@@ -66,12 +64,12 @@ func (m *mockCoordinator) GetEvents(ctx context.Context, afterSeq int64, waitSec
 }
 
 func TestIPCServerClientHandshake(t *testing.T) {
-	tmpDir := t.TempDir()
-	endpoint := filepath.Join(tmpDir, "test.sock")
+	endpoint, err := NewEndpoint()
+	require.NoError(t, err)
 	token := "secret-token-12345"
 
 	coord := &mockCoordinator{}
-	server := NewServer(endpoint, token, uint32(os.Getuid()), coord)
+	server := NewServer(endpoint, token, ExpectedPeerUID(), coord)
 	require.NoError(t, server.Start())
 	defer server.Stop()
 
@@ -114,7 +112,7 @@ func TestIPCServerClientHandshake(t *testing.T) {
 
 func TestIPCRejectsBrowserOrigin(t *testing.T) {
 	coord := &mockCoordinator{}
-	server := NewServer("unused", "token-123", uint32(os.Getuid()), coord)
+	server := NewServer("unused", "token-123", ExpectedPeerUID(), coord)
 	handler := server.browserCheckMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -129,7 +127,7 @@ func TestIPCRejectsBrowserOrigin(t *testing.T) {
 
 func TestIPCRejectsUnauthorizedToken(t *testing.T) {
 	coord := &mockCoordinator{}
-	server := NewServer("unused", "valid-token", uint32(os.Getuid()), coord)
+	server := NewServer("unused", "valid-token", ExpectedPeerUID(), coord)
 	handler := server.authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

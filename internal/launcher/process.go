@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"time"
 
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcheripc"
 )
@@ -53,11 +52,18 @@ func (pm *ProcessManager) IsRunning() bool {
 	return true
 }
 
+func (pm *ProcessManager) Wait() error {
+	if pm.cmd == nil {
+		return fmt.Errorf("Desktop App has not been started")
+	}
+	err := pm.cmd.Wait()
+	pm.cmd = nil
+	return err
+}
+
 func (pm *ProcessManager) StopApp() {
 	if pm.cmd != nil && pm.cmd.Process != nil {
 		_ = pm.cmd.Process.Kill()
 		_ = pm.cmd.Wait()
 	}
 }
-
-var _ = time.Second
