@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - release-v1.0
-    paths:
-      - version
-  workflow_dispatch: # 允许手动触发
 
 concurrency:
   group: desktop-release-${{ github.ref }}
