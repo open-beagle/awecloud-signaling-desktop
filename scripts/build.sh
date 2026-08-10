@@ -13,6 +13,10 @@ NC='\033[0m' # No Color
 # 切换到脚本所在目录的上级目录（desktop/）
 cd "$(dirname "$0")/.."
 
+if [ "${RELEASE_PACKAGE_ONLY:-false}" = "true" ]; then
+    exec bash "./scripts/package-release.sh"
+fi
+
 # 本地和 CI 打包统一从 .env 读取；.env.example 只作为字段模板。
 if [ ! -f ".env" ]; then
     echo "Error: desktop/.env is required for packaging" >&2

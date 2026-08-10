@@ -1,6 +1,7 @@
 # Build outputs
 /build/bin/
 /build/tmp/
+/build/publish/
 
 # Frontend
 /frontend/node_modules/

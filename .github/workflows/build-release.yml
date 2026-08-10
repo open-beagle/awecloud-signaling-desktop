@@ -156,185 +156,38 @@ jobs:
           name: desktop-macos
           path: artifacts
 
+      - name: Package release
+        env:
+          RELEASE_PACKAGE_ONLY: "true"
+          BUILD_VERSION: ${{ needs.read-version.outputs.BUILD_VERSION }}
+          ARTIFACT_BASE_URL: https://cache.ali.wodcloud.com/vscode/awecloud-signaling
+        run: bash ./scripts/build.sh
+
       - name: Setup MinIO Client
         run: |
           curl -fsSLo mc https://dl.min.io/client/mc/release/linux-amd64/mc
           chmod +x mc
           sudo mv mc /usr/local/bin/
 
-      - name: Publish Desktop artifacts and release manifest
+      - name: Publish artifacts
         env:
           S3_ENDPOINT_ALIYUN: ${{ secrets.S3_ENDPOINT_ALIYUN }}
           S3_ACCESS_KEY_ALIYUN: ${{ secrets.S3_ACCESS_KEY_ALIYUN }}
           S3_SECRET_KEY_ALIYUN: ${{ secrets.S3_SECRET_KEY_ALIYUN }}
-          VERSION: ${{ needs.read-version.outputs.BUILD_VERSION }}
-          ARTIFACT_BASE_URL: https://cache.ali.wodcloud.com/vscode/awecloud-signaling
         run: |
           set -euo pipefail
           mc alias set aliyun --api=S3v4 "${S3_ENDPOINT_ALIYUN}" "${S3_ACCESS_KEY_ALIYUN}" "${S3_SECRET_KEY_ALIYUN}"
+          mc mirror --overwrite build/publish/ aliyun/vscode/awecloud-signaling/
 
-          s3_bucket="aliyun/vscode/awecloud-signaling"
-          published_at="$(date -u -d "@$(git show -s --format=%ct HEAD)" +%Y-%m-%dT%H:%M:%SZ)"
-
-          upload_immutable() {
-            local source="$1" target="$2" expected_sha="$3"
-            if mc stat "${target}" >/dev/null 2>&1; then
-              mc cp "${target}" existing-artifact
-              existing_sha="$(sha256sum existing-artifact | awk '{print $1}')"
-              rm -f existing-artifact
-              test "${existing_sha}" = "${expected_sha}" || {
-                echo "Immutable artifact conflict: ${target}" >&2
-                exit 1
-              }
-              return
-            fi
-            mc cp "${source}" "${target}"
-            mc cp "${target}" uploaded-artifact
-            uploaded_sha="$(sha256sum uploaded-artifact | awk '{print $1}')"
-            rm -f uploaded-artifact
-            test "${uploaded_sha}" = "${expected_sha}" || {
-              echo "Uploaded artifact verification failed: ${target}" >&2
-              exit 1
-            }
-          }
-
-          artifact_specs=(
-            "windows|amd64|app|binary|signal_desktop-${VERSION}-windows-amd64.exe"
-            "windows|amd64|launcher|binary|beagle-signal.launcher-${VERSION}-windows-amd64.exe"
-            "darwin|arm64|app|zip|signal_desktop-${VERSION}-darwin-arm64.zip"
-            "darwin|arm64|launcher|binary|beagle-signal.launcher-${VERSION}-darwin-arm64"
-            "darwin|amd64|app|zip|signal_desktop-${VERSION}-darwin-amd64.zip"
-            "darwin|amd64|launcher|binary|beagle-signal.launcher-${VERSION}-darwin-amd64"
-            "linux|amd64|app|binary|signal_desktop-${VERSION}-linux-amd64"
-            "linux|amd64|launcher|binary|beagle-signal.launcher-${VERSION}-linux-amd64"
-          )
-
-          artifacts_json='[]'
-          for spec in "${artifact_specs[@]}"; do
-            IFS='|' read -r os arch role package_type filename <<< "${spec}"
-            source="artifacts/${filename}"
-            test -f "${source}" || { echo "Missing Desktop artifact: ${filename}" >&2; exit 1; }
-            sha256="$(sha256sum "${source}" | awk '{print $1}')"
-            size="$(stat -c %s "${source}")"
-            object="${s3_bucket}/desktop/artifacts/${os}/${arch}/${role}/${sha256}/${filename}"
-            download_url="${ARTIFACT_BASE_URL}/desktop/artifacts/${os}/${arch}/${role}/${sha256}/${filename}"
-            upload_immutable "${source}" "${object}" "${sha256}"
-            artifacts_json="$(jq -c \
-              --arg os "${os}" --arg arch "${arch}" --arg role "${role}" \
-              --arg package_type "${package_type}" --arg filename "${filename}" \
-              --arg download_url "${download_url}" --arg sha256 "${sha256}" --argjson size "${size}" \
-              '. + [{os: $os, arch: $arch, role: $role, package_type: $package_type,
-                      filename: $filename, download_url: $download_url, size: $size, sha256: $sha256}]' \
-              <<< "${artifacts_json}")"
-          done
-
-          jq -n \
-            --arg published_at "${published_at}" --arg version "${VERSION}" --arg commit "${GITHUB_SHA}" \
-            --argjson artifacts "${artifacts_json}" \
-            '{schema_version: 1, published_at: $published_at, release: {
-              component: "desktop", version: $version, commit_id: $commit, channel: "stable",
-              release_notes: ("Desktop build " + $commit), min_supported_version: ""
-            }, artifacts: $artifacts}' > desktop-release.json
-          jq -e '.schema_version == 1 and .release.component == "desktop" and (.artifacts | length == 8)' desktop-release.json >/dev/null
-
-          release_sha="$(sha256sum desktop-release.json | awk '{print $1}')"
-          release_object="${s3_bucket}/updater/releases/desktop/${VERSION}.json"
-          release_url="${ARTIFACT_BASE_URL}/updater/releases/desktop/${VERSION}.json"
-          upload_immutable desktop-release.json "${release_object}" "${release_sha}"
-
-          catalog_object="${s3_bucket}/updater/catalog.json"
-          list_manifest_urls() {
-            local manifest_object manifest_relative manifest_url
-            {
-              while IFS= read -r manifest_object; do
-                [ -n "${manifest_object}" ] || continue
-                manifest_relative="${manifest_object#${s3_bucket}/updater/releases/}"
-                manifest_url="${ARTIFACT_BASE_URL}/updater/releases/${manifest_relative}"
-                if mc cat "${manifest_object}" | jq -ce \
-                  --arg artifact_base "${ARTIFACT_BASE_URL}/" \
-                  --arg manifest_relative "${manifest_relative}" \
-                  --arg manifest_url "${manifest_url}" '
-                  .schema_version == 1 and
-                  (.published_at | type) == "string" and
-                  (.release.component | type) == "string" and
-                  (.release.version | type) == "string" and
-                  (.artifacts | type == "array" and length > 0) and
-                  all(.artifacts[];
-                    (.download_url | type) == "string" and
-                    (.download_url | startswith($artifact_base))
-                  ) |
-                  select(.) |
-                  {component: .release.component, version: .release.version, published_at: .published_at,
-                   canonical: ($manifest_relative == (.release.component + "/" + .release.version + ".json")),
-                   url: $manifest_url}
-                '; then
-                  :
-                else
-                  echo "Skip updater manifest outside current public artifact base: ${manifest_object}" >&2
-                fi
-              done < <(mc find "${s3_bucket}/updater/releases" --name '*.json')
-            } | jq -sc '
-              sort_by(.component, .version) |
-              group_by([.component, .version]) |
-              map(sort_by(.canonical, .published_at, .url) | last | .url) |
-              sort'
-          }
-          publish_catalog() {
-            local attempt expected actual
-            for attempt in 1 2 3 4 5; do
-              expected="$(list_manifest_urls)"
-              jq -n --arg generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson manifests "${expected}" \
-                '{schema_version: 1, generated_at: $generated_at, manifests: $manifests}' > updater-catalog.json
-              mc cp updater-catalog.json "${catalog_object}"
-
-              # S3 listings are the source of truth. Recheck after the write so
-              # concurrent component pipelines cannot silently drop a commit.
-              expected="$(list_manifest_urls)"
-              actual="$(mc cat "${catalog_object}" | jq -c '.manifests | sort | unique')"
-              if [ "${actual}" = "${expected}" ]; then
-                return 0
-              fi
-              sleep "${attempt}"
-            done
-            echo "Updater catalog changed concurrently after 5 attempts" >&2
-            return 1
-          }
-          publish_catalog
-          mc cat "${catalog_object}" | jq -e --arg release_url "${release_url}" \
-            '.schema_version == 1 and (.manifests | index($release_url)) != null' >/dev/null
-
-          selected_manifests="$(mc cat "${catalog_object}" | jq -c '.manifests')"
-          while IFS= read -r manifest_object; do
-            [ -n "${manifest_object}" ] || continue
-            manifest_relative="${manifest_object#${s3_bucket}/updater/releases/}"
-            manifest_url="${ARTIFACT_BASE_URL}/updater/releases/${manifest_relative}"
-            if ! jq -e --arg url "${manifest_url}" 'index($url) != null' <<< "${selected_manifests}" >/dev/null; then
-              mc rm "${manifest_object}"
-            fi
-          done < <(mc find "${s3_bucket}/updater/releases/desktop" --name '*.json')
-
-          referenced_urls="$({
-            jq -r --arg prefix "${ARTIFACT_BASE_URL}/updater/releases/desktop/" \
-              '.[] | select(startswith($prefix))' <<< "${selected_manifests}" | while IFS= read -r manifest_url; do
-              manifest_relative="${manifest_url#${ARTIFACT_BASE_URL}/updater/releases/}"
-              mc cat "${s3_bucket}/updater/releases/${manifest_relative}" | jq -r \
-                'select(.release.component == "desktop") | .artifacts[].download_url'
-            done
-          } | sort -u | jq -Rsc 'split("\n") | map(select(length > 0))')"
-          while IFS= read -r artifact_object; do
-            [ -n "${artifact_object}" ] || continue
-            artifact_relative="${artifact_object#${s3_bucket}/}"
-            artifact_url="${ARTIFACT_BASE_URL}/${artifact_relative}"
-            if ! jq -e --arg url "${artifact_url}" 'index($url) != null' <<< "${referenced_urls}" >/dev/null; then
-              mc rm "${artifact_object}"
-            fi
-          done < <(mc find "${s3_bucket}/desktop/artifacts")
-
+      - name: Publish summary
+        env:
+          VERSION: ${{ needs.read-version.outputs.BUILD_VERSION }}
+        run: |
           {
             echo "### Desktop release"
             echo "- Version: \`${VERSION}\`"
             echo "- Commit: \`${GITHUB_SHA}\`"
-            echo "- Manifest: \`updater/releases/desktop/${VERSION}.json\`"
+            echo "- Manifest: \`updater/releases/desktop/latest.json\`"
             echo "- Artifacts: 8 (App + Launcher)"
             echo "- Server registration: use Platform > System Configuration > Sync artifacts and versions"
           } >> "${GITHUB_STEP_SUMMARY}"
