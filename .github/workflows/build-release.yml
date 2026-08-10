@@ -4,7 +4,13 @@ on:
   push:
     branches:
       - release-v1.0
+    paths:
+      - version
   workflow_dispatch: # 允许手动触发
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   read-version:
@@ -235,31 +241,46 @@ jobs:
           jq -e '.schema_version == 1 and .release.component == "desktop" and (.artifacts | length == 8)' desktop-release.json >/dev/null
 
           release_sha="$(sha256sum desktop-release.json | awk '{print $1}')"
-          release_object="${s3_bucket}/updater/releases/desktop/${GITHUB_SHA}.json"
-          release_url="${ARTIFACT_BASE_URL}/updater/releases/desktop/${GITHUB_SHA}.json"
+          release_object="${s3_bucket}/updater/releases/desktop/${VERSION}.json"
+          release_url="${ARTIFACT_BASE_URL}/updater/releases/desktop/${VERSION}.json"
           upload_immutable desktop-release.json "${release_object}" "${release_sha}"
 
           catalog_object="${s3_bucket}/updater/catalog.json"
           list_manifest_urls() {
-            local manifest_object manifest_relative
+            local manifest_object manifest_relative manifest_url
             {
               while IFS= read -r manifest_object; do
                 [ -n "${manifest_object}" ] || continue
-                if mc cat "${manifest_object}" | jq -e --arg artifact_base "${ARTIFACT_BASE_URL}/" '
+                manifest_relative="${manifest_object#${s3_bucket}/updater/releases/}"
+                manifest_url="${ARTIFACT_BASE_URL}/updater/releases/${manifest_relative}"
+                if mc cat "${manifest_object}" | jq -ce \
+                  --arg artifact_base "${ARTIFACT_BASE_URL}/" \
+                  --arg manifest_relative "${manifest_relative}" \
+                  --arg manifest_url "${manifest_url}" '
                   .schema_version == 1 and
+                  (.published_at | type) == "string" and
+                  (.release.component | type) == "string" and
+                  (.release.version | type) == "string" and
                   (.artifacts | type == "array" and length > 0) and
                   all(.artifacts[];
                     (.download_url | type) == "string" and
                     (.download_url | startswith($artifact_base))
-                  )
-                ' >/dev/null; then
-                  manifest_relative="${manifest_object#${s3_bucket}/updater/releases/}"
-                  printf '%s/updater/releases/%s\n' "${ARTIFACT_BASE_URL}" "${manifest_relative}"
+                  ) |
+                  select(.) |
+                  {component: .release.component, version: .release.version, published_at: .published_at,
+                   canonical: ($manifest_relative == (.release.component + "/" + .release.version + ".json")),
+                   url: $manifest_url}
+                '; then
+                  :
                 else
                   echo "Skip updater manifest outside current public artifact base: ${manifest_object}" >&2
                 fi
               done < <(mc find "${s3_bucket}/updater/releases" --name '*.json')
-            } | jq -Rsc 'split("\n") | map(select(length > 0)) | sort | unique'
+            } | jq -sc '
+              sort_by(.component, .version) |
+              group_by([.component, .version]) |
+              map(sort_by(.canonical, .published_at, .url) | last | .url) |
+              sort'
           }
           publish_catalog() {
             local attempt expected actual
@@ -285,11 +306,38 @@ jobs:
           mc cat "${catalog_object}" | jq -e --arg release_url "${release_url}" \
             '.schema_version == 1 and (.manifests | index($release_url)) != null' >/dev/null
 
+          selected_manifests="$(mc cat "${catalog_object}" | jq -c '.manifests')"
+          while IFS= read -r manifest_object; do
+            [ -n "${manifest_object}" ] || continue
+            manifest_relative="${manifest_object#${s3_bucket}/updater/releases/}"
+            manifest_url="${ARTIFACT_BASE_URL}/updater/releases/${manifest_relative}"
+            if ! jq -e --arg url "${manifest_url}" 'index($url) != null' <<< "${selected_manifests}" >/dev/null; then
+              mc rm "${manifest_object}"
+            fi
+          done < <(mc find "${s3_bucket}/updater/releases/desktop" --name '*.json')
+
+          referenced_urls="$({
+            jq -r --arg prefix "${ARTIFACT_BASE_URL}/updater/releases/desktop/" \
+              '.[] | select(startswith($prefix))' <<< "${selected_manifests}" | while IFS= read -r manifest_url; do
+              manifest_relative="${manifest_url#${ARTIFACT_BASE_URL}/updater/releases/}"
+              mc cat "${s3_bucket}/updater/releases/${manifest_relative}" | jq -r \
+                'select(.release.component == "desktop") | .artifacts[].download_url'
+            done
+          } | sort -u | jq -Rsc 'split("\n") | map(select(length > 0))')"
+          while IFS= read -r artifact_object; do
+            [ -n "${artifact_object}" ] || continue
+            artifact_relative="${artifact_object#${s3_bucket}/}"
+            artifact_url="${ARTIFACT_BASE_URL}/${artifact_relative}"
+            if ! jq -e --arg url "${artifact_url}" 'index($url) != null' <<< "${referenced_urls}" >/dev/null; then
+              mc rm "${artifact_object}"
+            fi
+          done < <(mc find "${s3_bucket}/desktop/artifacts")
+
           {
             echo "### Desktop release"
             echo "- Version: \`${VERSION}\`"
             echo "- Commit: \`${GITHUB_SHA}\`"
-            echo "- Manifest: \`updater/releases/desktop/${GITHUB_SHA}.json\`"
+            echo "- Manifest: \`updater/releases/desktop/${VERSION}.json\`"
             echo "- Artifacts: 8 (App + Launcher)"
             echo "- Server registration: use Platform > System Configuration > Sync artifacts and versions"
           } >> "${GITHUB_STEP_SUMMARY}"
