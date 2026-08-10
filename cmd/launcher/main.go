@@ -15,12 +15,11 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		log.Printf("Launcher failed: %v", err)
 		showStartupError(err.Error())
 	}
 }
 
-func run() error {
+func run() (runErr error) {
 	paths, err := launcher.NewPaths("")
 	if err != nil {
 		return err
@@ -39,6 +38,11 @@ func run() error {
 	logger := log.New(io.MultiWriter(logFile, os.Stderr), "", log.Ldate|log.Ltime|log.Lmicroseconds)
 	log.SetOutput(io.MultiWriter(logFile, os.Stderr))
 	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+	defer func() {
+		if runErr != nil {
+			logger.Printf("Launcher failed: %v", runErr)
+		}
+	}()
 	logger.Printf("Beagle Signal Launcher starting from %s", paths.RootDir)
 
 	cfg, err := config.Load()

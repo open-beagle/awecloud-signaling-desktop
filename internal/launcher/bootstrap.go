@@ -24,7 +24,11 @@ func EnsureCurrentApp(ctx context.Context, paths *Paths, serverAddress string, l
 		logger.Printf("installed Desktop App is not usable: %v", err)
 	}
 
-	logger.Printf("no usable Desktop App found; requesting public manifest")
+	serverURL, err := normalizeServerURL(serverAddress)
+	if err != nil {
+		return nil, fmt.Errorf("invalid Launcher server address: %w", err)
+	}
+	logger.Printf("no usable Desktop App found; requesting public manifest from %s", serverURL.String())
 	manifest, err := FetchPublicManifest(ctx, serverAddress, "")
 	if err != nil {
 		return nil, fmt.Errorf("fetch initial Desktop manifest failed: %w", err)

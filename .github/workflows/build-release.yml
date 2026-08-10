@@ -58,12 +58,8 @@ jobs:
 
       - name: Create Desktop environment
         env:
-          SIGNALING_ADDRESS: ${{ secrets.SIGNALING_ADDRESS }}
+          SIGNALING_ADDRESS: https://signal.wodcloud.com
         run: |
-          if [ -z "$SIGNALING_ADDRESS" ]; then
-            echo "SIGNALING_ADDRESS secret is required" >&2
-            exit 1
-          fi
           umask 077
           printf 'SIGNALING_ADDRESS=%s\n' "$SIGNALING_ADDRESS" > .env
 
@@ -107,12 +103,8 @@ jobs:
 
       - name: Create Desktop environment
         env:
-          SIGNALING_ADDRESS: ${{ secrets.SIGNALING_ADDRESS }}
+          SIGNALING_ADDRESS: https://signal.wodcloud.com
         run: |
-          if [ -z "$SIGNALING_ADDRESS" ]; then
-            echo "SIGNALING_ADDRESS secret is required" >&2
-            exit 1
-          fi
           umask 077
           printf 'SIGNALING_ADDRESS=%s\n' "$SIGNALING_ADDRESS" > .env
 
