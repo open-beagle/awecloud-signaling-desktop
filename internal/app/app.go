@@ -1077,6 +1077,7 @@ func (a *App) GetResources() ([]*client.ResourceInfo, error) {
 	a.tenantMutex.Unlock()
 	resources, err := a.desktopClient.GetResourcesForTenant(tenantID)
 	if err != nil {
+		log.Printf("[App] GetResources failed: tenant_id=%q err=%v", tenantID, err)
 		return nil, err
 	}
 	if tenantID == "" {
