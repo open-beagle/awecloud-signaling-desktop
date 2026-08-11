@@ -3,7 +3,7 @@ name: Build and Release Desktop
 on:
   push:
     branches:
-      - release-v1.0
+      - release-v*
 
 concurrency:
   group: desktop-release-${{ github.ref }}
