@@ -4,12 +4,12 @@ import { ref, computed } from 'vue'
 // 域名记录类型
 export interface DomainItem {
   domain: string              // 域名（如 beagle-242.beijing.beagle）
-  type: string                // 类型：ssh / container_ssh / container_service / k8sapi / k8ssvc
+  type: string                // 类型：ssh / k8sapi / container_ssh / container_service
   status: string              // 状态：online / offline
-  service_ports?: number[]    // K8S Service 端口列表（k8ssvc 类型时）
+  service_ports?: number[]
   ssh_users?: string[]        // SSH 用户列表（ssh 类型时）
-  namespace?: string          // K8S 命名空间（k8ssvc 类型时）
-  service_name?: string       // K8S Service 名称（k8ssvc 类型时）
+  namespace?: string
+  service_name?: string
   region: string              // 区域名称（从 domain 解析，如 beijing）
   display_name?: string
   resource_id?: string

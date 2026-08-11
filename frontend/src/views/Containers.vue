@@ -2,10 +2,10 @@
   <div class="resource-page">
     <div class="page-header">
       <div>
-        <h1>Pods</h1>
-        <p>当前 Tenant 授权的容器终端</p>
+        <h1>Kubernetes Pod</h1>
+        <p>当前 Tenant 授权的 Pod 容器</p>
       </div>
-      <button class="icon-btn" title="刷新容器资源" :disabled="loading" @click="loadResources">
+		<button class="icon-btn" title="刷新 Pod" :disabled="loading" @click="loadResources">
         <el-icon :class="{ 'is-loading': loading }"><Refresh /></el-icon>
       </button>
     </div>
@@ -22,7 +22,7 @@
         <el-option v-for="tenant in tenantOptions" :key="tenant.id" :label="tenant.name || tenant.id" :value="tenant.id" />
       </el-select>
       <el-input v-model="searchQuery" clearable placeholder="搜索名称或域名" class="search-input" />
-      <span class="count">{{ filteredContainers.length }} / {{ containers.length }} 个资源</span>
+		<span class="count">{{ filteredContainers.length }} / {{ containers.length }} 个 Pod</span>
     </div>
 
     <div v-if="error" class="error-state">
@@ -30,14 +30,14 @@
       <button @click="loadTenants">重试</button>
     </div>
 
-    <el-table v-else v-loading="loading" :data="filteredContainers" stripe height="100%" empty-text="暂无可访问容器资源">
-      <el-table-column label="资源" min-width="220">
+	<el-table v-else v-loading="loading" :data="filteredContainers" stripe height="100%" empty-text="暂无可访问 Pod">
+      <el-table-column label="Pod" min-width="220">
         <template #default="{ row }">
-          <div class="primary">{{ row.display_name || row.service_name || row.domain || '未命名资源' }}</div>
-          <div class="secondary">{{ row.domain || '-' }}</div>
+          <div class="primary">{{ row.pod_name || '未命名 Pod' }}</div>
+          <div class="secondary">{{ workloadLabel(row) }}</div>
         </template>
       </el-table-column>
-      <el-table-column label="目标" min-width="170">
+      <el-table-column label="Container" min-width="170">
         <template #default="{ row }">{{ targetLabel(row) }}</template>
       </el-table-column>
       <el-table-column label="状态" width="110">
@@ -84,13 +84,18 @@ const filteredContainers = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   return containers.value.filter(resource => {
     if (!query) return true
-    return [resource.display_name, resource.domain, resource.tenant_name]
+    return [resource.pod_name, resource.container_name, resource.workload_name, resource.namespace, resource.domain]
       .some(value => value?.toLowerCase().includes(query))
   })
 })
 
+function workloadLabel(resource: Resource) {
+  const workload = [resource.workload_kind, resource.workload_name].filter(Boolean).join('/')
+  return [resource.namespace, workload].filter(Boolean).join(' · ') || '-'
+}
+
 function targetLabel(resource: Resource) {
-  return resource.target_revision ? `Revision ${resource.target_revision}` : '-'
+  return resource.container_name || '-'
 }
 
 function isAvailable(resource: Resource) {

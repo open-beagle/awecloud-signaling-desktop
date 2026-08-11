@@ -1178,15 +1178,11 @@ func (c *DesktopClient) updateFavoritesCache(favoriteIDs []string) {
 
 // DomainResolveResult 域名解析结果
 type DomainResolveResult struct {
-	Domain       string
-	AgentIP      string
-	TargetPort   int
-	AgentName    string
-	DomainType   string
-	Namespace    string // K8S 命名空间（k8ssvc 类型时）
-	ServiceName  string // K8S Service 名称（k8ssvc 类型时）
-	SvcProxyPort int    // Agent SVCProxy gRPC 端口（k8ssvc 类型时）
-	EndpointName string // Endpoint 名称（Endpoint 跳跃时）
+	Domain     string
+	AgentIP    string
+	TargetPort int
+	AgentName  string
+	DomainType string
 }
 
 // ResolveDomain 通过 gRPC 解析 .beagle 域名
@@ -1211,21 +1207,14 @@ func (c *DesktopClient) ResolveDomain(domain string) (*DomainResolveResult, erro
 	}
 
 	return &DomainResolveResult{
-		Domain:       resp.Domain,
-		AgentIP:      resp.AgentIp,
-		TargetPort:   int(resp.TargetPort),
-		AgentName:    resp.AgentName,
-		DomainType:   resp.DomainType,
-		Namespace:    resp.Namespace,
-		ServiceName:  resp.ServiceName,
-		SvcProxyPort: int(resp.SvcProxyPort),
-		EndpointName: resp.EndpointName,
+		Domain: resp.Domain, AgentIP: resp.AgentIp, TargetPort: int(resp.TargetPort),
+		AgentName: resp.AgentName, DomainType: resp.DomainType,
 	}, nil
 }
 
 // ResourceInfo 资源信息（前端展示用）
 type ResourceInfo struct {
-	Type                  string   `json:"type"` // ssh / k8sapi / k8ssvc
+	Type                  string   `json:"type"` // ssh / k8sapi / container_ssh / container_service
 	AgentID               uint64   `json:"agent_id"`
 	AgentName             string   `json:"agent_name"`
 	Domain                string   `json:"domain"`
@@ -1249,6 +1238,11 @@ type ResourceInfo struct {
 	ServiceUID            string   `json:"service_uid,omitempty"`
 	PortName              string   `json:"port_name,omitempty"`
 	Protocol              string   `json:"protocol,omitempty"`
+	WorkloadKind          string   `json:"workload_kind,omitempty"`
+	WorkloadName          string   `json:"workload_name,omitempty"`
+	PodUID                string   `json:"pod_uid,omitempty"`
+	PodName               string   `json:"pod_name,omitempty"`
+	ContainerName         string   `json:"container_name,omitempty"`
 	AuthorizationRevision int64    `json:"authorization_revision,omitempty"`
 	SVCProxyPort          uint32   `json:"svc_proxy_port,omitempty"`
 }
@@ -1279,6 +1273,8 @@ func (c *DesktopClient) GetResourcesForTenant(tenantID string) ([]*ResourceInfo,
 	if err != nil {
 		return nil, fmt.Errorf("获取资源列表失败: %w", err)
 	}
+	log.Printf("[DesktopClient] GetResources response: tenant_id=%q ssh=%d k8s_api=%d container_ssh=%d container_service=%d",
+		tenantID, len(resp.Ssh), len(resp.K8SApi), len(resp.ContainerSsh), len(resp.ContainerService))
 
 	var resources []*ResourceInfo
 
@@ -1307,20 +1303,6 @@ func (c *DesktopClient) GetResourcesForTenant(tenantID string) ([]*ResourceInfo,
 		})
 	}
 
-	// K8S Service 资源
-	for _, r := range resp.K8SService {
-		resources = append(resources, &ResourceInfo{
-			Type:        "k8ssvc",
-			AgentID:     r.AgentId,
-			AgentName:   r.AgentName,
-			Domain:      r.Domain,
-			Namespace:   r.Namespace,
-			ServiceName: r.ServiceName,
-			Port:        r.Port,
-			TenantID:    tenantID,
-		})
-	}
-
 	for _, r := range resp.ContainerSsh {
 		resources = append(resources, &ResourceInfo{
 			Type: "container_ssh", ResourceID: r.ResourceId, DisplayName: r.DisplayName,
@@ -1328,6 +1310,8 @@ func (c *DesktopClient) GetResourcesForTenant(tenantID string) ([]*ResourceInfo,
 			AgentID: r.AgentNodeId, Domain: r.Domain, AgentIP: r.AgentIp,
 			ListenPort: r.ListenPort, SSHUsers: r.SshUsers, SessionID: r.SessionId,
 			SourceID: r.SourceId, TargetRevisionID: r.TargetRevisionId, AuthorizationRevision: r.AuthorizationRevision,
+			Namespace: r.Namespace, WorkloadKind: r.WorkloadKind, WorkloadName: r.WorkloadName,
+			PodUID: r.PodUid, PodName: r.PodName, ContainerName: r.ContainerName,
 		})
 	}
 
@@ -1347,14 +1331,11 @@ func (c *DesktopClient) GetResourcesForTenant(tenantID string) ([]*ResourceInfo,
 
 // DomainInfo 域名信息（用于前端三个核心页面）
 type DomainInfo struct {
-	Domain       string   `json:"domain"`        // 域名
-	Type         string   `json:"type"`          // 类型：ssh / k8sapi / k8ssvc
-	Status       string   `json:"status"`        // 状态：online / offline
-	ServicePorts []int32  `json:"service_ports"` // K8S Service 端口列表（k8ssvc 类型）
-	SSHUsers     []string `json:"ssh_users"`     // SSH 用户列表（ssh 类型）
-	Namespace    string   `json:"namespace"`     // K8S 命名空间（k8ssvc 类型）
-	ServiceName  string   `json:"service_name"`  // K8S Service 名称（k8ssvc 类型）
-	Region       string   `json:"region"`        // 区域名称（从域名解析）
+	Domain   string   `json:"domain"`    // 域名
+	Type     string   `json:"type"`      // 类型：ssh / k8sapi
+	Status   string   `json:"status"`    // 状态：online / offline
+	SSHUsers []string `json:"ssh_users"` // SSH 用户列表（ssh 类型）
+	Region   string   `json:"region"`    // 区域名称（从域名解析）
 }
 
 // GetDomainList 通过 gRPC 获取域名列表
@@ -1376,14 +1357,11 @@ func (c *DesktopClient) GetDomainList() ([]*DomainInfo, error) {
 	domains := make([]*DomainInfo, 0, len(resp.Domains))
 	for _, d := range resp.Domains {
 		domains = append(domains, &DomainInfo{
-			Domain:       d.Domain,
-			Type:         d.Type,
-			Status:       d.Status,
-			ServicePorts: d.ServicePorts,
-			SSHUsers:     d.SshUsers,
-			Namespace:    d.Namespace,
-			ServiceName:  d.ServiceName,
-			Region:       d.Region,
+			Domain:   d.Domain,
+			Type:     d.Type,
+			Status:   d.Status,
+			SSHUsers: d.SshUsers,
+			Region:   d.Region,
 		})
 	}
 

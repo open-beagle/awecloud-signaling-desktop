@@ -17,6 +17,11 @@ export interface Resource {
   target_revision?: number
   port_name?: string
   protocol?: string
+  workload_kind?: string
+  workload_name?: string
+  pod_uid?: string
+  pod_name?: string
+  container_name?: string
 }
 
 interface ResourceTenant {

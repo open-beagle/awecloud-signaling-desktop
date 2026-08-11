@@ -403,6 +403,11 @@ func (a *App) resolveDomain(domain string) (string, bool) {
 		return "", false
 	}
 
+	if result.DomainType != "ssh" && result.DomainType != "k8sapi" {
+		log.Printf("[App] DNS 解析拒绝: 不支持的域名类型 %s", result.DomainType)
+		return "", false
+	}
+
 	// 分配 VIP
 	vipAddr, err := a.vipAllocator.Allocate(domain)
 	if err != nil {
@@ -410,84 +415,22 @@ func (a *App) resolveDomain(domain string) (string, bool) {
 		return "", false
 	}
 
-	// 根据域名类型选择代理方式
-	if result.DomainType == "k8ssvc" {
-		// K8S Service：需要从 GetDomainList 获取 ServicePorts
-		// ResolveDomain 不返回端口列表，需要查询域名列表
-		domains, err := a.desktopClient.GetDomainList()
-		if err != nil {
-			log.Printf("[App] 获取域名列表失败 (%s): %v", domain, err)
-			return "", false
-		}
-
-		// 查找当前域名的 ServicePorts
-		var servicePorts []int32
-		for _, d := range domains {
-			if d.Domain == domain {
-				servicePorts = d.ServicePorts
-				break
-			}
-		}
-
-		if len(servicePorts) == 0 {
-			log.Printf("[App] K8S Service 域名 %s 没有 service_ports", domain)
-			return "", false
-		}
-
-		// 为每个端口创建独立的 SVCProxy
-		svcProxyPort := result.SvcProxyPort
-		if svcProxyPort == 0 {
-			svcProxyPort = 50051 // 默认 Agent gRPC 端口
-		}
-
-		for _, port := range servicePorts {
-			svcTarget := proxy.SVCTarget{
-				Domain:       domain,
-				VIP:          vipAddr,
-				Port:         int(port), // 本地监听端口（服务真实端口）
-				AgentIP:      result.AgentIP,
-				GRPCPort:     int(svcProxyPort), // Agent gRPC 端口
-				Namespace:    result.Namespace,
-				ServiceName:  result.ServiceName,
-				TargetPort:   int(port), // 发送给 Agent 的目标端口
-				EndpointName: result.EndpointName,
-			}
-			if err := a.svcProxyMgr.StartSVCProxy(svcTarget); err != nil {
-				log.Printf("[App] Warning: SVCProxy 启动失败 (%s:%d): %v", domain, port, err)
-				log.Printf("[App] 提示: Windows 端口 %d 可能被系统保留，请使用 'netsh int ipv4 show excludedportrange protocol=tcp' 检查", port)
-				// 不返回错误，继续处理其他端口
-			} else {
-				log.Printf("[App] SVCProxy 已启动: %s:%d → %s:%d (ns=%s, svc=%s)",
-					vipAddr, port, result.AgentIP, svcProxyPort,
-					result.Namespace, result.ServiceName)
-			}
-		}
+	remoteAddr := fmt.Sprintf("%s:%d", result.AgentIP, result.TargetPort)
+	localPort := result.TargetPort
+	if result.DomainType == "ssh" {
+		localPort = 22
 	} else {
-		// SSH / K8SAPI / 其他：通过普通 TCP 代理
-		remoteAddr := fmt.Sprintf("%s:%d", result.AgentIP, result.TargetPort)
-
-		// SSH 类型域名：本地监听 22 端口（SSH 客户端默认端口），远程转发到 Agent 分配的端口
-		// K8SAPI 类型域名：本地监听 6443 端口（kubectl 默认端口），远程转发到 Agent 分配的端口
-		localPort := result.TargetPort
-		if result.DomainType == "ssh" {
-			localPort = 22
-		} else if result.DomainType == "k8sapi" {
-			localPort = 6443
-		}
-
-		target := proxy.Target{
-			Domain:     domain,
-			VIP:        vipAddr,
-			RemoteAddr: remoteAddr,
-			Port:       localPort,
-			TLS:        result.DomainType == "k8sapi", // K8S API 需要本地 TLS 终止，kubectl 默认 HTTPS
-		}
-		if err := a.proxyManager.StartProxy(target); err != nil {
-			log.Printf("[App] 代理启动失败 (%s → %s): %v", domain, remoteAddr, err)
-		} else {
-			log.Printf("[App] 代理已启动: %s:%d → %s (domain=%s, type=%s)",
-				vipAddr, localPort, remoteAddr, domain, result.DomainType)
-		}
+		localPort = 6443
+	}
+	target := proxy.Target{
+		Domain: domain, VIP: vipAddr, RemoteAddr: remoteAddr, Port: localPort,
+		TLS: result.DomainType == "k8sapi",
+	}
+	if err := a.proxyManager.StartProxy(target); err != nil {
+		log.Printf("[App] 代理启动失败 (%s → %s): %v", domain, remoteAddr, err)
+	} else {
+		log.Printf("[App] 代理已启动: %s:%d → %s (domain=%s, type=%s)",
+			vipAddr, localPort, remoteAddr, domain, result.DomainType)
 	}
 
 	return vipAddr, true
@@ -1888,16 +1831,13 @@ func (a *App) WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint st
 
 // DomainItem 域名项（用于前端）
 type DomainItem struct {
-	Domain       string   `json:"domain"`
-	Type         string   `json:"type"`
-	Status       string   `json:"status"`
-	ServicePorts []int32  `json:"service_ports"`
-	SSHUsers     []string `json:"ssh_users"`
-	Namespace    string   `json:"namespace"`
-	ServiceName  string   `json:"service_name"`
-	Region       string   `json:"region"`
-	DisplayName  string   `json:"display_name,omitempty"`
-	ResourceID   string   `json:"resource_id,omitempty"`
+	Domain      string   `json:"domain"`
+	Type        string   `json:"type"`
+	Status      string   `json:"status"`
+	SSHUsers    []string `json:"ssh_users"`
+	Region      string   `json:"region"`
+	DisplayName string   `json:"display_name,omitempty"`
+	ResourceID  string   `json:"resource_id,omitempty"`
 }
 
 // GetDomainList 获取域名列表
@@ -1922,14 +1862,11 @@ func (a *App) GetDomainList() ([]*DomainItem, error) {
 	result := make([]*DomainItem, 0, len(domains))
 	for _, d := range domains {
 		result = append(result, &DomainItem{
-			Domain:       d.Domain,
-			Type:         d.Type,
-			Status:       d.Status,
-			ServicePorts: d.ServicePorts,
-			SSHUsers:     d.SSHUsers,
-			Namespace:    d.Namespace,
-			ServiceName:  d.ServiceName,
-			Region:       d.Region,
+			Domain:   d.Domain,
+			Type:     d.Type,
+			Status:   d.Status,
+			SSHUsers: d.SSHUsers,
+			Region:   d.Region,
 		})
 	}
 
