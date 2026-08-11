@@ -214,16 +214,17 @@ $WinresJson = @"
 
 $WinresJson | Out-File -FilePath "winres\winres.json" -Encoding ascii
 
-# Generate .syso file
-Write-Host "Running: go-winres make --arch $GoArch"
-go-winres make --arch $GoArch
-
-if (Test-Path "rsrc_windows_$GoArch.syso") {
-    Write-Host "[SUCCESS] Windows resources generated: rsrc_windows_$GoArch.syso" -ForegroundColor Green
-} else {
-    Write-Host "[ERROR] Failed to generate Windows resources" -ForegroundColor Red
-    exit 1
+# Go only links .syso files from the package being built. Generate one for
+# each Windows executable so both Desktop and Launcher receive the icon.
+foreach ($ResourcePrefix in @("cmd\desktop\rsrc", "cmd\launcher\rsrc")) {
+    Write-Host "Running: go-winres make --arch $GoArch --out $ResourcePrefix"
+    go-winres make --arch $GoArch --out $ResourcePrefix
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path "${ResourcePrefix}_windows_$GoArch.syso")) {
+        Write-Host "[ERROR] Failed to generate Windows resources: $ResourcePrefix" -ForegroundColor Red
+        exit 1
+    }
 }
+Write-Host "[SUCCESS] Windows resources generated for Desktop and Launcher" -ForegroundColor Green
 
 # Build
 Write-Host ""
@@ -251,6 +252,11 @@ $BuildBackup = "$BuildOutputFull~"
 $LauncherOutput = "build\bin\beagle-signal.launcher.exe"
 $LauncherOutputFull = [System.IO.Path]::GetFullPath((Join-Path $DesktopDir $LauncherOutput))
 
+function Remove-WindowsResources {
+    Remove-Item "cmd\desktop\rsrc_windows_*.syso", "cmd\launcher\rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
+    Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 # Windows may rename an in-use output to .exe~ and leave a second artifact.
 # Refuse to build over the running fixed output so every successful build has
 # exactly one canonical filename and location.
@@ -260,8 +266,7 @@ if ($RunningBuild) {
     $RunningPids = ($RunningBuild | Select-Object -ExpandProperty ProcessId) -join ", "
     Write-Host "[ERROR] Fixed output is running (PID: $RunningPids): $BuildOutputFull" -ForegroundColor Red
     Write-Host "Close the Desktop process before rebuilding." -ForegroundColor Yellow
-    Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
-    Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-WindowsResources
     exit 1
 }
 
@@ -274,8 +279,7 @@ go build -tags production -trimpath -ldflags $LdFlags -o $BuildOutput ./cmd/desk
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] Build failed" -ForegroundColor Red
-    Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
-    Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-WindowsResources
     exit 1
 }
 
@@ -285,8 +289,7 @@ if ($RunningLauncher) {
     $RunningPids = ($RunningLauncher | Select-Object -ExpandProperty ProcessId) -join ", "
     Write-Host "[ERROR] Launcher output is running (PID: $RunningPids): $LauncherOutputFull" -ForegroundColor Red
     Write-Host "Close the Launcher before rebuilding." -ForegroundColor Yellow
-    Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
-    Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-WindowsResources
     exit 1
 }
 
@@ -294,8 +297,7 @@ Write-Host "Building Launcher binary: $LauncherOutput"
 go build -tags production -trimpath -ldflags $LdFlags -o $LauncherOutput ./cmd/launcher
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[ERROR] Launcher build failed" -ForegroundColor Red
-    Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
-    Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-WindowsResources
     exit 1
 }
 
@@ -303,8 +305,7 @@ if ($LASTEXITCODE -ne 0) {
 if (Test-Path $BuildOutput) {
     if (Test-Path -LiteralPath $BuildBackup) {
         Write-Host "[ERROR] Unexpected backup artifact created: $BuildBackup" -ForegroundColor Red
-        Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
-        Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-WindowsResources
         exit 1
     }
     Write-Host "[SUCCESS] Build successful: $BuildOutput" -ForegroundColor Green
@@ -314,8 +315,7 @@ if (Test-Path $BuildOutput) {
 
     if (-not (Test-Path $LauncherOutput)) {
         Write-Host "[ERROR] Launcher output file not found" -ForegroundColor Red
-        Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
-        Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-WindowsResources
         exit 1
     }
     $LauncherFileSize = (Get-Item $LauncherOutput).Length
@@ -323,14 +323,12 @@ if (Test-Path $BuildOutput) {
     Write-Host "  File size: $LauncherFileSize bytes"
 } else {
     Write-Host "[ERROR] Build failed - output file not found" -ForegroundColor Red
-    Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
-    Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-WindowsResources
     exit 1
 }
 
 # Cleanup
-Remove-Item "rsrc_windows_*.syso" -Force -ErrorAction SilentlyContinue
-Remove-Item "winres" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-WindowsResources
 
 Write-Host ""
 Write-Host "========================================"

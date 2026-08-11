@@ -147,12 +147,22 @@ if not "%BUILD_ADDRESS%"=="" (
 )
 
 set BUILD_OUTPUT=%OUTPUT_DIR%\awecloud-signaling-desktop.exe
+set LAUNCHER_OUTPUT=%OUTPUT_DIR%\beagle-signal.launcher.exe
 
 echo Building Desktop binary: %BUILD_OUTPUT%
 go build -tags production -trimpath -ldflags "%LDFLAGS%" -o %BUILD_OUTPUT% ./cmd/desktop
 
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Build failed
+    call :cleanWindowsResources
+    exit /b 1
+)
+
+echo Building Launcher binary: %LAUNCHER_OUTPUT%
+go build -tags production -trimpath -ldflags "%LDFLAGS%" -o %LAUNCHER_OUTPUT% ./cmd/launcher
+
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Launcher build failed
     call :cleanWindowsResources
     exit /b 1
 )
@@ -267,20 +277,29 @@ echo     }
 echo }
 ) > winres\winres.json
 
-REM 生成 .syso 文件
-echo Running: go-winres make --arch %GOARCH%
-go-winres make --arch %GOARCH%
+REM Go 只会链接当前构建包目录中的 .syso；两个 EXE 都需要独立资源文件。
+echo Running: go-winres make --arch %GOARCH% --out cmd\desktop\rsrc
+go-winres make --arch %GOARCH% --out cmd\desktop\rsrc
+if %ERRORLEVEL% neq 0 exit /b 1
 
-if exist "rsrc_windows_%GOARCH%.syso" (
-    echo [SUCCESS] Windows resources generated: rsrc_windows_%GOARCH%.syso
-) else (
-    echo [ERROR] Failed to generate Windows resources
+echo Running: go-winres make --arch %GOARCH% --out cmd\launcher\rsrc
+go-winres make --arch %GOARCH% --out cmd\launcher\rsrc
+if %ERRORLEVEL% neq 0 exit /b 1
+
+if not exist "cmd\desktop\rsrc_windows_%GOARCH%.syso" (
+    echo [ERROR] Failed to generate Desktop Windows resources
     exit /b 1
 )
+if not exist "cmd\launcher\rsrc_windows_%GOARCH%.syso" (
+    echo [ERROR] Failed to generate Launcher Windows resources
+    exit /b 1
+)
+echo [SUCCESS] Windows resources generated for Desktop and Launcher
 
 exit /b 0
 
 :cleanWindowsResources
-if exist "rsrc_windows_*.syso" del /q rsrc_windows_*.syso 2>nul
+if exist "cmd\desktop\rsrc_windows_*.syso" del /q cmd\desktop\rsrc_windows_*.syso 2>nul
+if exist "cmd\launcher\rsrc_windows_*.syso" del /q cmd\launcher\rsrc_windows_*.syso 2>nul
 if exist "winres" rmdir /s /q winres 2>nul
 exit /b 0

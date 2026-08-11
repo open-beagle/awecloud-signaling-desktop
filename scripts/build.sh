@@ -176,21 +176,24 @@ EOF
 }
 EOF
     
-    # 生成 .syso 文件
-    echo "Running: go-winres make --arch ${ARCH}"
-    go-winres make --arch "${ARCH}"
-    
-    if [ -f "rsrc_windows_${ARCH}.syso" ]; then
-        echo -e "${GREEN}✓ Windows resources generated: rsrc_windows_${ARCH}.syso${NC}"
-    else
-        echo -e "${RED}✗ Failed to generate Windows resources${NC}"
-        return 1
-    fi
+    # Go only links .syso files from the package being built. Generate one for
+    # each Windows executable so both Desktop and Launcher receive the icon.
+    local RESOURCE_PREFIX
+    for RESOURCE_PREFIX in cmd/desktop/rsrc cmd/launcher/rsrc; do
+        echo "Running: go-winres make --arch ${ARCH} --out ${RESOURCE_PREFIX}"
+        go-winres make --arch "${ARCH}" --out "${RESOURCE_PREFIX}" || return 1
+
+        if [ ! -f "${RESOURCE_PREFIX}_windows_${ARCH}.syso" ]; then
+            echo -e "${RED}✗ Failed to generate Windows resources: ${RESOURCE_PREFIX}${NC}"
+            return 1
+        fi
+    done
+    echo -e "${GREEN}✓ Windows resources generated for Desktop and Launcher${NC}"
 }
 
 # cleanWindowsResources 清理 Windows 资源文件
 cleanWindowsResources() {
-    rm -f rsrc_windows_*.syso
+    rm -f cmd/desktop/rsrc_windows_*.syso cmd/launcher/rsrc_windows_*.syso
     rm -rf winres
 }
 
