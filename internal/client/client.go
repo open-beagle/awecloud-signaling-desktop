@@ -281,6 +281,7 @@ func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) er
 		close(c.heartbeatStopCh)
 	}
 	c.heartbeatStopCh = make(chan struct{})
+	stopCh := c.heartbeatStopCh
 
 	// 如果已有心跳流，先关闭
 	if c.heartbeatStream != nil {
@@ -312,6 +313,10 @@ func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) er
 	}
 
 	if err := stream.Send(req); err != nil {
+		c.heartbeatStream = nil
+		c.heartbeatStopCh = nil
+		close(stopCh)
+		_ = stream.CloseSend()
 		c.setGRPCConnected(false)
 		return fmt.Errorf("failed to send initial heartbeat: %w", err)
 	}
@@ -319,7 +324,6 @@ func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) er
 	log.Printf("[DesktopClient] Heartbeat started, tunnelIP=%s", currentIP)
 
 	// 启动接收和发送 goroutine（使用 stopCh 控制生命周期）
-	stopCh := c.heartbeatStopCh
 	go c.receiveHeartbeat(stopCh)
 	go c.sendHeartbeat(stopCh)
 
@@ -327,10 +331,7 @@ func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) er
 }
 
 // receiveHeartbeat 接收心跳响应（通过 stopCh 控制退出）
-func (c *DesktopClient) receiveHeartbeat(stopCh <-chan struct{}) {
-	backoff := time.Second * 5
-	maxBackoff := time.Minute * 2
-
+func (c *DesktopClient) receiveHeartbeat(stopCh chan struct{}) {
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -358,15 +359,8 @@ func (c *DesktopClient) receiveHeartbeat(stopCh <-chan struct{}) {
 		_, err := stream.Recv()
 		if err != nil {
 			log.Printf("[DesktopClient] Heartbeat receive error: %v", err)
-			c.setGRPCConnected(false)
-
-			// 检查是否已被停止
-			select {
-			case <-stopCh:
+			if !c.invalidateHeartbeat(stream, stopCh) {
 				return
-			case <-c.ctx.Done():
-				return
-			default:
 			}
 
 			// 检查错误类型
@@ -393,37 +387,57 @@ func (c *DesktopClient) receiveHeartbeat(stopCh <-chan struct{}) {
 				}
 			}
 
-			log.Printf("[DesktopClient] Will retry in %v", backoff)
-			select {
-			case <-time.After(backoff):
-			case <-c.ctx.Done():
-				return
-			case <-stopCh:
-				return
-			}
-
-			backoff = min(backoff*2, maxBackoff)
-
-			// reconnect 会调用 startHeartbeat，启动新 goroutine 并 close 当前 stopCh
-			if c.IsAuthenticated() {
-				if err := c.reconnect(); err != nil {
-					log.Printf("[DesktopClient] Reconnect failed: %v", err)
-					// 用户禁用或凭证无效，停止重连
-					if errors.Is(err, ErrStopReconnect) {
-						return
-					}
-				} else {
-					log.Printf("[DesktopClient] Reconnected successfully")
-					return // 新 goroutine 已启动，当前退出
-				}
-			}
-			continue
+			c.retryHeartbeat()
+			return
 		}
 
-		backoff = time.Second * 5
 		c.setGRPCConnected(true)
 
 		log.Printf("[DEBUG] [DesktopClient] Heartbeat received")
+	}
+}
+
+// invalidateHeartbeat ensures only one goroutine handles a failed stream generation.
+func (c *DesktopClient) invalidateHeartbeat(stream pb.DesktopService_HeartbeatClient, stopCh chan struct{}) bool {
+	c.heartbeatMutex.Lock()
+	if c.heartbeatStream != stream || c.heartbeatStopCh != stopCh {
+		c.heartbeatMutex.Unlock()
+		return false
+	}
+	c.heartbeatStream = nil
+	c.heartbeatStopCh = nil
+	close(stopCh)
+	c.heartbeatMutex.Unlock()
+
+	_ = stream.CloseSend()
+	c.setGRPCConnected(false)
+	return true
+}
+
+func (c *DesktopClient) retryHeartbeat() {
+	backoff := 5 * time.Second
+	const maxBackoff = 2 * time.Minute
+	for c.IsAuthenticated() {
+		log.Printf("[DesktopClient] Will retry heartbeat in %v", backoff)
+		timer := time.NewTimer(backoff)
+		select {
+		case <-timer.C:
+		case <-c.ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return
+		}
+		if err := c.reconnect(); err != nil {
+			log.Printf("[DesktopClient] Reconnect failed: %v", err)
+			if errors.Is(err, ErrStopReconnect) {
+				return
+			}
+			backoff = min(backoff*2, maxBackoff)
+			continue
+		}
+		log.Printf("[DesktopClient] Reconnected successfully")
+		return
 	}
 }
 
@@ -480,12 +494,18 @@ func (c *DesktopClient) reconnect() error {
 
 		return err
 	}
+	c.heartbeatMutex.Lock()
+	heartbeatStarted := c.heartbeatStream != nil
+	c.heartbeatMutex.Unlock()
+	if !heartbeatStarted {
+		return fmt.Errorf("heartbeat did not restart after authentication")
+	}
 
 	return nil
 }
 
 // sendHeartbeat 发送心跳（通过 stopCh 控制退出）
-func (c *DesktopClient) sendHeartbeat(stopCh <-chan struct{}) {
+func (c *DesktopClient) sendHeartbeat(stopCh chan struct{}) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -496,14 +516,6 @@ func (c *DesktopClient) sendHeartbeat(stopCh <-chan struct{}) {
 		case <-stopCh:
 			return
 		case <-ticker.C:
-			c.heartbeatMutex.Lock()
-			stream := c.heartbeatStream
-			c.heartbeatMutex.Unlock()
-
-			if stream == nil {
-				continue
-			}
-
 			// 获取当前隧道状态
 			c.tunnelMutex.RLock()
 			tunnelIP := c.tunnelIP
@@ -516,11 +528,26 @@ func (c *DesktopClient) sendHeartbeat(stopCh <-chan struct{}) {
 				TunnelConnected: tunnelConnected,
 			}
 
-			if err := stream.Send(req); err != nil {
+			stream, currentStopCh, err := c.sendCurrentHeartbeat(req)
+			if err != nil {
 				log.Printf("[DesktopClient] Failed to send heartbeat: %v", err)
+				if stream != nil && currentStopCh == stopCh && c.invalidateHeartbeat(stream, stopCh) {
+					go c.retryHeartbeat()
+				}
+				return
 			}
 		}
 	}
+}
+
+func (c *DesktopClient) sendCurrentHeartbeat(req *pb.DesktopHeartbeatRequest) (pb.DesktopService_HeartbeatClient, chan struct{}, error) {
+	c.heartbeatMutex.Lock()
+	defer c.heartbeatMutex.Unlock()
+	stream := c.heartbeatStream
+	if stream == nil {
+		return nil, nil, nil
+	}
+	return stream, c.heartbeatStopCh, stream.Send(req)
 }
 
 // UpdateHeartbeat 更新心跳信息（当隧道状态变化时调用）
@@ -552,8 +579,12 @@ func (c *DesktopClient) UpdateHeartbeat(tunnelIP string, tunnelConnected bool) {
 		TunnelConnected: tunnelConnected,
 	}
 
-	if err := stream.Send(req); err != nil {
+	failedStream, stopCh, err := c.sendCurrentHeartbeat(req)
+	if err != nil {
 		log.Printf("[DesktopClient] Failed to update heartbeat: %v", err)
+		if failedStream != nil && stopCh != nil && c.invalidateHeartbeat(failedStream, stopCh) {
+			go c.retryHeartbeat()
+		}
 	}
 }
 
