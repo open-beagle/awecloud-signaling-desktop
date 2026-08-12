@@ -55,7 +55,7 @@ func run() (runErr error) {
 		return err
 	}
 
-	coord, err := launcher.NewCoordinator(paths)
+	coord, err := launcher.NewCoordinator(paths, cfg.ServerAddress)
 	if err != nil {
 		return err
 	}
@@ -83,18 +83,32 @@ func run() (runErr error) {
 	if resolvedPath, resolveErr := filepath.EvalSymlinks(launcherPath); resolveErr == nil {
 		launcherPath = resolvedPath
 	}
-	appPath := paths.AppPath(current.Version)
 	processManager := launcher.NewProcessManager()
-	pid, err := processManager.StartApp(appPath, endpoint, token, current.Version, launcherPath)
-	if err != nil {
-		return err
+	for {
+		appPath := filepath.Join(paths.VersionsDir, current.App)
+		pid, err := processManager.StartApp(appPath, endpoint, token, current.Version, launcherPath)
+		if err != nil {
+			return err
+		}
+		logger.Printf("Desktop App version %s sha256 %s started with PID %d", current.Version, current.Artifact.SHA256, pid)
+		waitCh := make(chan error, 1)
+		go func() { waitCh <- processManager.Wait() }()
+		select {
+		case <-coord.RestartRequested():
+			processManager.StopApp()
+			<-waitCh
+			current = coord.Current()
+			if current == nil {
+				return fmt.Errorf("updated Desktop App state is unavailable")
+			}
+			continue
+		case err := <-waitCh:
+			if err != nil {
+				logger.Printf("Desktop App exited with error: %v", err)
+				return fmt.Errorf("Desktop App exited unexpectedly: %w", err)
+			}
+			logger.Printf("Desktop App exited normally")
+			return nil
+		}
 	}
-	logger.Printf("Desktop App version %s started with PID %d", current.Version, pid)
-
-	if err := processManager.Wait(); err != nil {
-		logger.Printf("Desktop App exited with error: %v", err)
-		return fmt.Errorf("Desktop App exited unexpectedly: %w", err)
-	}
-	logger.Printf("Desktop App exited normally")
-	return nil
 }

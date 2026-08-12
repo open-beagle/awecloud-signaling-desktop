@@ -36,7 +36,7 @@ type PublicManifest struct {
 	Artifacts     ManifestArtifacts `json:"artifacts"`
 }
 
-func FetchPublicManifest(ctx context.Context, serverAddress, currentVersion string) (*PublicManifest, error) {
+func FetchPublicManifest(ctx context.Context, serverAddress, currentVersion, currentArtifactSHA256 string) (*PublicManifest, error) {
 	baseURL, err := normalizeServerURL(serverAddress)
 	if err != nil {
 		return nil, err
@@ -51,6 +51,9 @@ func FetchPublicManifest(ctx context.Context, serverAddress, currentVersion stri
 	query.Set("channel", "stable")
 	if currentVersion != "" {
 		query.Set("current_version", strings.TrimPrefix(currentVersion, "v"))
+	}
+	if currentArtifactSHA256 != "" {
+		query.Set("current_artifact_sha256", strings.ToLower(strings.TrimSpace(currentArtifactSHA256)))
 	}
 	manifestURL.RawQuery = query.Encode()
 

@@ -16,11 +16,8 @@ import (
 
 func EnsureCurrentApp(ctx context.Context, paths *Paths, serverAddress string, logger *log.Logger, onInitialInstall func(version string, size int64)) (*CurrentInfo, error) {
 	current, err := loadValidCurrent(paths)
-	if err == nil {
-		logger.Printf("using installed Desktop App version %s", current.Version)
-		return current, nil
-	}
-	if !errors.Is(err, os.ErrNotExist) {
+	hasCurrent := err == nil
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		logger.Printf("installed Desktop App is not usable: %v", err)
 	}
 
@@ -28,14 +25,22 @@ func EnsureCurrentApp(ctx context.Context, paths *Paths, serverAddress string, l
 	if err != nil {
 		return nil, fmt.Errorf("invalid Launcher server address: %w", err)
 	}
-	logger.Printf("no usable Desktop App found; requesting public manifest from %s", serverURL.String())
-	manifest, err := FetchPublicManifest(ctx, serverAddress, "")
+	currentVersion, currentSHA256 := "", ""
+	if hasCurrent {
+		currentVersion, currentSHA256 = current.Version, current.Artifact.SHA256
+	}
+	logger.Printf("requesting public Desktop manifest from %s", serverURL.String())
+	manifest, err := FetchPublicManifest(ctx, serverAddress, currentVersion, currentSHA256)
 	if err != nil {
-		return nil, fmt.Errorf("fetch initial Desktop manifest failed: %w", err)
+		return nil, fmt.Errorf("fetch Desktop manifest failed: %w", err)
 	}
 	artifact := manifest.Artifacts.App
+	if hasCurrent && strings.EqualFold(current.Artifact.SHA256, artifact.SHA256) {
+		logger.Printf("using installed Desktop App version %s sha256 %s", current.Version, current.Artifact.SHA256)
+		return current, nil
+	}
 	logger.Printf("installing Desktop App version %s (%d bytes)", manifest.Release.Version, artifact.Size)
-	if onInitialInstall != nil {
+	if !hasCurrent && onInitialInstall != nil {
 		onInitialInstall(manifest.Release.Version, artifact.Size)
 	}
 
@@ -50,7 +55,7 @@ func EnsureCurrentApp(ctx context.Context, paths *Paths, serverAddress string, l
 		return nil, fmt.Errorf("download initial Desktop App failed: %w", err)
 	}
 
-	appName := paths.LogicalAppName(manifest.Release.Version)
+	appName := paths.ArtifactAppName(manifest.Release.Version, artifact.SHA256)
 	appPath := filepath.Join(paths.VersionsDir, appName)
 	if err := os.Remove(appPath); err != nil && !os.IsNotExist(err) {
 		_ = os.Remove(result.PartPath)
@@ -74,7 +79,7 @@ func EnsureCurrentApp(ctx context.Context, paths *Paths, serverAddress string, l
 	if err := atomicWriteJSON(paths.CurrentFile, current); err != nil {
 		return nil, fmt.Errorf("write initial current.json failed: %w", err)
 	}
-	logger.Printf("Desktop App version %s installed successfully", current.Version)
+	logger.Printf("Desktop App version %s sha256 %s installed successfully", current.Version, current.Artifact.SHA256)
 	return current, nil
 }
 
@@ -91,7 +96,7 @@ func loadValidCurrent(paths *Paths) (*CurrentInfo, error) {
 		return nil, err
 	}
 	current.Version = version
-	expectedName := paths.LogicalAppName(version)
+	expectedName := paths.ArtifactAppName(version, current.Artifact.SHA256)
 	if current.App != expectedName || filepath.Base(current.App) != current.App {
 		return nil, errors.New("current.json contains an invalid app name")
 	}

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +15,7 @@ import (
 
 type Coordinator struct {
 	paths         *Paths
+	serverAddress string
 	sessionID     string
 	launcherPID   int
 	currentAppPID int
@@ -25,14 +28,17 @@ type Coordinator struct {
 	task          *UpdateTaskState
 	health        *HealthInfo
 	appReadyCh    chan struct{}
+	restartCh     chan struct{}
 }
 
-func NewCoordinator(paths *Paths) (*Coordinator, error) {
+func NewCoordinator(paths *Paths, serverAddress string) (*Coordinator, error) {
 	c := &Coordinator{
-		paths:       paths,
-		sessionID:   fmt.Sprintf("session-%d", time.Now().UnixNano()),
-		launcherPID: os.Getpid(),
-		appReadyCh:  make(chan struct{}, 1),
+		paths:         paths,
+		serverAddress: serverAddress,
+		sessionID:     fmt.Sprintf("session-%d", time.Now().UnixNano()),
+		launcherPID:   os.Getpid(),
+		appReadyCh:    make(chan struct{}, 1),
+		restartCh:     make(chan struct{}, 1),
 	}
 	c.eventCond = sync.NewCond(&c.mu)
 
@@ -115,12 +121,28 @@ func (c *Coordinator) HandleUpdateRequest(ctx context.Context, req *launcheripc.
 		return nil, errors.New("update in progress")
 	}
 
+	if req.TargetVersion == "latest" || req.Artifact.SHA256 == "" {
+		currentVersion, currentSHA := "", ""
+		if c.current != nil {
+			currentVersion, currentSHA = c.current.Version, c.current.Artifact.SHA256
+		}
+		manifest, err := FetchPublicManifest(ctx, c.serverAddress, currentVersion, currentSHA)
+		if err != nil {
+			return nil, err
+		}
+		if strings.EqualFold(currentSHA, manifest.Artifacts.App.SHA256) {
+			return nil, errors.New("Desktop App is already current")
+		}
+		req.TargetVersion = manifest.Release.Version
+		req.Artifact = *manifest.Artifacts.App
+	}
+
 	opID := req.RequestID
 	if req.TaskID != nil && *req.TaskID != "" {
 		opID = *req.TaskID
 	}
 
-	targetApp := c.paths.LogicalAppName(req.TargetVersion)
+	targetApp := c.paths.ArtifactAppName(req.TargetVersion, req.Artifact.SHA256)
 
 	c.task = &UpdateTaskState{
 		SchemaVersion: 1,
@@ -166,7 +188,7 @@ func (c *Coordinator) runBackgroundDownload(art launcheripc.ArtifactPayload) {
 
 	c.updatePhase("verifying", 90, nil)
 
-	appDst := c.paths.AppPath(c.task.TargetVersion)
+	appDst := filepath.Join(c.paths.VersionsDir, c.task.TargetApp)
 	_ = os.Remove(appDst)
 	if err := os.Rename(res.PartPath, appDst); err != nil {
 		c.updatePhase("failed", 0, &launcheripc.ErrorDetail{Code: launcheripc.ErrInstallFailed, Message: err.Error()})
@@ -209,9 +231,40 @@ func (c *Coordinator) HandleUpdateConfirm(ctx context.Context, req *launcheripc.
 		return errors.New("update task is not in staged phase")
 	}
 
-	c.task.Phase = "installing"
+	if req.OperationID != c.task.OperationID {
+		return errors.New("update operation does not match staged task")
+	}
+	if c.current == nil {
+		return errors.New("current Desktop App state is unavailable")
+	}
+	previous := *c.current
+	next := CurrentInfo{SchemaVersion: 1, Version: c.task.TargetVersion, App: c.task.TargetApp, Artifact: c.task.Artifact, InstalledAt: time.Now().UTC().Format(time.RFC3339)}
+	if err := atomicWriteJSON(c.paths.PreviousFile, &previous); err != nil {
+		return err
+	}
+	if err := atomicWriteJSON(c.paths.CurrentFile, &next); err != nil {
+		return err
+	}
+	c.previous, c.current = &previous, &next
+	c.task.Phase = "restarting"
 	_ = atomicWriteJSON(c.paths.UpdateTaskFile, c.task)
+	select {
+	case c.restartCh <- struct{}{}:
+	default:
+	}
 	return nil
+}
+
+func (c *Coordinator) RestartRequested() <-chan struct{} { return c.restartCh }
+
+func (c *Coordinator) Current() *CurrentInfo {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.current == nil {
+		return nil
+	}
+	current := *c.current
+	return &current
 }
 
 func (c *Coordinator) HandleAppReady(ctx context.Context, req *launcheripc.AppReadyRequest) error {

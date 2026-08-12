@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 type Paths struct {
@@ -74,6 +75,18 @@ func (p *Paths) LogicalAppName(version string) string {
 		ext = ".app.exe"
 	}
 	return fmt.Sprintf("beagle-signal-%s%s", version, ext)
+}
+
+func (p *Paths) ArtifactAppName(version, sha256 string) string {
+	sha256 = strings.ToLower(strings.TrimSpace(sha256))
+	if len(sha256) > 12 {
+		sha256 = sha256[:12]
+	}
+	ext := ".app"
+	if runtime.GOOS == "windows" {
+		ext = ".app.exe"
+	}
+	return fmt.Sprintf("beagle-signal-%s-%s%s", version, sha256, ext)
 }
 
 func (p *Paths) AppPath(version string) string {

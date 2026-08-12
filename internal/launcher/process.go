@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sync"
 
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcheripc"
 )
 
 type ProcessManager struct {
+	mu  sync.Mutex
 	cmd *exec.Cmd
 }
 
@@ -37,11 +39,15 @@ func (pm *ProcessManager) StartApp(appPath, endpoint, token, expectedVersion, la
 		return 0, fmt.Errorf("cmd.Start failed: %w", err)
 	}
 
+	pm.mu.Lock()
 	pm.cmd = cmd
+	pm.mu.Unlock()
 	return cmd.Process.Pid, nil
 }
 
 func (pm *ProcessManager) IsRunning() bool {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
 	if pm.cmd == nil || pm.cmd.Process == nil {
 		return false
 	}
@@ -53,17 +59,27 @@ func (pm *ProcessManager) IsRunning() bool {
 }
 
 func (pm *ProcessManager) Wait() error {
+	pm.mu.Lock()
 	if pm.cmd == nil {
+		pm.mu.Unlock()
 		return fmt.Errorf("Desktop App has not been started")
 	}
-	err := pm.cmd.Wait()
-	pm.cmd = nil
+	cmd := pm.cmd
+	pm.mu.Unlock()
+	err := cmd.Wait()
+	pm.mu.Lock()
+	if pm.cmd == cmd {
+		pm.cmd = nil
+	}
+	pm.mu.Unlock()
 	return err
 }
 
 func (pm *ProcessManager) StopApp() {
-	if pm.cmd != nil && pm.cmd.Process != nil {
-		_ = pm.cmd.Process.Kill()
-		_ = pm.cmd.Wait()
+	pm.mu.Lock()
+	cmd := pm.cmd
+	pm.mu.Unlock()
+	if cmd != nil && cmd.Process != nil {
+		_ = cmd.Process.Kill()
 	}
 }

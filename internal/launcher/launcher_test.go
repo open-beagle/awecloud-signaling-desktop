@@ -52,6 +52,7 @@ func TestEnsureCurrentAppDownloadsAndPersistsInitialVersion(t *testing.T) {
 	content := []byte("test-desktop-app")
 	digestBytes := sha256.Sum256(content)
 	digest := hex.EncodeToString(digestBytes[:])
+	currentContent, currentDigest := content, digest
 
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -75,13 +76,13 @@ func TestEnsureCurrentAppDownloadsAndPersistsInitialVersion(t *testing.T) {
 						"package_type": "binary",
 						"filename":     "desktop.bin",
 						"download_url": server.URL + "/artifact",
-						"size":         len(content),
-						"sha256":       digest,
+						"size":         len(currentContent),
+						"sha256":       currentDigest,
 					},
 				},
 			})
 		case "/artifact":
-			_, _ = w.Write(content)
+			_, _ = w.Write(currentContent)
 		default:
 			http.NotFound(w, r)
 		}
@@ -99,13 +100,12 @@ func TestEnsureCurrentAppDownloadsAndPersistsInitialVersion(t *testing.T) {
 	require.Equal(t, "1.2.3", current.Version)
 	require.Equal(t, "1.2.3", promptedVersion)
 	require.Equal(t, int64(len(content)), promptedSize)
-	require.FileExists(t, paths.AppPath("1.2.3"))
+	require.FileExists(t, filepath.Join(paths.VersionsDir, current.App))
 
 	installed, err := loadValidCurrent(paths)
 	require.NoError(t, err)
 	require.Equal(t, current.App, installed.App)
 
-	server.Close()
 	promptedVersion = ""
 	cached, err := EnsureCurrentApp(t.Context(), paths, server.URL, logger, func(version string, size int64) {
 		promptedVersion = version
@@ -113,6 +113,46 @@ func TestEnsureCurrentAppDownloadsAndPersistsInitialVersion(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "1.2.3", cached.Version)
 	require.Empty(t, promptedVersion)
+	require.Equal(t, digest, cached.Artifact.SHA256)
+
+	currentContent = []byte("republished-desktop-app")
+	nextDigestBytes := sha256.Sum256(currentContent)
+	currentDigest = hex.EncodeToString(nextDigestBytes[:])
+	updated, err := EnsureCurrentApp(t.Context(), paths, server.URL, logger, nil)
+	require.NoError(t, err)
+	require.Equal(t, "1.2.3", updated.Version)
+	require.Equal(t, currentDigest, updated.Artifact.SHA256)
+	actualDigest, err := fileSHA256(filepath.Join(paths.VersionsDir, updated.App))
+	require.NoError(t, err)
+	require.Equal(t, currentDigest, actualDigest)
+
+	currentContent = []byte("runtime-republished-desktop-app")
+	runtimeDigestBytes := sha256.Sum256(currentContent)
+	currentDigest = hex.EncodeToString(runtimeDigestBytes[:])
+	coord, err := NewCoordinator(paths, server.URL)
+	require.NoError(t, err)
+	snapshot, err := coord.HandleUpdateRequest(t.Context(), &launcheripc.UpdateRequest{
+		SchemaVersion: 1, RequestID: "runtime-update", Source: "manual", TargetVersion: "latest",
+		Artifact: launcheripc.ArtifactPayload{},
+	})
+	require.NoError(t, err)
+	require.Equal(t, "runtime-update", snapshot.OperationID)
+	require.Eventually(t, func() bool {
+		state, stateErr := coord.GetState(t.Context())
+		return stateErr == nil && state.Update != nil && state.Update.Phase == "staged"
+	}, time.Second, 10*time.Millisecond)
+	require.NoError(t, coord.HandleUpdateConfirm(t.Context(), &launcheripc.UpdateConfirmRequest{SchemaVersion: 1, OperationID: snapshot.OperationID}))
+	select {
+	case <-coord.RestartRequested():
+	case <-time.After(time.Second):
+		t.Fatal("runtime update did not request an App restart")
+	}
+	runtimeCurrent := coord.Current()
+	require.NotNil(t, runtimeCurrent)
+	require.Equal(t, currentDigest, runtimeCurrent.Artifact.SHA256)
+	runtimeActualDigest, err := fileSHA256(filepath.Join(paths.VersionsDir, runtimeCurrent.App))
+	require.NoError(t, err)
+	require.Equal(t, currentDigest, runtimeActualDigest)
 }
 
 func TestAtomicWriteAndReadStateJSON(t *testing.T) {
@@ -175,7 +215,7 @@ func TestCoordinatorStateTransitions(t *testing.T) {
 	paths, err := NewPaths(tmpDir)
 	require.NoError(t, err)
 
-	coord, err := NewCoordinator(paths)
+	coord, err := NewCoordinator(paths, "http://127.0.0.1")
 	require.NoError(t, err)
 
 	ctx := t.Context()
