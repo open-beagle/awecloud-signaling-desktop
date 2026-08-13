@@ -105,12 +105,29 @@ export function useResourceCatalog() {
     error.value = ''
     try {
       await selectTenantInternal()
+      await loadResources()
     } catch (cause: any) {
       resources.value = []
       lastFetchedAt.value = ''
       error.value = readableError(cause, 'Tenant 切换失败，请重试')
     } finally {
       loading.value = false
+    }
+  }
+
+  async function initialize() {
+    // lastFetchedAt also represents a valid empty result, so an empty resource
+    // array is not automatically treated as a cache miss.
+    if (lastFetchedAt.value) return
+    if (inFlight) {
+      await inFlight
+      if (lastFetchedAt.value) return
+    }
+    if (!tenantOptions.value.length || !activeTenantID.value) {
+      await loadTenants()
+    }
+    if (activeTenantID.value && !lastFetchedAt.value) {
+      await loadResources()
     }
   }
 
@@ -123,6 +140,7 @@ export function useResourceCatalog() {
     lastFetchedAt,
     loadResources,
     loadTenants,
-    switchTenant
+    switchTenant,
+    initialize
   }
 }

@@ -7,8 +7,8 @@
       </div>
       <div class="manual-actions">
         <span v-if="lastFetchedAt" class="fetched-at">上次获取：{{ lastFetchedAt }}</span>
-        <el-button v-if="!tenantOptions.length" size="small" :loading="loading" @click="loadTenants">获取 Tenant</el-button>
-        <button v-else class="icon-btn" title="手动刷新 Pod" :disabled="loading || !activeTenantID" @click="loadResources">
+        <el-button v-if="!tenantOptions.length" size="small" :loading="loading" @click="initialize">手动获取</el-button>
+        <button v-else class="icon-btn" title="手动获取 Pods" :disabled="loading || !activeTenantID" @click="loadResources">
           <el-icon :class="{ 'is-loading': loading }"><Refresh /></el-icon>
         </button>
       </div>
@@ -31,15 +31,12 @@
 
     <div v-if="error" class="error-state">
       <span>{{ error }}</span>
-      <button @click="tenantOptions.length ? loadResources() : loadTenants()">重试</button>
+      <button @click="tenantOptions.length ? loadResources() : initialize()">重试</button>
     </div>
 
     <div v-else-if="!lastFetchedAt" class="manual-empty">
-      <strong>{{ tenantOptions.length ? '尚未获取当前 Tenant 的资源' : '尚未获取 Tenant' }}</strong>
-      <span>Desktop 不会自动拉取数据，请由管理员手动获取。</span>
-      <el-button type="primary" :loading="loading" @click="tenantOptions.length ? loadResources() : loadTenants()">
-        {{ tenantOptions.length ? '获取资源' : '获取 Tenant' }}
-      </el-button>
+      <strong>{{ loading ? '正在获取 Kubernetes Pods' : '当前账号暂无可访问 Pod' }}</strong>
+      <span>{{ loading ? '首次进入时会自动获取，后续优先使用当前 Tenant 缓存。' : '可以使用右上角手动获取。' }}</span>
     </div>
 
 	<el-table v-else v-loading="loading" :data="filteredContainers" stripe height="100%" empty-text="暂无可访问 Pod">
@@ -72,7 +69,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { CopyDocument, Refresh } from '@element-plus/icons-vue'
 import { useResourceCatalog } from '../composables/useResourceCatalog'
@@ -86,8 +83,8 @@ const {
   error,
   lastFetchedAt,
   loadResources,
-  loadTenants,
-  switchTenant
+  switchTenant,
+  initialize
 } = useResourceCatalog()
 const searchQuery = ref('')
 
@@ -130,6 +127,8 @@ async function copyConnection(resource: Resource) {
   await navigator.clipboard.writeText(value)
   ElMessage.success('连接信息已复制')
 }
+
+onMounted(initialize)
 
 </script>
 
