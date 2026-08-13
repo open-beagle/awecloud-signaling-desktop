@@ -36,7 +36,6 @@ var ErrStopReconnect = errors.New("stop reconnect: user disabled or invalid cred
 // DesktopClient Desktop 客户端
 type DesktopClient struct {
 	serverAddr string // gRPC地址（去掉协议前缀）
-	serverURL  string // 完整的服务器URL（包含协议）
 
 	// gRPC 连接
 	grpcConn   *grpc.ClientConn
@@ -84,11 +83,6 @@ type DesktopClient struct {
 	cachedFavorites    []string                           // 收藏列表缓存
 	cacheMutex         sync.RWMutex                       // 保护所有缓存字段
 
-	// HTTP REST 回退（gRPC 不可用时自动切换）
-	httpFallback *HTTPFallback // HTTP 回退客户端
-	useREST      bool          // 是否已切换到 REST 模式
-	restMutex    sync.RWMutex  // 保护 useREST
-
 	// 上下文
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -99,10 +93,8 @@ func NewDesktopClient(serverAddr string) *DesktopClient {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &DesktopClient{
 		serverAddr:         serverAddr,
-		serverURL:          serverAddr,
 		authorizedServices: make([]*pb.AuthorizedService, 0),
 		cachedHostServices: make(map[string][]*pb.AuthorizedService),
-		httpFallback:       NewHTTPFallback(serverAddr),
 		ctx:                ctx,
 		cancel:             cancel,
 	}
@@ -112,7 +104,6 @@ func NewDesktopClient(serverAddr string) *DesktopClient {
 func (c *DesktopClient) Start() error {
 	// 规范化服务器地址（移除末尾的斜杠）
 	c.serverAddr = strings.TrimSuffix(c.serverAddr, "/")
-	c.serverURL = c.serverAddr
 
 	// 根据地址判断是否使用 TLS
 	var opts []grpc.DialOption
@@ -136,7 +127,6 @@ func (c *DesktopClient) Start() error {
 		// 没有协议前缀，默认使用 plaintext
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		log.Printf("[DesktopClient] Using plaintext connection (no protocol specified)")
-		c.serverURL = "http://" + c.serverAddr
 	}
 
 	// 连接 gRPC Server
@@ -205,23 +195,6 @@ func (c *DesktopClient) IsGRPCConnected() bool {
 	c.connMutex.RLock()
 	defer c.connMutex.RUnlock()
 	return c.grpcConnected
-}
-
-// IsRESTMode 检查是否处于 REST 回退模式
-func (c *DesktopClient) IsRESTMode() bool {
-	c.restMutex.RLock()
-	defer c.restMutex.RUnlock()
-	return c.useREST
-}
-
-// switchToREST 切换到 REST 模式
-func (c *DesktopClient) switchToREST() {
-	c.restMutex.Lock()
-	defer c.restMutex.Unlock()
-	if !c.useREST {
-		log.Printf("[DesktopClient] 切换到 REST 回退模式")
-		c.useREST = true
-	}
 }
 
 // setGRPCConnected 设置 gRPC 连接状态
