@@ -22,7 +22,7 @@
 
 - **状态**: 通过 ✅
 - **结果**:
-  - 使用 Client ID: `shucheng`
+  - 使用 Client ID: `zhangsan`
   - 登录成功
   - 跳转到服务列表页面
   - 顶部显示用户信息
