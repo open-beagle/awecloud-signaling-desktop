@@ -17,14 +17,6 @@
 		</div>
 	  </div>
 	</section>
-    <header class="titlebar">
-      <div class="brand">
-        <img src="../assets/logo.png" alt="Beagle Signal" class="logo" />
-        <span>Beagle Signal</span>
-      </div>
-      <span class="window-title">安全访问客户端</span>
-    </header>
-
     <div class="app-shell">
       <aside class="sidebar">
         <div class="identity">
@@ -216,7 +208,7 @@ const handleRequestUpdate = async () => {
 }
 
 const handleBrowserDownload = async () => {
-  const url = updateStore.availableManifest?.artifacts?.app?.download_url
+  const url = updateStore.manifest?.artifacts?.app?.download_url
   if (!url) return
   try { await OpenBrowser(url) } catch (err: any) { ElMessage.error(err?.message || '无法打开浏览器') }
 }
@@ -363,7 +355,7 @@ const handleUserCommand = async (command: string) => {
 .forced-update {
   position: fixed;
   z-index: 20;
-  inset: 44px 0 0;
+  inset: 0;
   display: grid;
   place-items: center;
   padding: 32px;
@@ -389,37 +381,6 @@ const handleUserCommand = async (command: string) => {
 .forced-version-flow span { display: flex; flex-direction: column; gap: 5px; padding: 13px; color: #7b8799; background: #f5f7fa; border: 1px solid #e2e7ef; border-radius: 7px; font-size: 11px; }
 .forced-version-flow strong { color: #284f9c; font-size: 16px; }
 .forced-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
-
-.titlebar {
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex: 0 0 44px;
-  padding: 0 16px;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
-  user-select: none;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  font-size: 14px;
-  font-weight: 650;
-}
-
-.logo {
-  width: 26px;
-  height: 26px;
-  object-fit: contain;
-}
-
-.window-title {
-  color: #909399;
-  font-size: 12px;
-}
 
 .app-shell {
   min-height: 0;

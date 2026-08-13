@@ -1326,204 +1326,37 @@ type KubeconfigResult struct {
 	Count    int      `json:"count"`    // 集群数量
 }
 
-// clusterEntry kubeconfig 集群条目
-type clusterEntry struct {
-	Name   string // 集群名称（如 beijing）
-	Domain string // 域名
-	VIP    string // 本地 VIP 地址
-	Port   int    // 端口（K8S API 默认 6443）
-}
-
-// GenerateKubeconfig 自动生成 kubeconfig，为每个已授权的 K8S API 资源创建集群条目
-// 流程：获取 k8sapi 资源 → 触发 DNS 解析（分配 VIP + 启动代理）→ 生成 kubeconfig
+// GenerateKubeconfig 保留旧接口，并使用新的安全合并逻辑安装到本机。
 func (a *App) GenerateKubeconfig() (*KubeconfigResult, error) {
-	log.Printf("[App] GenerateKubeconfig called")
-
-	if a.desktopClient == nil {
-		return nil, fmt.Errorf("未登录")
-	}
-
-	// 1. 获取当前 Tenant 的资源列表；未选择 Tenant 时保留旧客户端行为。
-	a.tenantMutex.Lock()
-	tenantID := a.activeTenantID
-	a.tenantMutex.Unlock()
-	resources, err := a.desktopClient.GetResourcesForTenant(tenantID)
+	domains, err := a.GetDomainList()
 	if err != nil {
-		return nil, fmt.Errorf("获取资源列表失败: %w", err)
+		return nil, err
 	}
-
-	// 2. 筛选 k8sapi 类型资源
-	var k8sResources []*client.ResourceInfo
-	for _, r := range resources {
-		if r.Type == "k8sapi" {
-			k8sResources = append(k8sResources, r)
+	clusterNames := make([]string, 0)
+	selectedDomain := ""
+	for _, domain := range domains {
+		if domain != nil && domain.Type == "k8sapi" {
+			clusterNames = append(clusterNames, kubeconfigClusterName(domain))
+			if selectedDomain == "" {
+				selectedDomain = domain.Domain
+			}
 		}
 	}
-
-	if len(k8sResources) == 0 {
+	if selectedDomain == "" {
 		return &KubeconfigResult{Count: 0}, nil
 	}
-
-	// 3. 对每个 k8sapi 域名触发 DNS 解析（确保 VIP 已分配、TLS 代理已启动）
-	var clusters []clusterEntry
-
-	for _, r := range k8sResources {
-		// 触发 DNS 解析（会自动分配 VIP + 启动 TLS 代理）
-		vipAddr, ok := a.resolveDomain(r.Domain)
-		if !ok {
-			log.Printf("[App] kubeconfig: 域名解析失败 %s，跳过", r.Domain)
-			continue
-		}
-
-		// 从域名提取集群名称：kubernetes.{agent_name}.beagle → agent_name
-		// 或 kubernetes.{endpoint}.{agent_name}.beagle → endpoint-agent_name
-		clusterName := extractClusterName(r.Domain, r.AgentName)
-
-		// K8S API 默认端口 6443
-		port := 6443
-		if r.Port > 0 {
-			port = int(r.Port)
-		}
-
-		clusters = append(clusters, clusterEntry{
-			Name:   clusterName,
-			Domain: r.Domain,
-			VIP:    vipAddr,
-			Port:   port,
-		})
-	}
-
-	if len(clusters) == 0 {
-		return &KubeconfigResult{Count: 0}, nil
-	}
-
-	// 4. 生成 kubeconfig YAML
-	homeDir, err := os.UserHomeDir()
+	installed, err := a.InstallKubeconfig(&KubeconfigInstallRequest{Domain: selectedDomain, TargetIDs: []string{"local"}})
 	if err != nil {
-		return nil, fmt.Errorf("获取 HOME 目录失败: %w", err)
+		return nil, err
 	}
-
-	kubeDir := homeDir + "/.kube"
-	if err := os.MkdirAll(kubeDir, 0700); err != nil {
-		return nil, fmt.Errorf("创建 .kube 目录失败: %w", err)
-	}
-
-	kubeconfigPath := kubeDir + "/config"
-
-	// 读取现有 kubeconfig（如果存在）
-	existingContent, _ := os.ReadFile(kubeconfigPath)
-
-	// 构建新的 kubeconfig 内容
-	newContent := buildKubeconfig(string(existingContent), clusters)
-
-	if err := os.WriteFile(kubeconfigPath, []byte(newContent), 0600); err != nil {
-		return nil, fmt.Errorf("写入 kubeconfig 失败: %w", err)
-	}
-
-	clusterNames := make([]string, 0, len(clusters))
-	for _, c := range clusters {
-		clusterNames = append(clusterNames, c.Name)
-	}
-
-	log.Printf("[App] kubeconfig 已生成: %s（%d 个集群）", kubeconfigPath, len(clusters))
-	return &KubeconfigResult{
-		Path:     kubeconfigPath,
-		Clusters: clusterNames,
-		Count:    len(clusters),
-	}, nil
-}
-
-// extractClusterName 从域名和 Agent 名称提取集群名称
-// kubernetes.beijing.beagle → beijing
-// kubernetes.beagle-241.beijing.beagle → beagle-241-beijing
-func extractClusterName(domain, agentName string) string {
-	// 移除域名后缀（.beagle 或其他）
-	parts := strings.Split(domain, ".")
-	if len(parts) < 3 {
-		return agentName
-	}
-
-	// 去掉第一个 "kubernetes" 和最后一个后缀
-	middle := parts[1 : len(parts)-1]
-	return strings.Join(middle, "-")
-}
-
-// buildKubeconfig 构建 kubeconfig YAML 内容
-// 使用标记块方式，避免影响用户已有配置
-func buildKubeconfig(existing string, clusters []clusterEntry) string {
-	// 如果没有现有配置，生成完整的 kubeconfig
-	// 如果有现有配置，在标记块内替换
-
-	marker := "# >>> AWECloud Signaling Clusters >>>"
-	markerEnd := "# <<< AWECloud Signaling Clusters <<<"
-
-	// 构建集群、上下文、用户条目
-	var clusterYAML, contextYAML, userYAML strings.Builder
-
-	for _, c := range clusters {
-		// cluster 条目
-		clusterYAML.WriteString("- cluster:\n")
-		clusterYAML.WriteString(fmt.Sprintf("    server: https://%s:%d\n", c.VIP, c.Port))
-		clusterYAML.WriteString("    insecure-skip-tls-verify: true\n")
-		clusterYAML.WriteString(fmt.Sprintf("  name: %s\n", c.Name))
-
-		// context 条目
-		contextYAML.WriteString("- context:\n")
-		contextYAML.WriteString(fmt.Sprintf("    cluster: %s\n", c.Name))
-		contextYAML.WriteString("    user: signaling-user\n")
-		contextYAML.WriteString(fmt.Sprintf("  name: %s\n", c.Name))
-
-		// user 条目（共用一个 signaling-user）
-	}
-
-	// 只需要一个 user 条目
-	userYAML.WriteString("- name: signaling-user\n")
-	userYAML.WriteString("  user: {}\n")
-
-	signalingBlock := fmt.Sprintf(`%s
-apiVersion: v1
-kind: Config
-clusters:
-%scontexts:
-%susers:
-%s%s`,
-		marker,
-		clusterYAML.String(),
-		contextYAML.String(),
-		userYAML.String(),
-		markerEnd,
-	)
-
-	// 如果没有现有配置，直接返回完整 kubeconfig
-	if strings.TrimSpace(existing) == "" {
-		return fmt.Sprintf(`apiVersion: v1
-kind: Config
-current-context: %s
-clusters:
-%scontexts:
-%susers:
-%s`, clusters[0].Name, clusterYAML.String(), contextYAML.String(), userYAML.String())
-	}
-
-	// 如果已有标记块，替换
-	beginIdx := strings.Index(existing, marker)
-	endIdx := strings.Index(existing, markerEnd)
-	if beginIdx >= 0 && endIdx >= 0 {
-		endIdx += len(markerEnd)
-		if endIdx < len(existing) && existing[endIdx] == '\n' {
-			endIdx++
+	if len(installed.Targets) == 0 || !installed.Targets[0].Success {
+		message := "安装 kubeconfig 失败"
+		if len(installed.Targets) > 0 && installed.Targets[0].Error != "" {
+			message = installed.Targets[0].Error
 		}
-		return existing[:beginIdx] + signalingBlock + "\n" + existing[endIdx:]
+		return nil, errors.New(message)
 	}
-
-	// 没有标记块，尝试合并到现有 kubeconfig
-	// 简单方案：在 clusters/contexts/users 段追加
-	// 复杂合并容易出错，改用独立文件方案
-	signalingConfigPath := strings.Replace(existing, "", "", 0) // no-op
-	_ = signalingConfigPath
-
-	// 写入独立文件 ~/.kube/signaling-config，提示用户设置 KUBECONFIG
-	return existing + "\n" + signalingBlock + "\n"
+	return &KubeconfigResult{Path: installed.Targets[0].Path, Clusters: clusterNames, Count: len(clusterNames)}, nil
 }
 
 // CheckVersion 检查版本更新

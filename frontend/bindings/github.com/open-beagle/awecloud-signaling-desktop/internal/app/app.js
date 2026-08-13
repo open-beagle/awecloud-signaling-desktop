@@ -113,8 +113,7 @@ export function DeleteDevice(deviceToken) {
 }
 
 /**
- * GenerateKubeconfig 自动生成 kubeconfig，为每个已授权的 K8S API 资源创建集群条目
- * 流程：获取 k8sapi 资源 → 触发 DNS 解析（分配 VIP + 启动代理）→ 生成 kubeconfig
+ * GenerateKubeconfig 保留旧接口，并使用新的安全合并逻辑安装到本机。
  * @returns {$CancellablePromise<$models.KubeconfigResult | null>}
  */
 export function GenerateKubeconfig() {
@@ -184,6 +183,15 @@ export function GetHosts() {
 }
 
 /**
+ * @returns {$CancellablePromise<($models.KubeconfigTarget | null)[]>}
+ */
+export function GetKubeconfigTargets() {
+    return $Call.ByID(2506592474).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType30($result);
+    }));
+}
+
+/**
  * GetLogLevel 获取当前日志级别
  * @returns {$CancellablePromise<string>}
  */
@@ -196,7 +204,7 @@ export function GetLogLevel() {
  */
 export function GetLogs() {
     return $Call.ByID(1466252692).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType28($result);
+        return $$createType31($result);
     }));
 }
 
@@ -206,7 +214,7 @@ export function GetLogs() {
  */
 export function GetProxyStatus() {
     return $Call.ByID(391408139).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType31($result);
+        return $$createType34($result);
     }));
 }
 
@@ -217,7 +225,7 @@ export function GetProxyStatus() {
  */
 export function GetResourceTenants() {
     return $Call.ByID(223320176).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType33($result);
+        return $$createType36($result);
     }));
 }
 
@@ -227,7 +235,7 @@ export function GetResourceTenants() {
  */
 export function GetResources() {
     return $Call.ByID(2898432568).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType36($result);
+        return $$createType39($result);
     }));
 }
 
@@ -246,7 +254,7 @@ export function GetServices() {
  */
 export function GetTunnelStatus() {
     return $Call.ByID(3308965971).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType38($result);
+        return $$createType41($result);
     }));
 }
 
@@ -255,7 +263,7 @@ export function GetTunnelStatus() {
  */
 export function GetVersion() {
     return $Call.ByID(1667803041).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType40($result);
+        return $$createType43($result);
     }));
 }
 
@@ -271,6 +279,16 @@ export function GetWindowTitle() {
  */
 export function HideToTray() {
     return $Call.ByID(1860420756);
+}
+
+/**
+ * @param {$models.KubeconfigInstallRequest | null} request
+ * @returns {$CancellablePromise<$models.KubeconfigInstallResult | null>}
+ */
+export function InstallKubeconfig(request) {
+    return $Call.ByID(2852743479, request).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType45($result);
+    }));
 }
 
 /**
@@ -351,7 +369,7 @@ export function ReconnectTunnel() {
  */
 export function SetContainerServiceLocalPort(resourceID, localPort) {
     return $Call.ByID(1340784315, resourceID, localPort).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType36($result);
+        return $$createType39($result);
     }));
 }
 
@@ -398,7 +416,7 @@ export function Startup() {
  */
 export function SwitchResourceTenant(tenantID) {
     return $Call.ByID(418404945, tenantID).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType36($result);
+        return $$createType39($result);
     }));
 }
 
@@ -419,7 +437,7 @@ export function ToggleFavorite(serviceID) {
  */
 export function WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint) {
     return $Call.ByID(3344282757, serverAddr, sessionID, deviceFingerprint).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType42($result);
+        return $$createType47($result);
     }));
 }
 
@@ -452,18 +470,23 @@ const $$createType24 = $Create.Array($$createType23);
 const $$createType25 = $models.HostInfo.createFrom;
 const $$createType26 = $Create.Nullable($$createType25);
 const $$createType27 = $Create.Array($$createType26);
-const $$createType28 = $Create.Array($Create.Any);
-const $$createType29 = $models.ProxyStatusInfo.createFrom;
-const $$createType30 = $Create.Nullable($$createType29);
-const $$createType31 = $Create.Array($$createType30);
-const $$createType32 = $models.ResourceTenantInfo.createFrom;
-const $$createType33 = $Create.Array($$createType32);
-const $$createType34 = client$0.ResourceInfo.createFrom;
-const $$createType35 = $Create.Nullable($$createType34);
+const $$createType28 = $models.KubeconfigTarget.createFrom;
+const $$createType29 = $Create.Nullable($$createType28);
+const $$createType30 = $Create.Array($$createType29);
+const $$createType31 = $Create.Array($Create.Any);
+const $$createType32 = $models.ProxyStatusInfo.createFrom;
+const $$createType33 = $Create.Nullable($$createType32);
+const $$createType34 = $Create.Array($$createType33);
+const $$createType35 = $models.ResourceTenantInfo.createFrom;
 const $$createType36 = $Create.Array($$createType35);
-const $$createType37 = $models.TunnelStatus.createFrom;
+const $$createType37 = client$0.ResourceInfo.createFrom;
 const $$createType38 = $Create.Nullable($$createType37);
-const $$createType39 = $models.VersionInfo.createFrom;
-const $$createType40 = $Create.Nullable($$createType39);
-const $$createType41 = $models.LoginResultGRPC.createFrom;
-const $$createType42 = $Create.Nullable($$createType41);
+const $$createType39 = $Create.Array($$createType38);
+const $$createType40 = $models.TunnelStatus.createFrom;
+const $$createType41 = $Create.Nullable($$createType40);
+const $$createType42 = $models.VersionInfo.createFrom;
+const $$createType43 = $Create.Nullable($$createType42);
+const $$createType44 = $models.KubeconfigInstallResult.createFrom;
+const $$createType45 = $Create.Nullable($$createType44);
+const $$createType46 = $models.LoginResultGRPC.createFrom;
+const $$createType47 = $Create.Nullable($$createType46);

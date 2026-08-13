@@ -72,25 +72,11 @@
         <strong>{{ proxyStatus.length }} 个活动监听</strong>
         <small>{{ proxyStatus.length ? '按已访问资源建立' : '访问资源时自动建立' }}</small>
       </div>
-    </div>
-
-    <div class="version-section-title">
-      <h3>客户端版本</h3>
-      <span>{{ updateStore.checkedAt ? '最近检查：' + formatCheckedAt(updateStore.checkedAt) : '等待检查' }}</span>
-    </div>
-    <div class="client-version-row">
-      <div>
-        <strong>客户端版本</strong>
-        <small>{{ platformLabel }}</small>
+      <div class="diagnostic-item">
+        <span class="diagnostic-label">本地 DNS</span>
+        <strong>{{ tunnelStatus.connected ? '可用' : '等待网络' }}</strong>
+        <small>{{ tunnelStatus.connected ? '*.beagle 域名由安全网络解析' : '连接安全网络后启用' }}</small>
       </div>
-      <div>
-        <strong>{{ displayVersion }}</strong>
-        <small>Commit {{ shortCommit(updateStore.currentCommitID) }} · {{ formatCommitTime(updateStore.currentCommitTime) }}</small>
-        <small>{{ updateStore.updateAvailable ? `新版本 ${updateStore.targetVersion} 已发布` : updateStore.checkError || '当前已是最新版本' }}</small>
-      </div>
-      <el-button :type="updateStore.updateAvailable ? 'primary' : 'default'" :loading="updateStore.isChecking" @click="updateStore.openUpdate()">
-        {{ updateStore.updateAvailable ? '查看更新' : '检查更新' }}
-      </el-button>
     </div>
 
     <div class="log-section-title">
@@ -117,10 +103,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Delete, Download, Bottom } from '@element-plus/icons-vue'
-import { useUpdateStore } from '../stores/update'
 import {
   GetGRPCStatus,
   GetLogs,
@@ -130,21 +115,6 @@ import {
 } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/internal/app/app'
 
 const logs = ref<string[]>([])
-const updateStore = useUpdateStore()
-const displayVersion = computed(() => {
-  const value = updateStore.currentVersion || '-'
-  return value === '-' || value.startsWith('v') ? value : `v${value}`
-})
-const shortCommit = (value: string) => value ? value.slice(0, 8) : '-'
-const formatCommitTime = (value: string) => {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? (value || '-') : date.toLocaleString([], { hour12: false })
-}
-const platformLabel = `${navigator.platform || 'Desktop'} · stable`
-const formatCheckedAt = (value: string) => {
-  const date = new Date(value)
-  return Number.isNaN(date.getTime()) ? '刚刚' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
 const logsContainer = ref<HTMLElement | null>(null)
 const autoRefresh = ref(true)
 const isUserAtBottom = ref(true)
@@ -394,7 +364,7 @@ onUnmounted(() => {
 
 .diagnostic-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1px;
   margin: 20px 24px 0;
   overflow: hidden;
@@ -443,32 +413,6 @@ onUnmounted(() => {
   justify-content: space-between;
   margin: 22px 24px 0;
 }
-
-.version-section-title {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin: 22px 24px 0;
-}
-
-.version-section-title h3 { margin: 0; color: #303133; font-size: 15px; font-weight: 600; }
-.version-section-title span { color: #909399; font-size: 12px; }
-
-.client-version-row {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(190px, 1fr) auto;
-  align-items: center;
-  gap: 20px;
-  margin: 10px 24px 0;
-  padding: 15px 18px;
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
-}
-
-.client-version-row > div { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.client-version-row strong { color: #303133; font-size: 13px; }
-.client-version-row small { overflow: hidden; color: #909399; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 
 .log-section-title h3 {
   margin: 0;

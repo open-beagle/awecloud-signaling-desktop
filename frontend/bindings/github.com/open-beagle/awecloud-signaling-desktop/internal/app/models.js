@@ -394,6 +394,84 @@ export class HostInfo {
     }
 }
 
+export class KubeconfigInstallRequest {
+    /**
+     * Creates a new KubeconfigInstallRequest instance.
+     * @param {Partial<KubeconfigInstallRequest>} [$$source = {}] - The source object to create the KubeconfigInstallRequest.
+     */
+    constructor($$source = {}) {
+        if (!("domain" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["domain"] = "";
+        }
+        if (!("target_ids" in $$source)) {
+            /**
+             * @member
+             * @type {string[]}
+             */
+            this["target_ids"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new KubeconfigInstallRequest instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {KubeconfigInstallRequest}
+     */
+    static createFrom($$source = {}) {
+        const $$createField1_0 = $$createType2;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("target_ids" in $$parsedSource) {
+            $$parsedSource["target_ids"] = $$createField1_0($$parsedSource["target_ids"]);
+        }
+        return new KubeconfigInstallRequest(/** @type {Partial<KubeconfigInstallRequest>} */($$parsedSource));
+    }
+}
+
+export class KubeconfigInstallResult {
+    /**
+     * Creates a new KubeconfigInstallResult instance.
+     * @param {Partial<KubeconfigInstallResult>} [$$source = {}] - The source object to create the KubeconfigInstallResult.
+     */
+    constructor($$source = {}) {
+        if (!("context" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["context"] = "";
+        }
+        if (!("targets" in $$source)) {
+            /**
+             * @member
+             * @type {(KubeconfigTargetResult | null)[]}
+             */
+            this["targets"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new KubeconfigInstallResult instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {KubeconfigInstallResult}
+     */
+    static createFrom($$source = {}) {
+        const $$createField1_0 = $$createType5;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("targets" in $$parsedSource) {
+            $$parsedSource["targets"] = $$createField1_0($$parsedSource["targets"]);
+        }
+        return new KubeconfigInstallResult(/** @type {Partial<KubeconfigInstallResult>} */($$parsedSource));
+    }
+}
+
 /**
  * KubeconfigResult kubeconfig 生成结果
  */
@@ -443,6 +521,132 @@ export class KubeconfigResult {
             $$parsedSource["clusters"] = $$createField1_0($$parsedSource["clusters"]);
         }
         return new KubeconfigResult(/** @type {Partial<KubeconfigResult>} */($$parsedSource));
+    }
+}
+
+export class KubeconfigTarget {
+    /**
+     * Creates a new KubeconfigTarget instance.
+     * @param {Partial<KubeconfigTarget>} [$$source = {}] - The source object to create the KubeconfigTarget.
+     */
+    constructor($$source = {}) {
+        if (!("id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["id"] = "";
+        }
+        if (!("name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["name"] = "";
+        }
+        if (!("kind" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["kind"] = "";
+        }
+        if (!("path" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["path"] = "";
+        }
+        if (!("available" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["available"] = false;
+        }
+        if (!("hint" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["hint"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new KubeconfigTarget instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {KubeconfigTarget}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new KubeconfigTarget(/** @type {Partial<KubeconfigTarget>} */($$parsedSource));
+    }
+}
+
+export class KubeconfigTargetResult {
+    /**
+     * Creates a new KubeconfigTargetResult instance.
+     * @param {Partial<KubeconfigTargetResult>} [$$source = {}] - The source object to create the KubeconfigTargetResult.
+     */
+    constructor($$source = {}) {
+        if (!("target_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["target_id"] = "";
+        }
+        if (!("target_name" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["target_name"] = "";
+        }
+        if (!("path" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["path"] = "";
+        }
+        if (!("context" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["context"] = "";
+        }
+        if (!("success" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["success"] = false;
+        }
+        if (!("error" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["error"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new KubeconfigTargetResult instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {KubeconfigTargetResult}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new KubeconfigTargetResult(/** @type {Partial<KubeconfigTargetResult>} */($$parsedSource));
     }
 }
 
@@ -972,3 +1176,6 @@ export class VersionInfo {
 const $$createType0 = launcher$0.PublicManifest.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
 const $$createType2 = $Create.Array($Create.Any);
+const $$createType3 = KubeconfigTargetResult.createFrom;
+const $$createType4 = $Create.Nullable($$createType3);
+const $$createType5 = $Create.Array($$createType4);

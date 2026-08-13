@@ -2,7 +2,7 @@
   <div class="resource-page">
     <div class="page-header">
       <div>
-        <h1>Kubernetes Pod</h1>
+        <h1>Kubernetes Pods</h1>
         <p>当前 Tenant 授权的 Pod 容器</p>
       </div>
       <div class="manual-actions">

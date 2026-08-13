@@ -2,7 +2,7 @@
   <div class="resource-page">
     <div class="page-header">
       <div>
-        <h1>SVC</h1>
+        <h1>Kubernetes SVC</h1>
         <p>当前账号可访问的 Kubernetes Service</p>
       </div>
       <div class="manual-actions">
@@ -34,7 +34,7 @@
       <button @click="tenantOptions.length ? loadResources() : loadTenants()">重试</button>
     </div>
 
-    <div v-else-if="routeWarnings.length" class="route-warning">
+    <div v-if="!error && routeWarnings.length" class="route-warning">
       <span>{{ routeWarningText }}。目标服务端口不变，请为当前设备选择其他本地端口。</span>
       <el-tooltip content="更换本地端口" placement="top">
         <button class="icon-btn warning-action" type="button" aria-label="更换本地端口" :disabled="loading" @click="openPortDialog(routeWarnings[0])">
@@ -43,7 +43,7 @@
       </el-tooltip>
     </div>
 
-    <div v-else-if="!lastFetchedAt" class="manual-empty">
+    <div v-if="!error && !lastFetchedAt" class="manual-empty">
       <strong>{{ tenantOptions.length ? '尚未获取当前 Tenant 的资源' : '尚未获取 Tenant' }}</strong>
       <span>Desktop 不会自动拉取数据，请由管理员手动获取。</span>
       <el-button type="primary" :loading="loading" @click="tenantOptions.length ? loadResources() : loadTenants()">
@@ -51,7 +51,7 @@
       </el-button>
     </div>
 
-    <el-table v-else v-loading="loading" :data="filteredServices" stripe height="100%" empty-text="暂无可访问服务">
+    <el-table v-if="!error && lastFetchedAt" v-loading="loading" :data="filteredServices" stripe height="100%" empty-text="暂无可访问服务">
       <el-table-column label="服务" min-width="220">
         <template #default="{ row }">
           <div class="primary">{{ row.service_name || row.display_name || '未命名服务' }}</div>

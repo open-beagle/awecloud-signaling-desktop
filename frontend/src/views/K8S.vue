@@ -1,179 +1,236 @@
 <template>
-  <div class="k8s-page">
+  <div class="resource-page">
     <div class="page-header">
-      <h1>Kubernetes</h1>
-      <p>使用当前组织授权的集群生成或复制 kubeconfig。</p>
+      <div>
+        <h1>Kubernetes</h1>
+        <p>当前账号可访问的 Kubernetes 集群</p>
+      </div>
     </div>
 
-    <div v-if="k8sDomains.length === 0" class="empty">
-      暂无可用的 K8S 集群
+    <div class="toolbar">
+      <el-input v-model="searchQuery" clearable placeholder="搜索集群、区域或地址" class="search-input" />
+      <span class="count">{{ filteredDomains.length }} / {{ k8sDomains.length }} 个集群</span>
     </div>
 
-    <template v-else>
-      <div class="toolbar">
-        <input
-          v-model="searchQuery"
-          class="search-input"
-          placeholder="搜索集群..."
-          type="text"
-        />
-        <span class="cluster-count">{{ filteredDomains.length }} / {{ k8sDomains.length }} 个集群</span>
-        <button class="merge-btn" @click="copyAllKubeconfig">
-          {{ allCopied ? '✓ 已复制' : '复制全部 kubeconfig' }}
-        </button>
+    <el-table :data="filteredDomains" stripe height="100%" empty-text="暂无可访问集群">
+      <el-table-column label="集群" min-width="210">
+        <template #default="{ row }">
+          <div class="primary">{{ clusterName(row) }}</div>
+          <div class="secondary">{{ row.display_name || 'Kubernetes API' }}</div>
+        </template>
+      </el-table-column>
+      <el-table-column label="区域" min-width="130">
+        <template #default="{ row }">{{ row.region || '-' }}</template>
+      </el-table-column>
+      <el-table-column label="API 地址" min-width="300">
+        <template #default="{ row }"><code>https://{{ row.domain }}</code></template>
+      </el-table-column>
+      <el-table-column label="状态" width="110">
+        <template #default="{ row }">
+          <span class="status"><i :class="row.status === 'offline' ? 'offline' : 'online'"></i>{{ row.status === 'offline' ? '离线' : '可用' }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="180" fixed="right" align="right">
+        <template #default="{ row }">
+          <div class="table-actions">
+            <el-button size="small" :icon="Download" @click="openInstall(row)">安装</el-button>
+            <el-tooltip content="复制 kubeconfig" placement="top">
+              <button class="icon-btn table-action" type="button" aria-label="复制 kubeconfig" @click="copyKubeconfig(row)">
+                <el-icon><CopyDocument /></el-icon>
+              </button>
+            </el-tooltip>
+            <el-tooltip content="下载 kubeconfig" placement="top">
+              <button class="icon-btn table-action" type="button" aria-label="下载 kubeconfig" @click="downloadKubeconfig(row)">
+                <el-icon><Download /></el-icon>
+              </button>
+            </el-tooltip>
+          </div>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <el-dialog v-model="installDialogVisible" title="安装 kubeconfig" width="680px" :close-on-click-modal="false">
+      <p class="dialog-description">{{ clusterName(installingDomain) }} 将写入所选环境的标准 kubeconfig。</p>
+
+      <div v-loading="targetsLoading" class="install-targets">
+        <label v-for="target in targets" :key="target.id" class="install-target" :class="{ selected: selectedTargets.includes(target.id), unavailable: !target.available }">
+          <el-checkbox v-model="selectedTargets" :label="target.id" :disabled="!target.available">
+            <span class="target-name">{{ target.name }}</span>
+          </el-checkbox>
+          <code>{{ target.path }}</code>
+          <span class="target-hint">{{ target.hint }}</span>
+        </label>
+        <div v-if="!targetsLoading && !targets.length" class="target-empty">未检测到可安装环境</div>
       </div>
 
-      <div v-if="filteredDomains.length === 0" class="empty">
-        未找到匹配的集群
+      <div class="install-policy">
+        <strong>写入规则</strong>
+        <span>配置不存在时自动创建；同名 context、cluster 和 user 直接覆盖；无关配置保留。</span>
       </div>
 
-      <div v-else class="k8s-grid">
-        <K8SCard
-          v-for="domain in filteredDomains"
-          :key="domain.domain"
-          :domain="domain"
-        />
+      <div v-if="installResults.length" class="install-results">
+        <div v-for="result in installResults" :key="result.target_id" :class="result.success ? 'success' : 'failed'">
+          <strong>{{ result.target_name }}</strong>
+          <span>{{ result.success ? `${result.path} · ${result.context}` : result.error }}</span>
+        </div>
       </div>
-    </template>
+
+      <template #footer>
+        <el-button @click="installDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="installing" :disabled="!selectedTargets.length" @click="installSelected">
+          确认安装
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import K8SCard from '../components/K8SCard.vue'
+import { ElMessage } from 'element-plus'
+import { CopyDocument, Download } from '@element-plus/icons-vue'
+import { GetKubeconfigTargets, InstallKubeconfig } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/internal/app/app'
 import { useDomainsStore } from '../stores/domains'
 import type { DomainItem } from '../stores/domains'
 
-const domainsStore = useDomainsStore()
-const k8sDomains = computed(() => domainsStore.k8sDomains)
-const allCopied = ref(false)
-const searchQuery = ref('')
-
-const filteredDomains = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return k8sDomains.value
-  return k8sDomains.value.filter(d => d.domain.toLowerCase().includes(q))
-})
-
-function generateMergedKubeconfig(domains: DomainItem[]): string {
-  const clusters = domains.map(d => `- name: ${d.region}
-  cluster:
-    insecure-skip-tls-verify: true
-    server: https://${d.domain}:6443`).join('\n')
-
-  const contexts = domains.map(d => `- context:
-    cluster: ${d.region}
-    user: anonymous
-  name: ${d.region}`).join('\n')
-
-  // 只需要一个 anonymous user
-  const users = `- name: anonymous
-  user:
-    token: anonymous`
-
-  return `apiVersion: v1
-kind: Config
-preferences: {}
-current-context: ${domains[0].region}
-clusters:
-${clusters}
-contexts:
-${contexts}
-users:
-${users}`
+interface InstallTarget {
+  id: string
+  name: string
+  kind: string
+  path: string
+  available: boolean
+  hint: string
 }
 
-function copyAllKubeconfig() {
-  const merged = generateMergedKubeconfig(filteredDomains.value)
-  navigator.clipboard.writeText(merged)
-  allCopied.value = true
-  setTimeout(() => { allCopied.value = false }, 1500)
+interface InstallTargetResult {
+  target_id: string
+  target_name: string
+  path: string
+  context: string
+  success: boolean
+  error: string
+}
+
+const domainsStore = useDomainsStore()
+const k8sDomains = computed(() => domainsStore.k8sDomains)
+const searchQuery = ref('')
+const installDialogVisible = ref(false)
+const installingDomain = ref<DomainItem | null>(null)
+const targets = ref<InstallTarget[]>([])
+const selectedTargets = ref<string[]>([])
+const targetsLoading = ref(false)
+const installing = ref(false)
+const installResults = ref<InstallTargetResult[]>([])
+
+const filteredDomains = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) return k8sDomains.value
+  return k8sDomains.value.filter(domain =>
+    [domain.domain, domain.region, domain.display_name, clusterName(domain)]
+      .some(value => value?.toLowerCase().includes(query))
+  )
+})
+
+function clusterName(domain: DomainItem | null) {
+  if (!domain) return ''
+  const region = (domain.region || '').trim()
+  if (region) return region.endsWith('.beagle') ? region : `${region}.beagle`
+  return domain.domain.replace(/^kubernetes\./, '')
+}
+
+function kubeconfigFor(domain: DomainItem) {
+  const name = clusterName(domain)
+  return `apiVersion: v1
+clusters:
+- cluster:
+    insecure-skip-tls-verify: true
+    server: https://${domain.domain}
+  name: ${name}
+contexts:
+- context:
+    cluster: ${name}
+    user: who
+  name: ${name}
+current-context: ${name}
+kind: Config
+preferences: {}
+users:
+- name: who
+  user:
+    token: whoisyourdaddy`
+}
+
+async function copyKubeconfig(domain: DomainItem) {
+  await navigator.clipboard.writeText(kubeconfigFor(domain))
+  ElMessage.success('kubeconfig 已复制')
+}
+
+function downloadKubeconfig(domain: DomainItem) {
+  const blob = new Blob([kubeconfigFor(domain)], { type: 'application/yaml;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `${clusterName(domain)}.kubeconfig.yaml`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+  ElMessage.success('kubeconfig 已下载')
+}
+
+async function openInstall(domain: DomainItem) {
+  installingDomain.value = domain
+  installResults.value = []
+  installDialogVisible.value = true
+  targetsLoading.value = true
+  try {
+    targets.value = ((await GetKubeconfigTargets()) || []).filter(Boolean) as InstallTarget[]
+    selectedTargets.value = targets.value.filter(target => target.available && target.kind !== 'wsl').map(target => target.id)
+  } catch (cause: any) {
+    targets.value = []
+    selectedTargets.value = []
+    ElMessage.error(cause?.message || '安装环境检测失败')
+  } finally {
+    targetsLoading.value = false
+  }
+}
+
+async function installSelected() {
+  if (!installingDomain.value || !selectedTargets.value.length) return
+  installing.value = true
+  installResults.value = []
+  try {
+    const result = await InstallKubeconfig({
+      domain: installingDomain.value.domain,
+      target_ids: selectedTargets.value
+    })
+    installResults.value = (result?.targets || []).filter(Boolean) as InstallTargetResult[]
+    const successful = installResults.value.filter(item => item.success).length
+    if (successful === installResults.value.length) ElMessage.success('kubeconfig 安装完成')
+    else if (successful) ElMessage.warning('部分环境安装失败，请查看结果')
+    else ElMessage.error('kubeconfig 安装失败')
+  } catch (cause: any) {
+    ElMessage.error(cause?.message || 'kubeconfig 安装失败')
+  } finally {
+    installing.value = false
+  }
 }
 </script>
 
+<style scoped src="../styles/resource-list.css"></style>
 <style scoped>
-.k8s-page {
-  padding: 20px;
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-}
-
-.page-header {
-  margin-bottom: 18px;
-}
-
-.page-header h1 {
-  margin: 0;
-  color: #303133;
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.page-header p {
-  margin: 6px 0 0;
-  color: #909399;
-  font-size: 13px;
-}
-
-.empty {
-  text-align: center;
-  padding: 40px;
-  color: #999;
-  font-size: 14px;
-}
-
-.toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  gap: 12px;
-}
-
-.search-input {
-  flex: 1;
-  max-width: 260px;
-  padding: 5px 10px;
-  border: 1px solid #d9d9d9;
-  border-radius: 4px;
-  font-size: 13px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.search-input:focus {
-  border-color: #1890ff;
-}
-
-.cluster-count {
-  font-size: 13px;
-  color: #999;
-}
-
-.merge-btn {
-  padding: 6px 16px;
-  background-color: #1890ff;
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  font-size: 13px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-.merge-btn:hover {
-  background-color: #40a9ff;
-}
-
-.merge-btn:active {
-  background-color: #096dd9;
-}
-
-.k8s-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
-  padding-bottom: 20px;
-}
+.table-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.install-targets { min-height: 92px; display: grid; gap: 8px; }
+.install-target { min-height: 64px; display: grid; grid-template-columns: 170px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 9px 11px; border: 1px solid #dfe5ed; border-radius: 7px; cursor: pointer; }
+.install-target.selected { background: #f5f9ff; border-color: #bed2f1; }
+.install-target.unavailable { cursor: not-allowed; opacity: .68; }
+.target-name { font-weight: 600; }
+.target-hint { color: #7a8799; font-size: 11px; white-space: nowrap; }
+.target-empty { padding: 30px; color: #909399; text-align: center; }
+.install-policy { display: flex; flex-direction: column; gap: 5px; margin-top: 12px; padding: 10px 12px; color: #606266; background: #f5f7fa; border-radius: 7px; font-size: 12px; }
+.install-results { display: grid; gap: 7px; margin-top: 12px; }
+.install-results > div { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 10px; padding: 9px 11px; border-radius: 6px; font-size: 12px; }
+.install-results .success { color: #2e6f4b; background: #edf8f2; }
+.install-results .failed { color: #b33b3b; background: #fff2f0; }
+.install-results span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 </style>

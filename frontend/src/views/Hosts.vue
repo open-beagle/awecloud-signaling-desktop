@@ -1,122 +1,126 @@
-﻿<template>
-  <div class="hosts-page">
+<template>
+  <div class="resource-page">
     <div class="page-header">
-      <h1>SSH</h1>
-      <p>从当前组织授权的主机中选择目标并打开终端。</p>
+      <div>
+        <h1>SSH</h1>
+        <p>当前账号可访问的主机终端</p>
+      </div>
     </div>
 
-    <div v-if="hostsDomains.length === 0" class="empty">
-      暂无可用主机
+    <div class="toolbar">
+      <el-input v-model="searchQuery" clearable placeholder="搜索主机、地址或用户" class="search-input" />
+      <span class="count">{{ filteredDomains.length }} / {{ hostsDomains.length }} 台主机</span>
     </div>
 
-    <template v-else>
-      <div class="toolbar">
-        <input
-          v-model="searchQuery"
-          class="search-input"
-          placeholder="搜索主机..."
-          type="text"
-        />
-        <span class="count">{{ filteredDomains.length }} / {{ hostsDomains.length }} 个主机</span>
-      </div>
+    <el-table :data="filteredDomains" stripe height="100%" empty-text="暂无可访问主机">
+      <el-table-column label="主机" min-width="220">
+        <template #default="{ row }">
+          <div class="primary">{{ row.display_name || row.domain }}</div>
+          <div class="secondary">{{ row.domain }}</div>
+        </template>
+      </el-table-column>
+      <el-table-column label="区域" min-width="130">
+        <template #default="{ row }">{{ row.region || '-' }}</template>
+      </el-table-column>
+      <el-table-column label="用户" min-width="220">
+        <template #default="{ row }">
+          <template v-if="row.ssh_users?.length">
+            <div class="primary">{{ row.ssh_users.length === 1 ? row.ssh_users[0] : `${row.ssh_users.length} 个用户` }}</div>
+            <div v-if="row.ssh_users.length > 1" class="secondary user-summary">{{ row.ssh_users.join(', ') }}</div>
+          </template>
+          <span v-else class="secondary">暂无授权用户</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="状态" width="110">
+        <template #default="{ row }">
+          <span class="status"><i :class="row.status === 'offline' ? 'offline' : 'online'"></i>{{ row.status === 'offline' ? '离线' : '可用' }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="操作" width="84" fixed="right" align="center">
+        <template #default="{ row }">
+          <el-tooltip :content="row.ssh_users?.length > 1 ? '选择用户并复制' : '复制 SSH 命令'" placement="top">
+            <button
+              class="icon-btn table-action"
+              type="button"
+              :aria-label="row.ssh_users?.length > 1 ? '选择 SSH 用户并复制' : '复制 SSH 命令'"
+              :disabled="!row.ssh_users?.length"
+              @click="handleCopy(row)"
+            >
+              <el-icon><component :is="row.ssh_users?.length > 1 ? UserFilled : CopyDocument" /></el-icon>
+            </button>
+          </el-tooltip>
+        </template>
+      </el-table-column>
+    </el-table>
 
-      <div v-if="filteredDomains.length === 0" class="empty">
-        未找到匹配的主机
+    <el-dialog v-model="userDialogVisible" title="选择 SSH 用户" width="600px" :close-on-click-modal="false">
+      <p class="dialog-description">{{ selectedHost?.display_name || selectedHost?.domain }} 支持多个登录用户，请选择需要的身份。</p>
+      <div class="ssh-user-list">
+        <div v-for="user in selectedHost?.ssh_users || []" :key="user" class="ssh-user-row">
+          <strong>{{ user }}</strong>
+          <code>{{ sshCommand(selectedHost, user) }}</code>
+          <el-button size="small" :icon="CopyDocument" @click="copyCommand(selectedHost, user)">复制</el-button>
+        </div>
       </div>
-
-      <div v-else class="hosts-grid">
-        <HostCard
-          v-for="domain in filteredDomains"
-          :key="domain.domain"
-          :domain="domain"
-        />
-      </div>
-    </template>
+      <div v-if="selectedHost?.ssh_users?.includes('root')" class="admin-note">管理员账号不会默认选择，请确认当前操作需要对应权限。</div>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { CopyDocument, UserFilled } from '@element-plus/icons-vue'
 import { useDomainsStore } from '../stores/domains'
-import HostCard from '../components/HostCard.vue'
+import type { DomainItem } from '../stores/domains'
 
 const domainsStore = useDomainsStore()
 const hostsDomains = computed(() => domainsStore.hostsDomains)
 const searchQuery = ref('')
+const userDialogVisible = ref(false)
+const selectedHost = ref<DomainItem | null>(null)
 
 const filteredDomains = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return hostsDomains.value
-  return hostsDomains.value.filter(d =>
-    d.domain.toLowerCase().includes(q) ||
-    (d.ssh_users && d.ssh_users.some(u => u.toLowerCase().includes(q)))
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) return hostsDomains.value
+  return hostsDomains.value.filter(domain =>
+    [domain.domain, domain.display_name, domain.region, ...(domain.ssh_users || [])]
+      .some(value => value?.toLowerCase().includes(query))
   )
 })
+
+function sshCommand(domain: DomainItem | null, user: string) {
+  return domain ? `ssh ${user}@${domain.domain}` : ''
+}
+
+async function copyCommand(domain: DomainItem | null, user: string) {
+  if (!domain) return
+  const command = sshCommand(domain, user)
+  await navigator.clipboard.writeText(command)
+  userDialogVisible.value = false
+  ElMessage.success(`已复制：${command}`)
+}
+
+function handleCopy(domain: DomainItem) {
+  const users = domain.ssh_users || []
+  if (users.length === 1) {
+    copyCommand(domain, users[0])
+    return
+  }
+  if (users.length > 1) {
+    selectedHost.value = domain
+    userDialogVisible.value = true
+  }
+}
 </script>
 
+<style scoped src="../styles/resource-list.css"></style>
 <style scoped>
-.hosts-page {
-  padding: 20px;
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-}
-
-.page-header {
-  margin-bottom: 18px;
-}
-
-.page-header h1 {
-  margin: 0;
-  color: #303133;
-  font-size: 20px;
-  font-weight: 600;
-}
-
-.page-header p {
-  margin: 6px 0 0;
-  color: #909399;
-  font-size: 13px;
-}
-
-.empty {
-  text-align: center;
-  padding: 40px;
-  color: #999;
-  font-size: 14px;
-}
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.search-input {
-  flex: 1;
-  max-width: 260px;
-  padding: 5px 10px;
-  border: 1px solid #d9d9d9;
-  border-radius: 4px;
-  font-size: 13px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-.search-input:focus {
-  border-color: #1890ff;
-}
-
-.count {
-  font-size: 13px;
-  color: #999;
-}
-
-.hosts-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
-  padding-bottom: 20px;
-}
+.user-summary { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ssh-user-list { border: 1px solid #e4e7ed; border-radius: 6px; }
+.ssh-user-row { min-height: 58px; display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 8px 12px; border-bottom: 1px solid #ebeef5; }
+.ssh-user-row:last-child { border-bottom: 0; }
+.ssh-user-row strong { color: #303133; font-size: 13px; }
+.ssh-user-row code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-note { margin-top: 12px; padding: 9px 11px; color: #8a5b27; background: #fff7e8; border: 1px solid #f0c67e; border-radius: 6px; font-size: 12px; }
 </style>
