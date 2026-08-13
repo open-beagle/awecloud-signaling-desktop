@@ -223,7 +223,7 @@ fi
 # 发布构建使用已提交的绑定，避免在 CI 中编译完整的 Wails CLI。
 if [ ! -d "frontend/bindings" ]; then
     echo -e "${RED}Error: frontend/bindings is required${NC}"
-    echo "Regenerate it with: wails3 generate bindings -clean=true ./..."
+    echo "Regenerate it with: wails3 generate bindings -clean=true ./cmd/desktop"
     exit 1
 fi
 echo -e "${GREEN}✓ Using frontend/bindings${NC}"

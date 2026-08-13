@@ -17,6 +17,12 @@ import (
 func EnsureCurrentApp(ctx context.Context, paths *Paths, serverAddress string, logger *log.Logger, onInitialInstall func(version string, size int64)) (*CurrentInfo, error) {
 	current, err := loadValidCurrent(paths)
 	hasCurrent := err == nil
+	if hasCurrent {
+		// 自动更新已关闭。Launcher 只负责校验并启动当前版本；升级必须由
+		// Desktop 中的手动更新流程显式触发。
+		logger.Printf("automatic update disabled; using installed Desktop App version %s sha256 %s", current.Version, current.Artifact.SHA256)
+		return current, nil
+	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		logger.Printf("installed Desktop App is not usable: %v", err)
 	}
@@ -25,20 +31,12 @@ func EnsureCurrentApp(ctx context.Context, paths *Paths, serverAddress string, l
 	if err != nil {
 		return nil, fmt.Errorf("invalid Launcher server address: %w", err)
 	}
-	currentVersion, currentSHA256 := "", ""
-	if hasCurrent {
-		currentVersion, currentSHA256 = current.Version, current.Artifact.SHA256
-	}
 	logger.Printf("requesting public Desktop manifest from %s", serverURL.String())
-	manifest, err := FetchPublicManifest(ctx, serverAddress, currentVersion, currentSHA256)
+	manifest, err := FetchPublicManifest(ctx, serverAddress, "", "")
 	if err != nil {
 		return nil, fmt.Errorf("fetch Desktop manifest failed: %w", err)
 	}
 	artifact := manifest.Artifacts.App
-	if hasCurrent && strings.EqualFold(current.Artifact.SHA256, artifact.SHA256) {
-		logger.Printf("using installed Desktop App version %s sha256 %s", current.Version, current.Artifact.SHA256)
-		return current, nil
-	}
 	logger.Printf("installing Desktop App version %s (%d bytes)", manifest.Release.Version, artifact.Size)
 	if !hasCurrent && onInitialInstall != nil {
 		onInitialInstall(manifest.Release.Version, artifact.Size)

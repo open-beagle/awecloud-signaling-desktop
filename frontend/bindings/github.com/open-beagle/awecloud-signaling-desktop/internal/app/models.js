@@ -168,33 +168,12 @@ export class DomainItem {
              */
             this["status"] = "";
         }
-        if (!("service_ports" in $$source)) {
-            /**
-             * @member
-             * @type {number[]}
-             */
-            this["service_ports"] = [];
-        }
         if (!("ssh_users" in $$source)) {
             /**
              * @member
              * @type {string[]}
              */
             this["ssh_users"] = [];
-        }
-        if (!("namespace" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["namespace"] = "";
-        }
-        if (!("service_name" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["service_name"] = "";
         }
         if (!("region" in $$source)) {
             /**
@@ -228,13 +207,9 @@ export class DomainItem {
      */
     static createFrom($$source = {}) {
         const $$createField3_0 = $$createType0;
-        const $$createField4_0 = $$createType1;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("service_ports" in $$parsedSource) {
-            $$parsedSource["service_ports"] = $$createField3_0($$parsedSource["service_ports"]);
-        }
         if ("ssh_users" in $$parsedSource) {
-            $$parsedSource["ssh_users"] = $$createField4_0($$parsedSource["ssh_users"]);
+            $$parsedSource["ssh_users"] = $$createField3_0($$parsedSource["ssh_users"]);
         }
         return new DomainItem(/** @type {Partial<DomainItem>} */($$parsedSource));
     }
@@ -346,7 +321,7 @@ export class HostInfo {
      * @returns {HostInfo}
      */
     static createFrom($$source = {}) {
-        const $$createField3_0 = $$createType1;
+        const $$createField3_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("ssh_users" in $$parsedSource) {
             $$parsedSource["ssh_users"] = $$createField3_0($$parsedSource["ssh_users"]);
@@ -398,7 +373,7 @@ export class KubeconfigResult {
      * @returns {KubeconfigResult}
      */
     static createFrom($$source = {}) {
-        const $$createField1_0 = $$createType1;
+        const $$createField1_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("clusters" in $$parsedSource) {
             $$parsedSource["clusters"] = $$createField1_0($$parsedSource["clusters"]);
@@ -931,4 +906,3 @@ export class VersionInfo {
 
 // Private type creation functions
 const $$createType0 = $Create.Array($Create.Any);
-const $$createType1 = $Create.Array($Create.Any);

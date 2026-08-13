@@ -48,6 +48,7 @@ type App struct {
 
 	tenantMutex          sync.Mutex
 	tenantOperationMutex sync.Mutex
+	portPreferenceMutex  sync.RWMutex
 	activeTenantID       string
 	allowedTenantDomains map[string]struct{}
 }
@@ -1093,6 +1094,84 @@ func (a *App) GetResources() ([]*client.ResourceInfo, error) {
 	return resources, nil
 }
 
+// SetContainerServiceLocalPort changes only this device's listener port. The
+// Kubernetes Service target port remains resource.Port.
+func (a *App) SetContainerServiceLocalPort(resourceID string, localPort int) ([]*client.ResourceInfo, error) {
+	a.tenantOperationMutex.Lock()
+	defer a.tenantOperationMutex.Unlock()
+
+	if a.desktopClient == nil {
+		return nil, fmt.Errorf("未登录")
+	}
+	if localPort < 1 || localPort > 65535 {
+		return nil, fmt.Errorf("本地端口必须在 1-65535 之间")
+	}
+	resourceID = strings.TrimSpace(resourceID)
+	if resourceID == "" {
+		return nil, fmt.Errorf("资源 ID 不能为空")
+	}
+
+	a.tenantMutex.Lock()
+	tenantID := a.activeTenantID
+	a.tenantMutex.Unlock()
+	if tenantID == "" {
+		return nil, fmt.Errorf("请先选择 Tenant")
+	}
+	resources, err := a.desktopClient.GetResourcesForTenant(tenantID)
+	if err != nil {
+		return nil, err
+	}
+	var selected *client.ResourceInfo
+	for _, resource := range resources {
+		if resource != nil && resource.Type == "container_service" && resource.ResourceID == resourceID && resource.TenantID == tenantID {
+			selected = resource
+			break
+		}
+	}
+	if selected == nil {
+		return nil, fmt.Errorf("ContainerService 资源不存在或已失效")
+	}
+
+	key := containerServicePortPreferenceKey(tenantID, resourceID)
+	a.portPreferenceMutex.Lock()
+	if config.GlobalConfig.PortPreferences == nil {
+		config.GlobalConfig.PortPreferences = make(map[string]int)
+	}
+	previousPort, hadPreviousPort := config.GlobalConfig.PortPreferences[key]
+	config.GlobalConfig.PortPreferences[key] = localPort
+	a.portPreferenceMutex.Unlock()
+
+	rollback := func() {
+		a.portPreferenceMutex.Lock()
+		if hadPreviousPort {
+			config.GlobalConfig.PortPreferences[key] = previousPort
+		} else {
+			delete(config.GlobalConfig.PortPreferences, key)
+		}
+		a.portPreferenceMutex.Unlock()
+		if rollbackErr := a.syncContainerServiceRoutes(resources); rollbackErr != nil {
+			log.Printf("[App] 恢复 ContainerService 本地端口失败: %v", rollbackErr)
+		}
+	}
+
+	if syncErr := a.syncContainerServiceRoutes(resources); selected.LocalError != "" {
+		message := selected.LocalError
+		rollback()
+		return nil, fmt.Errorf("%s", message)
+	} else if syncErr != nil {
+		log.Printf("[App] 更换本地端口时其他 ContainerService 仍有异常: %v", syncErr)
+	}
+
+	a.portPreferenceMutex.RLock()
+	err = config.GlobalConfig.Save()
+	a.portPreferenceMutex.RUnlock()
+	if err != nil {
+		rollback()
+		return nil, fmt.Errorf("保存本地端口配置失败: %w", err)
+	}
+	return resources, nil
+}
+
 type ResourceTenantInfo struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -1194,7 +1273,9 @@ func (a *App) applyTenantResources(tenantID string, resources []*client.Resource
 		return fmt.Errorf("同步 ContainerSSH 路由: %w", err)
 	}
 	if err := a.syncContainerServiceRoutes(resources); err != nil {
-		return fmt.Errorf("同步 ContainerService 路由: %w", err)
+		// 单条 ContainerService 本地监听失败时保留其他可用路由，并通过
+		// ResourceInfo.LocalError 交给前端提示用户手动处理。
+		log.Printf("[App] ContainerService 部分路由同步失败: %v", err)
 	}
 	return nil
 }
@@ -1929,8 +2010,30 @@ func (a *App) syncContainerSSHRoutes(resources []*client.ResourceInfo) error {
 }
 
 func (a *App) syncContainerServiceRoutes(resources []*client.ResourceInfo) error {
+	a.applyContainerServicePortPreferences(resources)
 	if a.serviceRoutes == nil {
 		return nil
 	}
 	return a.serviceRoutes.Sync(resources)
+}
+
+func (a *App) applyContainerServicePortPreferences(resources []*client.ResourceInfo) {
+	a.portPreferenceMutex.RLock()
+	defer a.portPreferenceMutex.RUnlock()
+	for _, resource := range resources {
+		if resource == nil || resource.Type != "container_service" {
+			continue
+		}
+		resource.LocalPort = resource.Port
+		if config.GlobalConfig == nil || config.GlobalConfig.PortPreferences == nil {
+			continue
+		}
+		if port := config.GlobalConfig.PortPreferences[containerServicePortPreferenceKey(resource.TenantID, resource.ResourceID)]; port > 0 && port <= 65535 {
+			resource.LocalPort = int32(port)
+		}
+	}
+}
+
+func containerServicePortPreferenceKey(tenantID, resourceID string) string {
+	return tenantID + ":" + resourceID
 }

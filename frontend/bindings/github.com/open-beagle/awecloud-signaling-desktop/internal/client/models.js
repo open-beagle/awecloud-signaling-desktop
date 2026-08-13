@@ -17,7 +17,7 @@ export class ResourceInfo {
     constructor($$source = {}) {
         if (!("type" in $$source)) {
             /**
-             * ssh / k8sapi / k8ssvc
+             * ssh / k8sapi / container_ssh / container_service
              * @member
              * @type {string}
              */
@@ -124,6 +124,20 @@ export class ResourceInfo {
         if (/** @type {any} */(false)) {
             /**
              * @member
+             * @type {string | undefined}
+             */
+            this["local_error"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {number | undefined}
+             */
+            this["local_port"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
              * @type {number | undefined}
              */
             this["target_revision"] = undefined;
@@ -183,6 +197,41 @@ export class ResourceInfo {
              * @type {string | undefined}
              */
             this["protocol"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["workload_kind"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["workload_name"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["pod_uid"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["pod_name"] = undefined;
+        }
+        if (/** @type {any} */(false)) {
+            /**
+             * @member
+             * @type {string | undefined}
+             */
+            this["container_name"] = undefined;
         }
         if (/** @type {any} */(false)) {
             /**

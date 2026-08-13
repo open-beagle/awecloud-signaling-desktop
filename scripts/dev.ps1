@@ -93,7 +93,7 @@ if ($LASTEXITCODE -ne 0) {
 if (Get-Command wails3 -ErrorAction SilentlyContinue) {
     Write-Host ""
     Write-Host "[INFO] Generating bindings..."
-    wails3 generate bindings
+    wails3 generate bindings ./cmd/desktop
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] Failed to generate bindings" -ForegroundColor Red
         Read-Host "Press Enter to exit"

@@ -65,3 +65,21 @@ func TestSelectServerClearsBoundCredentials(t *testing.T) {
 		t.Fatal("new Server address was not selected")
 	}
 }
+
+func TestPortPreferencesPersistOnCurrentDevice(t *testing.T) {
+	useTestConfigRoot(t)
+	stored := &Config{
+		ServerAddress:   "https://signal.example.com",
+		PortPreferences: map[string]int{"tenant-a:resource-a": 18090},
+	}
+	if err := stored.Save(); err != nil {
+		t.Fatalf("save port preference: %v", err)
+	}
+	loaded, err := Load()
+	if err != nil {
+		t.Fatalf("load port preference: %v", err)
+	}
+	if got := loaded.PortPreferences["tenant-a:resource-a"]; got != 18090 {
+		t.Fatalf("local port preference = %d, want 18090", got)
+	}
+}

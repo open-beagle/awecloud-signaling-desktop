@@ -65,6 +65,57 @@ code { color: #595959; font-size: 12px; white-space: normal; word-break: break-a
 .icon-btn:disabled { color: #bfbfbf; cursor: not-allowed; }
 .table-action { width: 28px; height: 28px; }
 
+.warning-action { flex: none; border-color: #ffccc7; color: #1677ff; }
+.table-action + .table-action { margin-left: 6px; }
+
+.dialog-description {
+  margin: -4px 0 16px;
+  color: #8c8c8c;
+  font-size: 13px;
+}
+
+.port-summary {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  overflow: hidden;
+  margin-bottom: 18px;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  background: #e8e8e8;
+}
+
+.port-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  background: #fafafa;
+}
+
+.port-summary span { color: #8c8c8c; font-size: 12px; }
+.port-summary strong { color: #262626; font-size: 13px; font-weight: 600; }
+
+.port-field {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.port-field label { width: 84px; color: #595959; font-size: 13px; }
+.port-field .el-input-number { width: 180px; }
+
+.port-preview {
+  padding: 10px 12px;
+  border: 1px solid #bae0ff;
+  border-radius: 4px;
+  background: #e6f4ff;
+  color: #0958d9;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
 .error-state {
   padding: 48px 0;
   text-align: center;
@@ -77,4 +128,29 @@ code { color: #595959; font-size: 12px; white-space: normal; word-break: break-a
   background: transparent;
   color: #1677ff;
   cursor: pointer;
+}
+
+.route-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #ffccc7;
+  border-radius: 4px;
+  background: #fff2f0;
+  color: #cf1322;
+  font-size: 12px;
+}
+
+.route-warning button {
+  flex: none;
+  color: #1677ff;
+  cursor: pointer;
+}
+
+.route-warning button:disabled {
+  color: #bfbfbf;
+  cursor: not-allowed;
 }

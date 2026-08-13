@@ -89,9 +89,9 @@ export class Config {
         }
         if (!("port_preferences" in $$source)) {
             /**
-             * 服务 ID -> 本地端口映射
+             * Tenant + 资源 ID -> 本地端口映射
              * @member
-             * @type {{ [_ in `${number}`]?: number }}
+             * @type {{ [_ in string]?: number }}
              */
             this["port_preferences"] = {};
         }

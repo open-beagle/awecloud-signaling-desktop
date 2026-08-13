@@ -27,7 +27,7 @@ type Config struct {
 	TunnelToken     string          `json:"tunnel_token"`     // 隧道认证 Token
 	TunnelServer    string          `json:"tunnel_server"`    // 隧道服务器地址
 	TunnelPort      int             `json:"tunnel_port"`      // 隧道服务器端口
-	PortPreferences map[int64]int   `json:"port_preferences"` // 服务 ID -> 本地端口映射
+	PortPreferences map[string]int  `json:"port_preferences"` // Tenant + 资源 ID -> 本地端口映射
 	Telemetry       TelemetryConfig `json:"telemetry"`        // OpenTelemetry 配置
 }
 
@@ -41,9 +41,10 @@ type TelemetryConfig struct {
 
 // LocalConfig 是保存到本地文件的配置（精简版）
 type LocalConfig struct {
-	Server string `json:"server"`          // Server 地址
-	Client string `json:"client"`          // Client ID（用户名/邮箱）
-	Token  string `json:"token,omitempty"` // Device Token（用于自动登录）
+	Server          string         `json:"server"`                     // Server 地址
+	Client          string         `json:"client"`                     // Client ID（用户名/邮箱）
+	Token           string         `json:"token,omitempty"`            // Device Token（用于自动登录）
+	PortPreferences map[string]int `json:"port_preferences,omitempty"` // 当前设备的 ContainerService 本地端口
 }
 
 // GetAppDir 返回应用数据目录
@@ -101,7 +102,7 @@ func Load() (*Config, error) {
 		return &Config{
 			ServerAddress:   buildAddress,
 			RememberMe:      true,
-			PortPreferences: make(map[int64]int),
+			PortPreferences: make(map[string]int),
 		}, nil
 	}
 
@@ -118,7 +119,7 @@ func Load() (*Config, error) {
 		return &Config{
 			ServerAddress:   buildAddress,
 			RememberMe:      true,
-			PortPreferences: make(map[int64]int),
+			PortPreferences: make(map[string]int),
 		}, nil
 	}
 
@@ -135,7 +136,10 @@ func Load() (*Config, error) {
 		ClientID:        localConfig.Client,
 		DeviceToken:     deviceToken,
 		RememberMe:      deviceToken != "", // 有 token 就是记住登录
-		PortPreferences: make(map[int64]int),
+		PortPreferences: localConfig.PortPreferences,
+	}
+	if config.PortPreferences == nil {
+		config.PortPreferences = make(map[string]int)
 	}
 
 	// 如果没有服务器地址，使用默认值
@@ -181,11 +185,12 @@ func (c *Config) Save() error {
 		return err
 	}
 
-	// 转换为 LocalConfig（只保存 3 个字段）
+	// 转换为 LocalConfig（凭据和当前设备的端口偏好）
 	localConfig := LocalConfig{
-		Server: c.ServerAddress,
-		Client: c.ClientID,
-		Token:  c.DeviceToken,
+		Server:          c.ServerAddress,
+		Client:          c.ClientID,
+		Token:           c.DeviceToken,
+		PortPreferences: c.PortPreferences,
 	}
 
 	data, err := json.MarshalIndent(localConfig, "", "  ")

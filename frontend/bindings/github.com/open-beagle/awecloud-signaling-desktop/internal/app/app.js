@@ -347,6 +347,19 @@ export function RequestIPCUpdate(req) {
 }
 
 /**
+ * SetContainerServiceLocalPort changes only this device's listener port. The
+ * Kubernetes Service target port remains resource.Port.
+ * @param {string} resourceID
+ * @param {number} localPort
+ * @returns {$CancellablePromise<(client$0.ResourceInfo | null)[]>}
+ */
+export function SetContainerServiceLocalPort(resourceID, localPort) {
+    return $Call.ByID(1340784315, resourceID, localPort).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType32($result);
+    }));
+}
+
+/**
  * SetLogLevel 设置日志级别
  * @param {string} level
  * @returns {$CancellablePromise<void>}

@@ -76,7 +76,7 @@ xcode-select --install
 ```bash
 WAILS_VERSION="$(go list -m -f '{{.Version}}' github.com/wailsapp/wails/v3)"
 go install "github.com/wailsapp/wails/v3/cmd/wails3@${WAILS_VERSION}"
-wails3 generate bindings -clean=true ./...
+wails3 generate bindings -clean=true ./cmd/desktop
 ```
 
 ## 构建命令

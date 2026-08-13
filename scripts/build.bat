@@ -94,7 +94,7 @@ cd ..
 REM 生成绑定（必须在构建前端之前）
 if %WAILS3_AVAILABLE% equ 1 (
     echo [INFO] Generating bindings...
-    wails3 generate bindings
+    wails3 generate bindings ./cmd/desktop
     if %ERRORLEVEL% neq 0 (
         echo [ERROR] Failed to generate bindings
         exit /b 1

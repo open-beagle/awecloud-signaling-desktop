@@ -14,6 +14,9 @@ export interface Resource {
   tenant_id?: string
   tenant_name?: string
   state?: string
+  local_error?: string
+  local_port?: number
+  resource_id?: string
   target_revision?: number
   port_name?: string
   protocol?: string
@@ -29,6 +32,13 @@ interface ResourceTenant {
   name: string
 }
 
+function readableError(cause: any, fallback: string) {
+  if (typeof cause === 'string' && cause.trim()) return cause
+  if (typeof cause?.message === 'string' && cause.message.trim()) return cause.message
+  if (typeof cause?.cause?.message === 'string' && cause.cause.message.trim()) return cause.cause.message
+  return fallback
+}
+
 export function useResourceCatalog() {
   const resources = ref<Resource[]>([])
   const tenantOptions = ref<ResourceTenant[]>([])
@@ -42,7 +52,7 @@ export function useResourceCatalog() {
     try {
       resources.value = ((await GetResources()) || []).filter(Boolean) as Resource[]
     } catch (cause: any) {
-      error.value = cause?.message || '资源加载失败'
+      error.value = readableError(cause, '资源加载失败，请检查网络后重试')
     } finally {
       loading.value = false
     }
@@ -63,7 +73,7 @@ export function useResourceCatalog() {
       resources.value = ((await SwitchResourceTenant(activeTenantID.value)) || []).filter(Boolean) as Resource[]
     } catch (cause: any) {
       resources.value = []
-      error.value = cause?.message || 'Tenant 资源加载失败'
+      error.value = readableError(cause, 'Tenant 资源加载失败，请检查网络后重试')
     } finally {
       loading.value = false
     }
@@ -77,7 +87,7 @@ export function useResourceCatalog() {
     try {
       resources.value = ((await SwitchResourceTenant(activeTenantID.value)) || []).filter(Boolean) as Resource[]
     } catch (cause: any) {
-      error.value = cause?.message || 'Tenant 切换失败'
+      error.value = readableError(cause, 'Tenant 切换失败，请重试')
     } finally {
       loading.value = false
     }

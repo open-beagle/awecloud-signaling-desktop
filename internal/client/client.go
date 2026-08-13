@@ -20,6 +20,8 @@ import (
 	pb "github.com/open-beagle/awecloud-signaling-desktop/pkg/proto"
 )
 
+const resourceDiscoveryTimeout = 60 * time.Second
+
 // ReconnectReason 重连原因
 type ReconnectReason int
 
@@ -1233,6 +1235,8 @@ type ResourceInfo struct {
 	TenantID              string   `json:"tenant_id,omitempty"`
 	TenantName            string   `json:"tenant_name,omitempty"`
 	State                 string   `json:"state,omitempty"`
+	LocalError            string   `json:"local_error,omitempty"`
+	LocalPort             int32    `json:"local_port,omitempty"`
 	TargetRevision        int64    `json:"target_revision,omitempty"`
 	AgentIP               string   `json:"agent_ip,omitempty"`
 	ListenPort            uint32   `json:"listen_port,omitempty"`
@@ -1266,7 +1270,7 @@ func (c *DesktopClient) GetResourcesForTenant(tenantID string) ([]*ResourceInfo,
 	desktopID := c.desktopID
 	c.mu.RUnlock()
 
-	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	ctx, cancel := context.WithTimeout(c.ctx, resourceDiscoveryTimeout)
 	defer cancel()
 
 	resp, err := c.grpcClient.GetResources(ctx, &pb.GetResourcesRequest{
