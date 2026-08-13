@@ -18,6 +18,9 @@ func EnsureCurrentApp(ctx context.Context, paths *Paths, serverAddress string, l
 	current, err := loadValidCurrent(paths)
 	hasCurrent := err == nil
 	if hasCurrent {
+		if err := migrateCurrentAppName(paths, current); err != nil {
+			return nil, fmt.Errorf("migrate current Desktop App entry failed: %w", err)
+		}
 		// 自动更新已关闭。Launcher 只负责校验并启动当前版本；升级必须由
 		// Desktop 中的手动更新流程显式触发。
 		logger.Printf("automatic update disabled; using installed Desktop App version %s sha256 %s", current.Version, current.Artifact.SHA256)
@@ -53,18 +56,9 @@ func EnsureCurrentApp(ctx context.Context, paths *Paths, serverAddress string, l
 		return nil, fmt.Errorf("download initial Desktop App failed: %w", err)
 	}
 
-	appName := paths.ArtifactAppName(manifest.Release.Version, artifact.SHA256)
-	appPath := filepath.Join(paths.VersionsDir, appName)
-	if err := os.Remove(appPath); err != nil && !os.IsNotExist(err) {
-		_ = os.Remove(result.PartPath)
-		return nil, fmt.Errorf("remove invalid Desktop App failed: %w", err)
-	}
-	if err := os.Rename(result.PartPath, appPath); err != nil {
-		_ = os.Remove(result.PartPath)
+	appName, err := installVersionedArtifact(paths, result.PartPath, manifest.Release.Version, artifact.SHA256)
+	if err != nil {
 		return nil, fmt.Errorf("install Desktop App failed: %w", err)
-	}
-	if err := os.Chmod(appPath, 0700); err != nil {
-		return nil, fmt.Errorf("set Desktop App permissions failed: %w", err)
 	}
 
 	current = &CurrentInfo{
@@ -96,8 +90,9 @@ func loadValidCurrent(paths *Paths) (*CurrentInfo, error) {
 		return nil, err
 	}
 	current.Version = version
-	expectedName := paths.ArtifactAppName(version, current.Artifact.SHA256)
-	if current.App != expectedName || filepath.Base(current.App) != current.App {
+	logicalName := paths.LogicalAppName(version)
+	archiveName := paths.ArtifactAppName(version, current.Artifact.SHA256)
+	if (current.App != logicalName && current.App != archiveName) || filepath.Base(current.App) != current.App {
 		return nil, errors.New("current.json contains an invalid app name")
 	}
 	appPath := filepath.Join(paths.VersionsDir, current.App)
@@ -118,6 +113,79 @@ func loadValidCurrent(paths *Paths) (*CurrentInfo, error) {
 		}
 	}
 	return &current, nil
+}
+
+// installVersionedArtifact keeps an immutable SHA-addressed copy for rollback and
+// exposes the active build through the stable, human-readable version name.
+func installVersionedArtifact(paths *Paths, partPath, version, artifactSHA string) (string, error) {
+	archivePath := filepath.Join(paths.VersionsDir, paths.ArtifactAppName(version, artifactSHA))
+	if err := os.Remove(archivePath); err != nil && !os.IsNotExist(err) {
+		_ = os.Remove(partPath)
+		return "", err
+	}
+	if err := os.Rename(partPath, archivePath); err != nil {
+		_ = os.Remove(partPath)
+		return "", err
+	}
+	if err := os.Chmod(archivePath, 0700); err != nil {
+		return "", err
+	}
+
+	appName := paths.LogicalAppName(version)
+	if err := copyFileAtomically(archivePath, filepath.Join(paths.VersionsDir, appName)); err != nil {
+		return "", err
+	}
+	return appName, nil
+}
+
+func migrateCurrentAppName(paths *Paths, current *CurrentInfo) error {
+	logicalName := paths.LogicalAppName(current.Version)
+	if current.App == logicalName {
+		return nil
+	}
+	archiveName := paths.ArtifactAppName(current.Version, current.Artifact.SHA256)
+	if current.App != archiveName {
+		return errors.New("current.json contains an invalid app name")
+	}
+	if err := copyFileAtomically(filepath.Join(paths.VersionsDir, archiveName), filepath.Join(paths.VersionsDir, logicalName)); err != nil {
+		return err
+	}
+	current.App = logicalName
+	return atomicWriteJSON(paths.CurrentFile, current)
+}
+
+func copyFileAtomically(sourcePath, destinationPath string) error {
+	source, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+
+	temporary, err := os.CreateTemp(filepath.Dir(destinationPath), ".app-*")
+	if err != nil {
+		return err
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if _, err := io.Copy(temporary, source); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Chmod(0700); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := os.Remove(destinationPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return os.Rename(temporaryPath, destinationPath)
 }
 
 func fileSHA256(path string) (string, error) {

@@ -30,6 +30,45 @@ func TestTenantResourceDomainsDropsEmptyEntries(t *testing.T) {
 	}
 }
 
+func TestAccountDomainNamesIncludesOnlySupportedDomainTypes(t *testing.T) {
+	domains := accountDomainNames([]*client.DomainInfo{
+		nil,
+		{Domain: " BEAGLE-242.BEIJING.BEAGLE. ", Type: "ssh"},
+		{Domain: "beijing.beagle", Type: "k8sapi"},
+		{Domain: "service.ns.agent.beagle", Type: "container_service"},
+		{Type: "ssh"},
+	})
+	if len(domains) != 2 {
+		t.Fatalf("unexpected account domain allowlist: %#v", domains)
+	}
+	if _, ok := domains["beagle-242.beijing.beagle"]; !ok {
+		t.Fatal("SSH domain is missing from account allowlist")
+	}
+	if _, ok := domains["beijing.beagle"]; !ok {
+		t.Fatal("Kubernetes API domain is missing from account allowlist")
+	}
+}
+
+func TestDomainAuthorizationUsesAccountAndTenantAllowlists(t *testing.T) {
+	app := &App{
+		activeTenantID:        "tenant-a",
+		allowedAccountDomains: map[string]struct{}{"beagle-242.beijing.beagle": {}},
+		allowedTenantDomains:  map[string]struct{}{"service.ns.agent.beagle": {}},
+	}
+
+	for _, domain := range []string{
+		"BEAGLE-242.BEIJING.BEAGLE.",
+		"service.ns.agent.beagle",
+	} {
+		if !app.isDomainAllowed(domain) {
+			t.Fatalf("authorized domain was rejected: %s", domain)
+		}
+	}
+	if app.isDomainAllowed("other-tenant.beagle") {
+		t.Fatal("unrelated domain was allowed while Tenant scope is active")
+	}
+}
+
 func TestSwitchResourceTenantClearsSnapshotWithoutFetching(t *testing.T) {
 	app := &App{
 		desktopClient:  client.NewDesktopClient("127.0.0.1:1"),
@@ -37,7 +76,8 @@ func TestSwitchResourceTenantClearsSnapshotWithoutFetching(t *testing.T) {
 		tenantResources: []*client.ResourceInfo{{
 			Type: "container_service", TenantID: "tenant-a", ResourceID: "service-a",
 		}},
-		allowedTenantDomains: map[string]struct{}{"service.ns.agent.beagle": {}},
+		allowedTenantDomains:  map[string]struct{}{"service.ns.agent.beagle": {}},
+		allowedAccountDomains: map[string]struct{}{"beagle-242.beijing.beagle": {}},
 	}
 
 	resources, err := app.SwitchResourceTenant("tenant-b")
@@ -49,5 +89,22 @@ func TestSwitchResourceTenantClearsSnapshotWithoutFetching(t *testing.T) {
 	}
 	if app.activeTenantID != "tenant-b" || len(app.tenantResources) != 0 || len(app.allowedTenantDomains) != 0 {
 		t.Fatalf("Tenant switch did not clear the previous snapshot: %#v", app)
+	}
+	if _, ok := app.allowedAccountDomains["beagle-242.beijing.beagle"]; !ok {
+		t.Fatal("Tenant switch cleared the account SSH/Kubernetes API allowlist")
+	}
+}
+
+func TestClearTenantContextClearsAllDomainAllowlists(t *testing.T) {
+	app := &App{
+		activeTenantID:        "tenant-a",
+		allowedAccountDomains: map[string]struct{}{"beagle-242.beijing.beagle": {}},
+		allowedTenantDomains:  map[string]struct{}{"service.ns.agent.beagle": {}},
+	}
+
+	app.clearTenantContext()
+
+	if app.activeTenantID != "" || app.allowedAccountDomains != nil || app.allowedTenantDomains != nil {
+		t.Fatalf("identity cleanup retained domain authorization state: %#v", app)
 	}
 }

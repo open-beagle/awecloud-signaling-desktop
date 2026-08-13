@@ -103,7 +103,9 @@ func TestEnsureCurrentAppDownloadsAndPersistsInitialVersion(t *testing.T) {
 	require.Equal(t, "1.2.3", current.Version)
 	require.Equal(t, "1.2.3", promptedVersion)
 	require.Equal(t, int64(len(content)), promptedSize)
+	require.Equal(t, paths.LogicalAppName("1.2.3"), current.App)
 	require.FileExists(t, filepath.Join(paths.VersionsDir, current.App))
+	require.FileExists(t, filepath.Join(paths.VersionsDir, paths.ArtifactAppName("1.2.3", digest)))
 
 	installed, err := loadValidCurrent(paths)
 	require.NoError(t, err)
@@ -152,7 +154,9 @@ func TestEnsureCurrentAppDownloadsAndPersistsInitialVersion(t *testing.T) {
 	require.NoError(t, coord.ExecuteAcceptedUpdate(t.Context()))
 	runtimeCurrent := coord.Current()
 	require.NotNil(t, runtimeCurrent)
+	require.Equal(t, paths.LogicalAppName("1.2.3"), runtimeCurrent.App)
 	require.Equal(t, currentDigest, runtimeCurrent.Artifact.SHA256)
+	require.FileExists(t, filepath.Join(paths.VersionsDir, paths.ArtifactAppName("1.2.3", currentDigest)))
 	runtimeActualDigest, err := fileSHA256(filepath.Join(paths.VersionsDir, runtimeCurrent.App))
 	require.NoError(t, err)
 	require.Equal(t, currentDigest, runtimeActualDigest)
@@ -178,6 +182,33 @@ func TestFetchPublicManifestDoesNotSendLocalBuildIdentity(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, EvaluateDesktopUpdate("1.0.2", "abcdef0", manifest).Available)
 	require.False(t, EvaluateDesktopUpdate("1.0.2", "1122334", manifest).Available)
+}
+
+func TestEnsureCurrentAppMigratesHashedCurrentEntry(t *testing.T) {
+	paths, err := NewPaths(t.TempDir())
+	require.NoError(t, err)
+	content := []byte("legacy-hashed-current-app")
+	digestBytes := sha256.Sum256(content)
+	digest := hex.EncodeToString(digestBytes[:])
+	archiveName := paths.ArtifactAppName("1.0.2", digest)
+	require.NoError(t, os.WriteFile(filepath.Join(paths.VersionsDir, archiveName), content, 0700))
+	legacy := &CurrentInfo{
+		SchemaVersion: 1,
+		Version:       "1.0.2",
+		App:           archiveName,
+		Artifact:      launcheripc.ArtifactPayload{SHA256: digest},
+	}
+	require.NoError(t, atomicWriteJSON(paths.CurrentFile, legacy))
+
+	current, err := EnsureCurrentApp(t.Context(), paths, "http://127.0.0.1", log.New(io.Discard, "", 0), nil)
+	require.NoError(t, err)
+	require.Equal(t, paths.LogicalAppName("1.0.2"), current.App)
+	require.FileExists(t, filepath.Join(paths.VersionsDir, current.App))
+	require.FileExists(t, filepath.Join(paths.VersionsDir, archiveName))
+
+	var persisted CurrentInfo
+	require.NoError(t, readStateJSON(paths.CurrentFile, &persisted))
+	require.Equal(t, current.App, persisted.App)
 }
 
 func TestAtomicWriteAndReadStateJSON(t *testing.T) {
@@ -259,7 +290,7 @@ func TestCoordinatorStateTransitions(t *testing.T) {
 func TestCoordinatorRequiresLocalAndServerHealth(t *testing.T) {
 	paths, err := NewPaths(t.TempDir())
 	require.NoError(t, err)
-	current := &CurrentInfo{SchemaVersion: 1, Version: "1.1.0", App: paths.ArtifactAppName("1.1.0", strings.Repeat("b", 64)), Artifact: launcheripc.ArtifactPayload{SHA256: strings.Repeat("b", 64)}}
+	current := &CurrentInfo{SchemaVersion: 1, Version: "1.1.0", App: paths.LogicalAppName("1.1.0"), Artifact: launcheripc.ArtifactPayload{SHA256: strings.Repeat("b", 64)}}
 	previous := &CurrentInfo{SchemaVersion: 1, Version: "1.0.0", App: paths.ArtifactAppName("1.0.0", strings.Repeat("a", 64)), Artifact: launcheripc.ArtifactPayload{SHA256: strings.Repeat("a", 64)}}
 	task := &UpdateTaskState{SchemaVersion: 1, OperationID: "op-health", TargetVersion: "1.1.0", TargetApp: current.App, Phase: "restarting", Artifact: current.Artifact}
 	require.NoError(t, atomicWriteJSON(paths.CurrentFile, current))
@@ -283,7 +314,7 @@ func TestCoordinatorRequiresLocalAndServerHealth(t *testing.T) {
 func TestCoordinatorAcceptsAppReadyBeforeHealthObservationStarts(t *testing.T) {
 	paths, err := NewPaths(t.TempDir())
 	require.NoError(t, err)
-	current := &CurrentInfo{SchemaVersion: 1, Version: "1.1.0", App: paths.ArtifactAppName("1.1.0", strings.Repeat("b", 64)), Artifact: launcheripc.ArtifactPayload{SHA256: strings.Repeat("b", 64)}}
+	current := &CurrentInfo{SchemaVersion: 1, Version: "1.1.0", App: paths.LogicalAppName("1.1.0"), Artifact: launcheripc.ArtifactPayload{SHA256: strings.Repeat("b", 64)}}
 	previous := &CurrentInfo{SchemaVersion: 1, Version: "1.0.0", App: paths.ArtifactAppName("1.0.0", strings.Repeat("a", 64)), Artifact: launcheripc.ArtifactPayload{SHA256: strings.Repeat("a", 64)}}
 	task := &UpdateTaskState{SchemaVersion: 1, OperationID: "op-early-ready", TargetVersion: "1.1.0", TargetApp: current.App, Phase: "restarting", Artifact: current.Artifact}
 	require.NoError(t, atomicWriteJSON(paths.CurrentFile, current))
@@ -308,9 +339,11 @@ func TestCoordinatorAcceptsAppReadyBeforeHealthObservationStarts(t *testing.T) {
 func TestCoordinatorRollsBackFailedUpdatedApp(t *testing.T) {
 	paths, err := NewPaths(t.TempDir())
 	require.NoError(t, err)
-	current := &CurrentInfo{SchemaVersion: 1, Version: "1.1.0", App: paths.ArtifactAppName("1.1.0", strings.Repeat("b", 64)), Artifact: launcheripc.ArtifactPayload{SHA256: strings.Repeat("b", 64)}}
+	current := &CurrentInfo{SchemaVersion: 1, Version: "1.1.0", App: paths.LogicalAppName("1.1.0"), Artifact: launcheripc.ArtifactPayload{SHA256: strings.Repeat("b", 64)}}
 	previous := &CurrentInfo{SchemaVersion: 1, Version: "1.0.0", App: paths.ArtifactAppName("1.0.0", strings.Repeat("a", 64)), Artifact: launcheripc.ArtifactPayload{SHA256: strings.Repeat("a", 64)}}
 	task := &UpdateTaskState{SchemaVersion: 1, OperationID: "op-rollback", TargetVersion: "1.1.0", TargetApp: current.App, Phase: "restarting", Artifact: current.Artifact}
+	require.NoError(t, os.WriteFile(filepath.Join(paths.VersionsDir, previous.App), []byte("previous-app"), 0700))
+	require.NoError(t, os.WriteFile(filepath.Join(paths.VersionsDir, current.App), []byte("failed-app"), 0700))
 	require.NoError(t, atomicWriteJSON(paths.CurrentFile, current))
 	require.NoError(t, atomicWriteJSON(paths.PreviousFile, previous))
 	require.NoError(t, atomicWriteJSON(paths.UpdateTaskFile, task))
@@ -322,6 +355,9 @@ func TestCoordinatorRollsBackFailedUpdatedApp(t *testing.T) {
 	var persisted CurrentInfo
 	require.NoError(t, readStateJSON(paths.CurrentFile, &persisted))
 	require.Equal(t, "1.0.0", persisted.Version)
+	require.Equal(t, paths.LogicalAppName("1.0.0"), persisted.App)
+	require.FileExists(t, filepath.Join(paths.VersionsDir, persisted.App))
+	require.NoFileExists(t, filepath.Join(paths.VersionsDir, current.App))
 	var persistedTask UpdateTaskState
 	require.NoError(t, readStateJSON(paths.UpdateTaskFile, &persistedTask))
 	require.Equal(t, "rolled_back", persistedTask.Phase)

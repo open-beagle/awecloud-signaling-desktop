@@ -138,13 +138,11 @@ import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
 import { useDomainsStore } from '../stores/domains'
 import { useUpdateStore } from '../stores/update'
-import type { DomainItem } from '../stores/domains'
 import UpdateModal from './update/UpdateModal.vue'
 import {
   ClearCredentials,
   ApplyDesktopUpdate,
   CheckDesktopUpdate,
-  GetDomainList,
   GetGRPCStatus,
   GetTunnelStatus,
   GetVersion,
@@ -284,8 +282,7 @@ const loadConnectionStatus = async () => {
 
 const loadDomains = async () => {
   try {
-    const domains = await GetDomainList()
-    domainsStore.setDomains(((domains || []).filter(Boolean)) as DomainItem[])
+    await domainsStore.refreshDomains()
   } catch (error) {
     console.error('Failed to get domain list:', error)
   }

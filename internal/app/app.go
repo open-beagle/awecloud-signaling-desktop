@@ -48,16 +48,17 @@ type App struct {
 	containerRoutes *containerroute.Manager
 	serviceRoutes   *serviceroute.Manager
 
-	tenantMutex          sync.Mutex
-	tenantOperationMutex sync.Mutex
-	portPreferenceMutex  sync.RWMutex
-	activeTenantID       string
-	allowedTenantDomains map[string]struct{}
-	tenantResources      []*client.ResourceInfo
-	updateMutex          sync.Mutex
-	updateManifest       *launcher.PublicManifest
-	updateCheckedAt      time.Time
-	updateExit           func()
+	tenantMutex           sync.Mutex
+	tenantOperationMutex  sync.Mutex
+	portPreferenceMutex   sync.RWMutex
+	activeTenantID        string
+	allowedAccountDomains map[string]struct{}
+	allowedTenantDomains  map[string]struct{}
+	tenantResources       []*client.ResourceInfo
+	updateMutex           sync.Mutex
+	updateManifest        *launcher.PublicManifest
+	updateCheckedAt       time.Time
+	updateExit            func()
 }
 
 // NewApp creates a new App application struct
@@ -181,6 +182,7 @@ func (a *App) cleanupZTNA() {
 func (a *App) clearTenantContext() {
 	a.tenantMutex.Lock()
 	a.activeTenantID = ""
+	a.allowedAccountDomains = nil
 	a.allowedTenantDomains = nil
 	a.tenantResources = nil
 	a.tenantMutex.Unlock()
@@ -383,14 +385,20 @@ func (a *App) initializeZTNA() error {
 	return nil
 }
 
-// resolveDomain DNS 解析回调：查询 Server → 分配 VIP → 启动代理
-func (a *App) resolveDomain(domain string) (string, bool) {
+func (a *App) isDomainAllowed(domain string) bool {
+	normalizedDomain := normalizeDomain(domain)
 	a.tenantMutex.Lock()
-	_, allowed := a.allowedTenantDomains[domain]
+	_, accountAllowed := a.allowedAccountDomains[normalizedDomain]
+	_, tenantAllowed := a.allowedTenantDomains[normalizedDomain]
 	hasTenantScope := a.activeTenantID != ""
 	a.tenantMutex.Unlock()
-	if hasTenantScope && !allowed {
-		log.Printf("[App] DNS 解析拒绝: 域名不属于当前 Tenant (%s)", domain)
+	return !hasTenantScope || accountAllowed || tenantAllowed
+}
+
+// resolveDomain DNS 解析回调：查询 Server → 分配 VIP → 启动代理
+func (a *App) resolveDomain(domain string) (string, bool) {
+	if !a.isDomainAllowed(domain) {
+		log.Printf("[App] DNS 解析拒绝: 域名不属于当前账号或 Tenant (%s)", domain)
 		return "", false
 	}
 	if a.vipAllocator == nil {
@@ -1288,8 +1296,27 @@ func (a *App) SwitchResourceTenant(tenantID string) ([]*client.ResourceInfo, err
 func tenantResourceDomains(resources []*client.ResourceInfo) map[string]struct{} {
 	allowed := make(map[string]struct{})
 	for _, resource := range resources {
-		if resource != nil && resource.Domain != "" {
-			allowed[resource.Domain] = struct{}{}
+		if resource != nil {
+			if domain := normalizeDomain(resource.Domain); domain != "" {
+				allowed[domain] = struct{}{}
+			}
+		}
+	}
+	return allowed
+}
+
+func normalizeDomain(domain string) string {
+	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), "."))
+}
+
+func accountDomainNames(domains []*client.DomainInfo) map[string]struct{} {
+	allowed := make(map[string]struct{})
+	for _, domain := range domains {
+		if domain == nil || (domain.Type != "ssh" && domain.Type != "k8sapi") {
+			continue
+		}
+		if name := normalizeDomain(domain.Domain); name != "" {
+			allowed[name] = struct{}{}
 		}
 	}
 	return allowed
@@ -1335,7 +1362,7 @@ func (a *App) GenerateKubeconfig() (*KubeconfigResult, error) {
 	clusterNames := make([]string, 0)
 	selectedDomain := ""
 	for _, domain := range domains {
-		if domain != nil && domain.Type == "k8sapi" {
+		if domain != nil && domain.Type == "k8sapi" && strings.EqualFold(strings.TrimSpace(domain.Status), "online") {
 			clusterNames = append(clusterNames, kubeconfigClusterName(domain))
 			if selectedDomain == "" {
 				selectedDomain = domain.Domain
@@ -1809,6 +1836,12 @@ func (a *App) GetDomainList() ([]*DomainItem, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// SSH 和 Kubernetes API 域名属于当前账号，而不是某个资源 Tenant。
+	// 独立保存它们，避免切换或刷新 SVC/Pods 时将其从 DNS 允许列表移除。
+	a.tenantMutex.Lock()
+	a.allowedAccountDomains = accountDomainNames(domains)
+	a.tenantMutex.Unlock()
 
 	// 转换为前端格式
 	result := make([]*DomainItem, 0, len(domains))

@@ -129,7 +129,7 @@ func (c *Coordinator) HandleUpdateApply(ctx context.Context, req *launcheripc.Up
 		TargetVersion:    manifest.Release.Version,
 		TargetCommitID:   manifest.Release.CommitID,
 		TargetCommitTime: manifest.Release.PublishedAt,
-		TargetApp:        c.paths.ArtifactAppName(manifest.Release.Version, manifest.Artifacts.App.SHA256),
+		TargetApp:        c.paths.LogicalAppName(manifest.Release.Version),
 		Force:            req.Force,
 		Phase:            "waiting_for_exit",
 		Artifact:         *manifest.Artifacts.App,
@@ -186,6 +186,8 @@ func (c *Coordinator) ExecuteAcceptedUpdate(ctx context.Context) error {
 	}
 	artifact := c.task.Artifact
 	targetApp := c.task.TargetApp
+	targetVersion := c.task.TargetVersion
+	currentBeforeInstall := *c.current
 	c.mu.Unlock()
 
 	c.setTaskPhase("downloading")
@@ -195,18 +197,15 @@ func (c *Coordinator) ExecuteAcceptedUpdate(ctx context.Context) error {
 		return err
 	}
 	c.setTaskPhase("verifying")
-	appDestination := filepath.Join(c.paths.VersionsDir, targetApp)
-	if err := os.Remove(appDestination); err != nil && !os.IsNotExist(err) {
-		_ = os.Remove(result.PartPath)
+	installedApp, err := installVersionedArtifact(c.paths, result.PartPath, targetVersion, artifact.SHA256)
+	if err != nil {
+		c.restoreCurrentEntryAfterFailedInstall(&currentBeforeInstall, targetVersion)
 		c.setTaskFailure("failed", &launcheripc.ErrorDetail{Code: launcheripc.ErrInstallFailed, Message: err.Error()})
 		return err
 	}
-	if err := os.Rename(result.PartPath, appDestination); err != nil {
-		_ = os.Remove(result.PartPath)
-		c.setTaskFailure("failed", &launcheripc.ErrorDetail{Code: launcheripc.ErrInstallFailed, Message: err.Error()})
-		return err
-	}
-	if err := os.Chmod(appDestination, 0700); err != nil {
+	if installedApp != targetApp {
+		err := errors.New("installed Desktop App name does not match update task")
+		c.restoreCurrentEntryAfterFailedInstall(&currentBeforeInstall, targetVersion)
 		c.setTaskFailure("failed", &launcheripc.ErrorDetail{Code: launcheripc.ErrInstallFailed, Message: err.Error()})
 		return err
 	}
@@ -217,6 +216,7 @@ func (c *Coordinator) ExecuteAcceptedUpdate(ctx context.Context) error {
 		return errors.New("Desktop update state disappeared during installation")
 	}
 	previous := *c.current
+	previous.App = c.paths.ArtifactAppName(previous.Version, previous.Artifact.SHA256)
 	next := CurrentInfo{
 		SchemaVersion: 1,
 		Version:       c.task.TargetVersion,
@@ -227,19 +227,34 @@ func (c *Coordinator) ExecuteAcceptedUpdate(ctx context.Context) error {
 		InstalledAt:   time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := atomicWriteJSON(c.paths.PreviousFile, &previous); err != nil {
+		c.restoreCurrentEntryAfterFailedInstall(&currentBeforeInstall, targetVersion)
 		return err
 	}
 	if err := atomicWriteJSON(c.paths.CurrentFile, &next); err != nil {
+		c.restoreCurrentEntryAfterFailedInstall(&currentBeforeInstall, targetVersion)
 		return err
 	}
 	c.task.Phase = "restarting"
 	c.task.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	if err := atomicWriteJSON(c.paths.UpdateTaskFile, c.task); err != nil {
 		_ = atomicWriteJSON(c.paths.CurrentFile, &previous)
+		c.restoreCurrentEntryAfterFailedInstall(&currentBeforeInstall, targetVersion)
 		return err
 	}
 	c.previous, c.current = &previous, &next
+	previousLogicalPath := filepath.Join(c.paths.VersionsDir, c.paths.LogicalAppName(previous.Version))
+	if previousLogicalPath != filepath.Join(c.paths.VersionsDir, next.App) {
+		_ = os.Remove(previousLogicalPath)
+	}
 	return nil
+}
+
+func (c *Coordinator) restoreCurrentEntryAfterFailedInstall(current *CurrentInfo, targetVersion string) {
+	if current == nil || !sameVersion(current.Version, targetVersion) {
+		return
+	}
+	archivePath := filepath.Join(c.paths.VersionsDir, c.paths.ArtifactAppName(current.Version, current.Artifact.SHA256))
+	_ = copyFileAtomically(archivePath, filepath.Join(c.paths.VersionsDir, c.paths.LogicalAppName(current.Version)))
 }
 
 func (c *Coordinator) setTaskPhase(phase string) {
@@ -335,6 +350,15 @@ func (c *Coordinator) rollbackLocked(detail *launcheripc.ErrorDetail) {
 		return
 	}
 	previous := *c.previous
+	failedApp := c.current.App
+	archivePath := filepath.Join(c.paths.VersionsDir, c.paths.ArtifactAppName(previous.Version, previous.Artifact.SHA256))
+	previous.App = c.paths.LogicalAppName(previous.Version)
+	if err := copyFileAtomically(archivePath, filepath.Join(c.paths.VersionsDir, previous.App)); err != nil {
+		c.task.Phase = "failed"
+		c.task.Error = &launcheripc.ErrorDetail{Code: launcheripc.ErrRollbackFailed, Message: err.Error()}
+		_ = atomicWriteJSON(c.paths.UpdateTaskFile, c.task)
+		return
+	}
 	if err := atomicWriteJSON(c.paths.CurrentFile, &previous); err != nil {
 		c.task.Phase = "failed"
 		c.task.Error = &launcheripc.ErrorDetail{Code: launcheripc.ErrRollbackFailed, Message: err.Error()}
@@ -342,6 +366,9 @@ func (c *Coordinator) rollbackLocked(detail *launcheripc.ErrorDetail) {
 		return
 	}
 	c.current = &previous
+	if failedApp != previous.App {
+		_ = os.Remove(filepath.Join(c.paths.VersionsDir, failedApp))
+	}
 	c.healthRun++
 	now := time.Now().UTC().Format(time.RFC3339)
 	c.health = &HealthInfo{SchemaVersion: 1, OperationID: c.task.OperationID, TargetVersion: c.task.TargetVersion, TargetApp: c.task.TargetApp, Status: "rolled_back", StartedAt: now, StartupDeadlineAt: now, Failure: detail}

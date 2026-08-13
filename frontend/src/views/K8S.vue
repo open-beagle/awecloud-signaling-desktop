@@ -5,6 +5,17 @@
         <h1>Kubernetes</h1>
         <p>当前账号可访问的 Kubernetes 集群</p>
       </div>
+      <div class="manual-actions">
+        <span v-if="domainsStore.lastFetchedAt" class="fetched-at">上次获取：{{ domainsStore.lastFetchedAt }}</span>
+        <el-tooltip content="安装全部在线集群" placement="top">
+          <button class="icon-btn" type="button" aria-label="安装全部在线集群" :disabled="!onlineK8sDomains.length" @click="openInstall">
+            <el-icon><Download /></el-icon>
+          </button>
+        </el-tooltip>
+        <button class="icon-btn" title="更新 Kubernetes 列表" :disabled="domainsStore.loading" @click="refreshDomains">
+          <el-icon :class="{ 'is-loading': domainsStore.loading }"><Refresh /></el-icon>
+        </button>
+      </div>
     </div>
 
     <div class="toolbar">
@@ -30,18 +41,12 @@
           <span class="status"><i :class="row.status === 'offline' ? 'offline' : 'online'"></i>{{ row.status === 'offline' ? '离线' : '可用' }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right" align="right">
+      <el-table-column label="操作" width="72" fixed="right" align="center">
         <template #default="{ row }">
           <div class="table-actions">
-            <el-button size="small" :icon="Download" @click="openInstall(row)">安装</el-button>
             <el-tooltip content="复制 kubeconfig" placement="top">
               <button class="icon-btn table-action" type="button" aria-label="复制 kubeconfig" @click="copyKubeconfig(row)">
                 <el-icon><CopyDocument /></el-icon>
-              </button>
-            </el-tooltip>
-            <el-tooltip content="下载 kubeconfig" placement="top">
-              <button class="icon-btn table-action" type="button" aria-label="下载 kubeconfig" @click="downloadKubeconfig(row)">
-                <el-icon><Download /></el-icon>
               </button>
             </el-tooltip>
           </div>
@@ -50,7 +55,7 @@
     </el-table>
 
     <el-dialog v-model="installDialogVisible" title="安装 kubeconfig" width="680px" :close-on-click-modal="false">
-      <p class="dialog-description">{{ clusterName(installingDomain) }} 将写入所选环境的标准 kubeconfig。</p>
+      <p class="dialog-description">将 {{ onlineK8sDomains.length }} 个在线集群写入所选环境的标准 kubeconfig。</p>
 
       <div v-loading="targetsLoading" class="install-targets">
         <label v-for="target in targets" :key="target.id" class="install-target" :class="{ selected: selectedTargets.includes(target.id), unavailable: !target.available }">
@@ -88,7 +93,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { CopyDocument, Download } from '@element-plus/icons-vue'
+import { CopyDocument, Download, Refresh } from '@element-plus/icons-vue'
 import { GetKubeconfigTargets, InstallKubeconfig } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/internal/app/app'
 import { useDomainsStore } from '../stores/domains'
 import type { DomainItem } from '../stores/domains'
@@ -115,12 +120,12 @@ const domainsStore = useDomainsStore()
 const k8sDomains = computed(() => domainsStore.k8sDomains)
 const searchQuery = ref('')
 const installDialogVisible = ref(false)
-const installingDomain = ref<DomainItem | null>(null)
 const targets = ref<InstallTarget[]>([])
 const selectedTargets = ref<string[]>([])
 const targetsLoading = ref(false)
 const installing = ref(false)
 const installResults = ref<InstallTargetResult[]>([])
+const onlineK8sDomains = computed(() => k8sDomains.value.filter(domain => domain.status === 'online'))
 
 const filteredDomains = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
@@ -165,21 +170,16 @@ async function copyKubeconfig(domain: DomainItem) {
   ElMessage.success('kubeconfig 已复制')
 }
 
-function downloadKubeconfig(domain: DomainItem) {
-  const blob = new Blob([kubeconfigFor(domain)], { type: 'application/yaml;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = `${clusterName(domain)}.kubeconfig.yaml`
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  URL.revokeObjectURL(url)
-  ElMessage.success('kubeconfig 已下载')
+async function refreshDomains() {
+  try {
+    await domainsStore.refreshDomains()
+  } catch (cause: any) {
+    ElMessage.error(cause?.message || 'Kubernetes 列表更新失败')
+  }
 }
 
-async function openInstall(domain: DomainItem) {
-  installingDomain.value = domain
+async function openInstall() {
+  if (!onlineK8sDomains.value.length) return
   installResults.value = []
   installDialogVisible.value = true
   targetsLoading.value = true
@@ -196,12 +196,13 @@ async function openInstall(domain: DomainItem) {
 }
 
 async function installSelected() {
-  if (!installingDomain.value || !selectedTargets.value.length) return
+  const currentDomain = onlineK8sDomains.value[0]
+  if (!currentDomain || !selectedTargets.value.length) return
   installing.value = true
   installResults.value = []
   try {
     const result = await InstallKubeconfig({
-      domain: installingDomain.value.domain,
+      domain: currentDomain.domain,
       target_ids: selectedTargets.value
     })
     installResults.value = (result?.targets || []).filter(Boolean) as InstallTargetResult[]

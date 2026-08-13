@@ -112,7 +112,7 @@ func (a *App) InstallKubeconfig(request *KubeconfigInstallRequest) (*KubeconfigI
 	clusters := make([]beaglekubeconfig.Cluster, 0)
 	currentContext := ""
 	for _, domain := range domains {
-		if domain == nil || domain.Type != "k8sapi" {
+		if domain == nil || domain.Type != "k8sapi" || !strings.EqualFold(strings.TrimSpace(domain.Status), "online") {
 			continue
 		}
 		name := kubeconfigClusterName(domain)
@@ -122,7 +122,7 @@ func (a *App) InstallKubeconfig(request *KubeconfigInstallRequest) (*KubeconfigI
 		}
 	}
 	if currentContext == "" {
-		return nil, fmt.Errorf("所选 Kubernetes 集群不在当前授权范围内")
+		return nil, fmt.Errorf("所选 Kubernetes 集群不在线或不在当前授权范围内")
 	}
 	sort.SliceStable(clusters, func(i, j int) bool { return clusters[i].Name < clusters[j].Name })
 

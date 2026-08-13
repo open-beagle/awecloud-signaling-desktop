@@ -5,6 +5,12 @@
         <h1>SSH</h1>
         <p>当前账号可访问的主机终端</p>
       </div>
+      <div class="manual-actions">
+        <span v-if="domainsStore.lastFetchedAt" class="fetched-at">上次获取：{{ domainsStore.lastFetchedAt }}</span>
+        <button class="icon-btn" title="更新 SSH 列表" :disabled="domainsStore.loading" @click="refreshDomains">
+          <el-icon :class="{ 'is-loading': domainsStore.loading }"><Refresh /></el-icon>
+        </button>
+      </div>
     </div>
 
     <div class="toolbar">
@@ -70,7 +76,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { CopyDocument, UserFilled } from '@element-plus/icons-vue'
+import { CopyDocument, Refresh, UserFilled } from '@element-plus/icons-vue'
 import { useDomainsStore } from '../stores/domains'
 import type { DomainItem } from '../stores/domains'
 
@@ -79,6 +85,14 @@ const hostsDomains = computed(() => domainsStore.hostsDomains)
 const searchQuery = ref('')
 const userDialogVisible = ref(false)
 const selectedHost = ref<DomainItem | null>(null)
+
+async function refreshDomains() {
+  try {
+    await domainsStore.refreshDomains()
+  } catch (cause: any) {
+    ElMessage.error(cause?.message || 'SSH 列表更新失败')
+  }
+}
 
 const filteredDomains = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
