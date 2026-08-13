@@ -51,6 +51,7 @@ type App struct {
 	portPreferenceMutex  sync.RWMutex
 	activeTenantID       string
 	allowedTenantDomains map[string]struct{}
+	tenantResources      []*client.ResourceInfo
 }
 
 // NewApp creates a new App application struct
@@ -175,6 +176,7 @@ func (a *App) clearTenantContext() {
 	a.tenantMutex.Lock()
 	a.activeTenantID = ""
 	a.allowedTenantDomains = nil
+	a.tenantResources = nil
 	a.tenantMutex.Unlock()
 	if a.desktopClient != nil {
 		a.desktopClient.ClearResourceCaches()
@@ -1086,9 +1088,11 @@ func (a *App) GetResources() ([]*client.ResourceInfo, error) {
 		return resources, nil
 	}
 	if err := a.applyTenantResources(tenantID, resources); err != nil {
-		a.cleanupZTNA()
 		return nil, err
 	}
+	a.tenantMutex.Lock()
+	a.tenantResources = resources
+	a.tenantMutex.Unlock()
 
 	log.Printf("[App] 获取到 %d 个资源", len(resources))
 	return resources, nil
@@ -1117,10 +1121,9 @@ func (a *App) SetContainerServiceLocalPort(resourceID string, localPort int) ([]
 	if tenantID == "" {
 		return nil, fmt.Errorf("请先选择 Tenant")
 	}
-	resources, err := a.desktopClient.GetResourcesForTenant(tenantID)
-	if err != nil {
-		return nil, err
-	}
+	a.tenantMutex.Lock()
+	resources := a.tenantResources
+	a.tenantMutex.Unlock()
 	var selected *client.ResourceInfo
 	for _, resource := range resources {
 		if resource != nil && resource.Type == "container_service" && resource.ResourceID == resourceID && resource.TenantID == tenantID {
@@ -1129,7 +1132,7 @@ func (a *App) SetContainerServiceLocalPort(resourceID string, localPort int) ([]
 		}
 	}
 	if selected == nil {
-		return nil, fmt.Errorf("ContainerService 资源不存在或已失效")
+		return nil, fmt.Errorf("请先手动获取当前 Tenant 的资源")
 	}
 
 	key := containerServicePortPreferenceKey(tenantID, resourceID)
@@ -1163,7 +1166,7 @@ func (a *App) SetContainerServiceLocalPort(resourceID string, localPort int) ([]
 	}
 
 	a.portPreferenceMutex.RLock()
-	err = config.GlobalConfig.Save()
+	err := config.GlobalConfig.Save()
 	a.portPreferenceMutex.RUnlock()
 	if err != nil {
 		rollback()
@@ -1183,19 +1186,13 @@ func (a *App) GetResourceTenants() ([]ResourceTenantInfo, error) {
 	if a.desktopClient == nil {
 		return nil, fmt.Errorf("未登录")
 	}
-	resources, err := a.desktopClient.GetResourcesForTenant("")
+	tenants, err := a.desktopClient.ListResourceTenants()
 	if err != nil {
 		return nil, err
 	}
-	byID := make(map[string]string)
-	for _, resource := range resources {
-		if resource != nil && resource.TenantID != "" {
-			byID[resource.TenantID] = resource.TenantName
-		}
-	}
-	result := make([]ResourceTenantInfo, 0, len(byID))
-	for id, name := range byID {
-		result = append(result, ResourceTenantInfo{ID: id, Name: name})
+	result := make([]ResourceTenantInfo, 0, len(tenants))
+	for _, tenant := range tenants {
+		result = append(result, ResourceTenantInfo{ID: tenant.ID, Name: tenant.Name})
 	}
 	sort.Slice(result, func(i, j int) bool {
 		if result[i].Name == result[j].Name {
@@ -1206,8 +1203,8 @@ func (a *App) GetResourceTenants() ([]ResourceTenantInfo, error) {
 	return result, nil
 }
 
-// SwitchResourceTenant verifies the next scope before removing the previous
-// one, then rebuilds DNS/VIP/proxy state from an empty local network stack.
+// SwitchResourceTenant changes only the local scope. Resource fetching is an
+// explicit administrator action performed later through GetResources.
 func (a *App) SwitchResourceTenant(tenantID string) ([]*client.ResourceInfo, error) {
 	a.tenantOperationMutex.Lock()
 	defer a.tenantOperationMutex.Unlock()
@@ -1218,32 +1215,19 @@ func (a *App) SwitchResourceTenant(tenantID string) ([]*client.ResourceInfo, err
 	if tenantID == "" {
 		return nil, fmt.Errorf("Tenant ID 不能为空")
 	}
-	resources, err := a.desktopClient.GetResourcesForTenant(tenantID)
-	if err != nil {
-		return nil, err
+	if err := a.syncContainerSSHRoutes(nil); err != nil {
+		return nil, fmt.Errorf("撤销旧 Tenant ContainerSSH 路由: %w", err)
 	}
-	for _, resource := range resources {
-		if resource != nil && resource.TenantID != tenantID {
-			return nil, fmt.Errorf("Server 返回了跨 Tenant 资源")
-		}
+	if err := a.syncContainerServiceRoutes(nil); err != nil {
+		return nil, fmt.Errorf("撤销旧 Tenant ContainerService 路由: %w", err)
 	}
-
-	a.cleanupZTNA()
 	a.desktopClient.ClearResourceCaches()
 	a.tenantMutex.Lock()
 	a.activeTenantID = tenantID
-	a.allowedTenantDomains = tenantResourceDomains(resources)
+	a.allowedTenantDomains = make(map[string]struct{})
+	a.tenantResources = nil
 	a.tenantMutex.Unlock()
-	if a.tsManager != nil && a.tsManager.IsConnected() {
-		if err := a.initializeZTNA(); err != nil {
-			return nil, fmt.Errorf("重建 Tenant 网络栈失败: %w", err)
-		}
-	}
-	if err := a.applyTenantResources(tenantID, resources); err != nil {
-		a.cleanupZTNA()
-		return nil, err
-	}
-	return resources, nil
+	return []*client.ResourceInfo{}, nil
 }
 
 func tenantResourceDomains(resources []*client.ResourceInfo) map[string]struct{} {
@@ -1932,9 +1916,6 @@ func (a *App) GetDomainList() ([]*DomainItem, error) {
 		return nil, fmt.Errorf("未登录")
 	}
 
-	a.tenantMutex.Lock()
-	tenantID := a.activeTenantID
-	a.tenantMutex.Unlock()
 	domains, err := a.desktopClient.GetDomainList()
 	if err != nil {
 		return nil, err
@@ -1952,54 +1933,8 @@ func (a *App) GetDomainList() ([]*DomainItem, error) {
 		})
 	}
 
-	resources, resourceErr := a.desktopClient.GetResourcesForTenant(tenantID)
-	if resourceErr != nil {
-		if tenantID != "" {
-			a.cleanupZTNA()
-			return nil, resourceErr
-		}
-		log.Printf("[App] ContainerSSH 资源查询失败，保留旧资源视图: %v", resourceErr)
-	} else {
-		if tenantID != "" {
-			if err := a.applyTenantResources(tenantID, resources); err != nil {
-				a.cleanupZTNA()
-				return nil, err
-			}
-			a.tenantMutex.Lock()
-			a.allowedTenantDomains = tenantDomainAllowlist(resources, domains)
-			a.tenantMutex.Unlock()
-		} else {
-			if err := a.syncContainerSSHRoutes(resources); err != nil {
-				log.Printf("[App] ContainerSSH 路由同步失败: %v", err)
-			}
-			if err := a.syncContainerServiceRoutes(resources); err != nil {
-				log.Printf("[App] ContainerService 路由同步失败: %v", err)
-			}
-		}
-		for _, resource := range resources {
-			if resource.Type != "container_ssh" {
-				continue
-			}
-			result = append(result, &DomainItem{
-				Domain: resource.Domain, Type: "container_ssh", Status: "online",
-				SSHUsers: resource.SSHUsers, Region: resource.TenantName,
-				DisplayName: resource.DisplayName, ResourceID: resource.ResourceID,
-			})
-		}
-	}
-
 	log.Printf("[App] Returning %d domains", len(result))
 	return result, nil
-}
-
-func tenantDomainAllowlist(resources []*client.ResourceInfo, domains []*client.DomainInfo) map[string]struct{} {
-	allowed := tenantResourceDomains(resources)
-	for _, domain := range domains {
-		if domain != nil && domain.Domain != "" {
-			allowed[domain.Domain] = struct{}{}
-		}
-	}
-	return allowed
 }
 
 func (a *App) syncContainerSSHRoutes(resources []*client.ResourceInfo) error {

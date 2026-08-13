@@ -30,19 +30,24 @@ func TestTenantResourceDomainsDropsEmptyEntries(t *testing.T) {
 	}
 }
 
-func TestTenantDomainAllowlistKeepsServerDomainsInTenantScope(t *testing.T) {
-	allowlist := tenantDomainAllowlist([]*client.ResourceInfo{
-		{TenantID: "tenant-a", Domain: "ssh.container.beagle"},
-	}, []*client.DomainInfo{
-		nil,
-		{Domain: ""},
-		{Domain: "aliyun-119.ali.szzy.beagle", Type: "ssh", SSHUsers: []string{"root"}},
-	})
-
-	if _, ok := allowlist["ssh.container.beagle"]; !ok {
-		t.Fatal("Tenant resource domain is missing")
+func TestSwitchResourceTenantClearsSnapshotWithoutFetching(t *testing.T) {
+	app := &App{
+		desktopClient:  client.NewDesktopClient("127.0.0.1:1"),
+		activeTenantID: "tenant-a",
+		tenantResources: []*client.ResourceInfo{{
+			Type: "container_service", TenantID: "tenant-a", ResourceID: "service-a",
+		}},
+		allowedTenantDomains: map[string]struct{}{"service.ns.agent.beagle": {}},
 	}
-	if _, ok := allowlist["aliyun-119.ali.szzy.beagle"]; !ok {
-		t.Fatal("server authorized HostSSH domain is missing")
+
+	resources, err := app.SwitchResourceTenant("tenant-b")
+	if err != nil {
+		t.Fatalf("switch Tenant: %v", err)
+	}
+	if len(resources) != 0 {
+		t.Fatalf("Tenant switch returned resources without an explicit fetch: %#v", resources)
+	}
+	if app.activeTenantID != "tenant-b" || len(app.tenantResources) != 0 || len(app.allowedTenantDomains) != 0 {
+		t.Fatalf("Tenant switch did not clear the previous snapshot: %#v", app)
 	}
 }

@@ -38,6 +38,19 @@
 .tenant-filter { width: 190px; }
 .count { margin-left: auto; color: #8c8c8c; font-size: 12px; }
 
+.manual-actions { display: flex; align-items: center; gap: 10px; }
+.fetched-at { color: #8c8c8c; font-size: 12px; }
+.manual-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #8c8c8c;
+}
+.manual-empty strong { color: #595959; font-size: 14px; }
+
 .primary { color: #262626; font-size: 13px; font-weight: 500; }
 .secondary { margin-top: 2px; color: #8c8c8c; font-size: 12px; }
 

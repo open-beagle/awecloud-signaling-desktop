@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/client"
+	"github.com/stretchr/testify/require"
 )
 
 func TestS6TenantSwitchReal(t *testing.T) {
@@ -43,27 +44,29 @@ func TestS6TenantSwitchReal(t *testing.T) {
 	}
 	time.Sleep(3 * time.Second)
 
-	resourcesA := switchAndValidate(t, app, tenantA, "tenant-a")
-	oldProxy := app.proxyManager
-	oldSVCProxy := app.svcProxyMgr
+	resourcesA := switchAndValidate(t, app, tenantA, "tenant-a", nil)
 	oldDomains := resourceDomains(resourcesA)
 
-	resourcesB := switchAndValidate(t, app, tenantB, "tenant-b")
-	assertDeparted(t, app, oldProxy.Count(), oldSVCProxy.Count(), oldDomains)
-	oldProxy = app.proxyManager
-	oldSVCProxy = app.svcProxyMgr
+	resourcesB := switchAndValidate(t, app, tenantB, "tenant-b", oldDomains)
 	oldDomains = resourceDomains(resourcesB)
 
-	_ = switchAndValidate(t, app, tenantA, "tenant-a")
-	assertDeparted(t, app, oldProxy.Count(), oldSVCProxy.Count(), oldDomains)
+	_ = switchAndValidate(t, app, tenantA, "tenant-a", oldDomains)
 	fmt.Println("PASS real_tenant_switch=A->B->A dns=nrpt vip=recreated listeners=stopped openSSH=exit37 services=2")
 }
 
-func switchAndValidate(t *testing.T, app *App, tenantID, markerPrefix string) []*client.ResourceInfo {
+func switchAndValidate(t *testing.T, app *App, tenantID, markerPrefix string, oldDomains []string) []*client.ResourceInfo {
 	t.Helper()
 	resources, err := app.SwitchResourceTenant(tenantID)
 	if err != nil {
 		t.Fatalf("switch Tenant %s: %v", tenantID, err)
+	}
+	if len(resources) != 0 {
+		t.Fatalf("switch Tenant %s must not fetch resources", tenantID)
+	}
+	assertDeparted(t, app, oldDomains)
+	resources, err = app.GetResources()
+	if err != nil {
+		t.Fatalf("manually fetch Tenant %s resources: %v", tenantID, err)
 	}
 	var sshResource *client.ResourceInfo
 	services := make([]*client.ResourceInfo, 0, 2)
@@ -101,10 +104,17 @@ func switchAndValidate(t *testing.T, app *App, tenantID, markerPrefix string) []
 	return resources
 }
 
-func assertDeparted(t *testing.T, app *App, oldProxyCount, oldSVCProxyCount int, oldDomains []string) {
+func assertDeparted(t *testing.T, app *App, oldDomains []string) {
 	t.Helper()
-	if oldProxyCount != 0 || oldSVCProxyCount != 0 {
-		t.Fatalf("departed Tenant listeners remain: ssh=%d service=%d", oldProxyCount, oldSVCProxyCount)
+	sshCount, serviceCount := 0, 0
+	if app.proxyManager != nil {
+		sshCount = app.proxyManager.Count()
+	}
+	if app.svcProxyMgr != nil {
+		serviceCount = app.svcProxyMgr.Count()
+	}
+	if sshCount != 0 || serviceCount != 0 {
+		t.Fatalf("departed Tenant listeners remain: ssh=%d service=%d", sshCount, serviceCount)
 	}
 	clearDNSCache(t)
 	for _, domain := range oldDomains {

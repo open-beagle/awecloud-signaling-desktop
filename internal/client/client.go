@@ -1260,6 +1260,31 @@ func (c *DesktopClient) GetResources() ([]*ResourceInfo, error) {
 	return c.GetResourcesForTenant("")
 }
 
+type ResourceTenant struct {
+	ID   string
+	Name string
+}
+
+func (c *DesktopClient) ListResourceTenants() ([]ResourceTenant, error) {
+	if !c.IsAuthenticated() {
+		return nil, fmt.Errorf("未认证")
+	}
+	c.mu.RLock()
+	desktopID := c.desktopID
+	c.mu.RUnlock()
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	defer cancel()
+	resp, err := c.grpcClient.ListResourceTenants(ctx, &pb.ListResourceTenantsRequest{DesktopId: desktopID})
+	if err != nil {
+		return nil, fmt.Errorf("获取 Tenant 列表失败: %w", err)
+	}
+	result := make([]ResourceTenant, 0, len(resp.Tenants))
+	for _, tenant := range resp.Tenants {
+		result = append(result, ResourceTenant{ID: tenant.TenantId, Name: tenant.TenantName})
+	}
+	return result, nil
+}
+
 // GetResourcesForTenant requests one explicit Tenant scope. An empty Tenant ID
 // preserves the legacy aggregate discovery behavior.
 func (c *DesktopClient) GetResourcesForTenant(tenantID string) ([]*ResourceInfo, error) {

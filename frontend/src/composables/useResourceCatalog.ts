@@ -32,6 +32,14 @@ interface ResourceTenant {
   name: string
 }
 
+const resources = ref<Resource[]>([])
+const tenantOptions = ref<ResourceTenant[]>([])
+const activeTenantID = ref('')
+const loading = ref(false)
+const error = ref('')
+const lastFetchedAt = ref('')
+let inFlight: Promise<void> | null = null
+
 function readableError(cause: any, fallback: string) {
   if (typeof cause === 'string' && cause.trim()) return cause
   if (typeof cause?.message === 'string' && cause.message.trim()) return cause.message
@@ -40,53 +48,66 @@ function readableError(cause: any, fallback: string) {
 }
 
 export function useResourceCatalog() {
-  const resources = ref<Resource[]>([])
-  const tenantOptions = ref<ResourceTenant[]>([])
-  const activeTenantID = ref('')
-  const loading = ref(false)
-  const error = ref('')
-
   async function loadResources() {
-    loading.value = true
-    error.value = ''
-    try {
-      resources.value = ((await GetResources()) || []).filter(Boolean) as Resource[]
-    } catch (cause: any) {
-      error.value = readableError(cause, '资源加载失败，请检查网络后重试')
-    } finally {
-      loading.value = false
+    if (!activeTenantID.value) {
+      error.value = '请先手动获取并选择 Tenant'
+      return
     }
+    if (inFlight) return inFlight
+    inFlight = (async () => {
+      loading.value = true
+      error.value = ''
+      try {
+        const fetched = ((await GetResources()) || []).filter(Boolean) as Resource[]
+        resources.value = fetched
+        const fetchedAt = new Date().toLocaleString()
+        lastFetchedAt.value = fetchedAt
+      } catch (cause: any) {
+        error.value = readableError(cause, '资源加载失败，请检查网络后重试')
+      } finally {
+        loading.value = false
+        inFlight = null
+      }
+    })()
+    return inFlight
   }
 
   async function loadTenants() {
-    loading.value = true
-    error.value = ''
-    try {
-      tenantOptions.value = ((await GetResourceTenants()) || []) as ResourceTenant[]
-      if (!tenantOptions.value.length) {
-        resources.value = ((await GetResources()) || []).filter(Boolean) as Resource[]
-        return
+    if (inFlight) return inFlight
+    inFlight = (async () => {
+      loading.value = true
+      error.value = ''
+      try {
+        tenantOptions.value = ((await GetResourceTenants()) || []) as ResourceTenant[]
+        if (!tenantOptions.value.some(tenant => tenant.id === activeTenantID.value)) {
+          activeTenantID.value = tenantOptions.value[0]?.id || ''
+        }
+        if (activeTenantID.value) await selectTenantInternal()
+      } catch (cause: any) {
+        error.value = readableError(cause, 'Tenant 加载失败，请检查网络后重试')
+      } finally {
+        loading.value = false
+        inFlight = null
       }
-      if (!tenantOptions.value.some(tenant => tenant.id === activeTenantID.value)) {
-        activeTenantID.value = tenantOptions.value[0].id
-      }
-      resources.value = ((await SwitchResourceTenant(activeTenantID.value)) || []).filter(Boolean) as Resource[]
-    } catch (cause: any) {
-      resources.value = []
-      error.value = readableError(cause, 'Tenant 资源加载失败，请检查网络后重试')
-    } finally {
-      loading.value = false
-    }
+    })()
+    return inFlight
+  }
+
+  async function selectTenantInternal() {
+    await SwitchResourceTenant(activeTenantID.value)
+    resources.value = []
+    lastFetchedAt.value = ''
   }
 
   async function switchTenant() {
-    if (!activeTenantID.value) return
+    if (!activeTenantID.value || inFlight) return
     loading.value = true
     error.value = ''
-    resources.value = []
     try {
-      resources.value = ((await SwitchResourceTenant(activeTenantID.value)) || []).filter(Boolean) as Resource[]
+      await selectTenantInternal()
     } catch (cause: any) {
+      resources.value = []
+      lastFetchedAt.value = ''
       error.value = readableError(cause, 'Tenant 切换失败，请重试')
     } finally {
       loading.value = false
@@ -99,6 +120,7 @@ export function useResourceCatalog() {
     activeTenantID,
     loading,
     error,
+    lastFetchedAt,
     loadResources,
     loadTenants,
     switchTenant

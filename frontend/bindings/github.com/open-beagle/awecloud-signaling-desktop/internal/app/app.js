@@ -395,8 +395,8 @@ export function Startup() {
 }
 
 /**
- * SwitchResourceTenant verifies the next scope before removing the previous
- * one, then rebuilds DNS/VIP/proxy state from an empty local network stack.
+ * SwitchResourceTenant changes only the local scope. Resource fetching is an
+ * explicit administrator action performed later through GetResources.
  * @param {string} tenantID
  * @returns {$CancellablePromise<(client$0.ResourceInfo | null)[]>}
  */
