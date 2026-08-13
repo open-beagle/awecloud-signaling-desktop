@@ -32,7 +32,7 @@ func EnsureCurrentApp(ctx context.Context, paths *Paths, serverAddress string, l
 		return nil, fmt.Errorf("invalid Launcher server address: %w", err)
 	}
 	logger.Printf("requesting public Desktop manifest from %s", serverURL.String())
-	manifest, err := FetchPublicManifest(ctx, serverAddress, "", "")
+	manifest, err := FetchPublicManifest(ctx, serverAddress)
 	if err != nil {
 		return nil, fmt.Errorf("fetch Desktop manifest failed: %w", err)
 	}
@@ -70,6 +70,8 @@ func EnsureCurrentApp(ctx context.Context, paths *Paths, serverAddress string, l
 	current = &CurrentInfo{
 		SchemaVersion: 1,
 		Version:       manifest.Release.Version,
+		CommitID:      manifest.Release.CommitID,
+		CommitTime:    manifest.Release.PublishedAt,
 		App:           appName,
 		Artifact:      *artifact,
 		InstalledAt:   time.Now().UTC().Format(time.RFC3339),

@@ -36,7 +36,8 @@ if "%GIT_COMMIT%"=="" set GIT_COMMIT=unknown
 for /f "tokens=*" %%i in ('git rev-list --count HEAD 2^>nul') do set BUILD_NUMBER=%%i
 if "%BUILD_NUMBER%"=="" set BUILD_NUMBER=0
 
-for /f "tokens=*" %%i in ('powershell -command "Get-Date -Format 'yyyy-MM-dd_HH:mm:ss'"') do set BUILD_DATE=%%i
+for /f "tokens=*" %%i in ('git show -s --format^=%%cI HEAD 2^>nul') do set COMMIT_TIME=%%i
+if "%COMMIT_TIME%"=="" set COMMIT_TIME=unknown
 
 REM 目标架构
 if "%GOARCH%"=="" set GOARCH=amd64
@@ -51,7 +52,7 @@ echo Version:      %BUILD_VERSION%
 echo Build Number: %BUILD_NUMBER%
 echo Environment:  .env loaded
 echo Git Commit:   %GIT_COMMIT%
-echo Build Date:   %BUILD_DATE%
+echo Commit Time:  %COMMIT_TIME%
 echo Architecture: %GOARCH%
 echo.
 
@@ -140,7 +141,7 @@ REM 构建 ldflags
 set LDFLAGS=-w -s -H windowsgui
 set LDFLAGS=%LDFLAGS% -X "github.com/open-beagle/awecloud-signaling-desktop/internal/version.Version=%BUILD_VERSION%"
 set LDFLAGS=%LDFLAGS% -X "github.com/open-beagle/awecloud-signaling-desktop/internal/version.GitCommit=%GIT_COMMIT%"
-set LDFLAGS=%LDFLAGS% -X "github.com/open-beagle/awecloud-signaling-desktop/internal/version.BuildTime=%BUILD_DATE%"
+set LDFLAGS=%LDFLAGS% -X "github.com/open-beagle/awecloud-signaling-desktop/internal/version.BuildTime=%COMMIT_TIME%"
 set LDFLAGS=%LDFLAGS% -X "github.com/open-beagle/awecloud-signaling-desktop/internal/version.BuildNumber=%BUILD_NUMBER%"
 if not "%BUILD_ADDRESS%"=="" (
     set LDFLAGS=!LDFLAGS! -X "github.com/open-beagle/awecloud-signaling-desktop/internal/config.buildAddress=%BUILD_ADDRESS%"

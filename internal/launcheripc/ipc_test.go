@@ -2,7 +2,6 @@ package launcheripc
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -23,16 +22,11 @@ func (m *mockCoordinator) HandleConnect(ctx context.Context, req *ConnectRequest
 		SessionID:       "session-123",
 		LauncherPID:     100,
 		ExpectedVersion: "1.1.1",
-		NextEventSeq:    1,
 	}, nil
 }
 
-func (m *mockCoordinator) HandleUpdateRequest(ctx context.Context, req *UpdateRequest) (*UpdateSnapshot, error) {
-	return &UpdateSnapshot{OperationID: "op-1", Phase: "accepted", Progress: 0}, nil
-}
-
-func (m *mockCoordinator) HandleUpdateConfirm(ctx context.Context, req *UpdateConfirmRequest) error {
-	return nil
+func (m *mockCoordinator) HandleUpdateApply(ctx context.Context, req *UpdateApplyRequest) (*UpdateAccepted, error) {
+	return &UpdateAccepted{OperationID: "op-1", Phase: "waiting_for_exit", Accepted: true}, nil
 }
 
 func (m *mockCoordinator) HandleAppReady(ctx context.Context, req *AppReadyRequest) error {
@@ -43,24 +37,6 @@ func (m *mockCoordinator) HandleAppReady(ctx context.Context, req *AppReadyReque
 func (m *mockCoordinator) HandleServerHealthy(ctx context.Context, req *ServerHealthyRequest) error {
 	m.serverHealthyCalled = true
 	return nil
-}
-
-func (m *mockCoordinator) GetState(ctx context.Context) (*StateResponseData, error) {
-	return &StateResponseData{
-		SessionID:      "session-123",
-		CurrentVersion: "1.1.1",
-		Health:         HealthStatus{Status: "healthy"},
-	}, nil
-}
-
-func (m *mockCoordinator) GetEvents(ctx context.Context, afterSeq int64, waitSec int) (*EventsResponseData, error) {
-	return &EventsResponseData{
-		SessionID:   "session-123",
-		CursorReset: false,
-		Events: []IPCEvent{
-			{Sequence: 1, Type: "update_progress", CreatedAt: time.Now().UTC(), OperationID: "op-1"},
-		},
-	}, nil
 }
 
 func TestIPCServerClientHandshake(t *testing.T) {
@@ -97,17 +73,11 @@ func TestIPCServerClientHandshake(t *testing.T) {
 	require.NoError(t, client.SendServerHealthy(ctx, "task-1", "1.1.1"))
 	require.True(t, coord.serverHealthyCalled)
 
-	// 4. Get State
-	state, err := client.GetState(ctx)
+	// 4. One-shot update handoff
+	accepted, err := client.ApplyUpdate(ctx, &UpdateApplyRequest{RequestID: "request-1", TargetVersion: "1.1.1", Artifact: ArtifactPayload{ID: "artifact-1", SHA256: "abc"}})
 	require.NoError(t, err)
-	require.Equal(t, "1.1.1", state.CurrentVersion)
-	require.Equal(t, "healthy", state.Health.Status)
-
-	// 5. Get Events (long polling)
-	events, err := client.GetEvents(ctx, 0, 1)
-	require.NoError(t, err)
-	require.Len(t, events.Events, 1)
-	require.Equal(t, int64(1), events.Events[0].Sequence)
+	require.True(t, accepted.Accepted)
+	require.Equal(t, "waiting_for_exit", accepted.Phase)
 }
 
 func TestIPCRejectsBrowserOrigin(t *testing.T) {
@@ -139,5 +109,3 @@ func TestIPCRejectsUnauthorizedToken(t *testing.T) {
 
 	require.Equal(t, http.StatusUnauthorized, w.Code)
 }
-
-var _ = fmt.Printf

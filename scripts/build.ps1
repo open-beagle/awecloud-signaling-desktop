@@ -58,7 +58,12 @@ try {
     $BuildNumber = "0"
 }
 
-$BuildDate = Get-Date -Format "yyyy-MM-dd_HH:mm:ss"
+try {
+    $CommitTime = git show -s --format=%cI HEAD 2>$null
+    if ([string]::IsNullOrEmpty($CommitTime)) { $CommitTime = "unknown" }
+} catch {
+    $CommitTime = "unknown"
+}
 
 $OutputDir = "build\bin"
 
@@ -71,7 +76,7 @@ Write-Host "Version:           $BuildVersion"
 Write-Host "Build Number:      $BuildNumber"
 Write-Host "Environment:       .env loaded"
 Write-Host "Git Commit:        $GitCommit"
-Write-Host "Build Date:        $BuildDate"
+Write-Host "Commit Time:       $CommitTime"
 Write-Host "Architecture:      $GoArch"
 Write-Host ""
 
@@ -240,7 +245,7 @@ $env:GOARCH = $GoArch
 $LdFlags = "-w -s -H windowsgui"
 $LdFlags += " -X `"github.com/open-beagle/awecloud-signaling-desktop/internal/version.Version=$BuildVersion`""
 $LdFlags += " -X `"github.com/open-beagle/awecloud-signaling-desktop/internal/version.GitCommit=$GitCommit`""
-$LdFlags += " -X `"github.com/open-beagle/awecloud-signaling-desktop/internal/version.BuildTime=$BuildDate`""
+$LdFlags += " -X `"github.com/open-beagle/awecloud-signaling-desktop/internal/version.BuildTime=$CommitTime`""
 $LdFlags += " -X `"github.com/open-beagle/awecloud-signaling-desktop/internal/version.BuildNumber=$BuildNumber`""
 if (-not [string]::IsNullOrEmpty($BuildAddress)) {
     $LdFlags += " -X `"github.com/open-beagle/awecloud-signaling-desktop/internal/config.buildAddress=$BuildAddress`""

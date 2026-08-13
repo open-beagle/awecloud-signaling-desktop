@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcher"
@@ -50,23 +51,30 @@ func run() (runErr error) {
 		return err
 	}
 
-	current, err := launcher.EnsureCurrentApp(context.Background(), paths, cfg.ServerAddress, logger, showInitialInstallNotice)
+	updateServerAddress := launcher.ResolveUpdateServerAddress(cfg.ServerAddress)
+	current, err := launcher.EnsureCurrentApp(context.Background(), paths, updateServerAddress, logger, showInitialInstallNotice)
 	if err != nil {
 		return err
 	}
 
-	coord, err := launcher.NewCoordinator(paths, cfg.ServerAddress)
+	coord, err := launcher.NewCoordinator(paths, updateServerAddress)
 	if err != nil {
 		return err
 	}
 
-	endpoint, err := launcheripc.NewEndpoint()
-	if err != nil {
-		return err
+	endpoint := os.Getenv(launcheripc.EnvLauncherEndpoint)
+	if endpoint == "" {
+		endpoint, err = launcheripc.NewEndpoint()
+		if err != nil {
+			return err
+		}
 	}
-	token, err := launcheripc.NewSessionToken()
-	if err != nil {
-		return err
+	token := os.Getenv(launcheripc.EnvLauncherToken)
+	if token == "" {
+		token, err = launcheripc.NewSessionToken()
+		if err != nil {
+			return err
+		}
 	}
 
 	ipcServer := launcheripc.NewServer(endpoint, token, launcheripc.ExpectedPeerUID(), coord)
@@ -86,23 +94,62 @@ func run() (runErr error) {
 	processManager := launcher.NewProcessManager()
 	for {
 		appPath := filepath.Join(paths.VersionsDir, current.App)
-		pid, err := processManager.StartApp(appPath, endpoint, token, current.Version, launcherPath)
+		operationID := coord.OperationForApp(current)
+		pid, err := processManager.StartApp(appPath, endpoint, token, current.Version, launcherPath, operationID)
 		if err != nil {
+			if coord.RollbackAfterFailure(&launcheripc.ErrorDetail{Code: launcheripc.ErrAppStartFailed, Message: err.Error()}) {
+				current = coord.Current()
+				continue
+			}
 			return err
 		}
+		coord.BeginAppRun(current, pid)
 		logger.Printf("Desktop App version %s sha256 %s started with PID %d", current.Version, current.Artifact.SHA256, pid)
 		waitCh := make(chan error, 1)
 		go func() { waitCh <- processManager.Wait() }()
 		select {
-		case <-coord.RestartRequested():
+		case <-coord.UpdateAccepted():
+			select {
+			case exitErr := <-waitCh:
+				if exitErr != nil {
+					logger.Printf("Desktop App exited after update handoff: %v", exitErr)
+				}
+			case <-time.After(15 * time.Second):
+				coord.CancelAcceptedUpdate(&launcheripc.ErrorDetail{Code: launcheripc.ErrAppUnstable, Message: "Desktop App did not exit within 15 seconds after update was accepted"})
+				logger.Printf("Desktop App did not exit after update was accepted; update cancelled")
+				if exitErr := <-waitCh; exitErr != nil {
+					return fmt.Errorf("Desktop App exited unexpectedly after cancelled update: %w", exitErr)
+				}
+				return nil
+			}
+			if err := coord.ExecuteAcceptedUpdate(context.Background()); err != nil {
+				logger.Printf("Desktop App update failed before switch: %v", err)
+			}
+			current = coord.Current()
+			if current == nil {
+				return fmt.Errorf("Desktop App state is unavailable after update execution")
+			}
+			continue
+		case <-coord.RollbackRequested():
 			processManager.StopApp()
 			<-waitCh
 			current = coord.Current()
 			if current == nil {
-				return fmt.Errorf("updated Desktop App state is unavailable")
+				return fmt.Errorf("rolled back Desktop App state is unavailable")
 			}
 			continue
 		case err := <-waitCh:
+			if coord.HasAcceptedUpdate() {
+				if executeErr := coord.ExecuteAcceptedUpdate(context.Background()); executeErr != nil {
+					logger.Printf("Desktop App update failed before switch: %v", executeErr)
+				}
+				current = coord.Current()
+				continue
+			}
+			if coord.RollbackAfterFailure(&launcheripc.ErrorDetail{Code: launcheripc.ErrAppUnstable, Message: "updated Desktop App exited before health confirmation"}) {
+				current = coord.Current()
+				continue
+			}
 			if err != nil {
 				logger.Printf("Desktop App exited with error: %v", err)
 				return fmt.Errorf("Desktop App exited unexpectedly: %w", err)

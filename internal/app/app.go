@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/containerroute"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/dns"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcher"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcheripc"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/proxy"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/serviceroute"
@@ -52,6 +54,10 @@ type App struct {
 	activeTenantID       string
 	allowedTenantDomains map[string]struct{}
 	tenantResources      []*client.ResourceInfo
+	updateMutex          sync.Mutex
+	updateManifest       *launcher.PublicManifest
+	updateCheckedAt      time.Time
+	updateExit           func()
 }
 
 // NewApp creates a new App application struct
@@ -263,6 +269,7 @@ func (a *App) Login(serverAddr, clientName, clientSecret string, rememberMe bool
 	}
 
 	a.authResult = authResult
+	a.reportLauncherServerHealthy()
 
 	log.Printf("Config: Server=%s, DesktopID=%d",
 		config.GlobalConfig.ServerAddress, authResult.DesktopID)
@@ -587,7 +594,7 @@ func (a *App) GetConfig() *config.Config {
 type VersionInfo struct {
 	Version     string `json:"version"`
 	GitCommit   string `json:"gitCommit"`
-	BuildDate   string `json:"buildDate"`
+	CommitTime  string `json:"commitTime"`
 	BuildNumber string `json:"buildNumber"`
 }
 
@@ -595,39 +602,87 @@ func (a *App) GetVersion() *VersionInfo {
 	return &VersionInfo{
 		Version:     appVersion.Version,
 		GitCommit:   appVersion.GitCommit,
-		BuildDate:   appVersion.BuildTime,
+		CommitTime:  appVersion.BuildTime,
 		BuildNumber: appVersion.BuildNumber,
 	}
 }
 
-func (a *App) GetIPCUpdateState() (any, error) {
+type DesktopUpdateState struct {
+	CurrentVersion    string                   `json:"current_version"`
+	CurrentCommitID   string                   `json:"current_commit_id"`
+	CurrentCommitTime string                   `json:"current_commit_time"`
+	CheckedAt         string                   `json:"checked_at"`
+	Manifest          *launcher.PublicManifest `json:"manifest"`
+}
+
+func (a *App) CheckDesktopUpdate() (*DesktopUpdateState, error) {
+	a.updateMutex.Lock()
+	defer a.updateMutex.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	updateServerAddress := launcher.ResolveUpdateServerAddress(config.GlobalConfig.ServerAddress)
+	manifest, err := launcher.FetchPublicManifest(ctx, updateServerAddress)
+	a.updateCheckedAt = time.Now().UTC()
+	if err != nil {
+		log.Printf("[Updater] Desktop manifest check failed: %v", err)
+		return nil, err
+	}
+	manifest.Update = launcher.EvaluateDesktopUpdate(appVersion.Version, appVersion.GitCommit, manifest)
+	a.updateManifest = manifest
+	log.Printf("[Updater] Desktop manifest checked: current=%s@%s target=%s@%s available=%v", appVersion.Version, appVersion.GitCommit, manifest.Release.Version, manifest.Release.CommitID, manifest.Update.Available)
+	return &DesktopUpdateState{
+		CurrentVersion: appVersion.Version, CurrentCommitID: appVersion.GitCommit,
+		CurrentCommitTime: appVersion.BuildTime, CheckedAt: a.updateCheckedAt.Format(time.RFC3339), Manifest: manifest,
+	}, nil
+}
+
+func (a *App) ApplyDesktopUpdate(req *launcheripc.UpdateApplyRequest) (*launcheripc.UpdateAccepted, error) {
 	ipcClient, err := launcheripc.NewClientFromEnv()
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return ipcClient.GetState(ctx)
-}
-
-func (a *App) RequestIPCUpdate(req *launcheripc.UpdateRequest) (any, error) {
-	ipcClient, err := launcheripc.NewClientFromEnv()
+	accepted, err := ipcClient.ApplyUpdate(ctx, req)
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	return ipcClient.RequestUpdate(ctx, req)
+	if !accepted.Accepted || accepted.Phase != "waiting_for_exit" {
+		return nil, errors.New("Launcher did not accept the Desktop update handoff")
+	}
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		if a.updateExit != nil {
+			a.updateExit()
+			return
+		}
+		a.shutdown()
+		if a.mainApp != nil {
+			a.mainApp.Quit()
+		}
+	}()
+	return accepted, nil
 }
 
-func (a *App) ConfirmIPCUpdate(operationID string) error {
-	ipcClient, err := launcheripc.NewClientFromEnv()
-	if err != nil {
-		return err
+func (a *App) reportLauncherServerHealthy() {
+	operationID := strings.TrimSpace(os.Getenv(launcheripc.EnvUpdateOperationID))
+	if operationID == "" {
+		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return ipcClient.ConfirmUpdate(ctx, operationID)
+	go func() {
+		ipcClient, err := launcheripc.NewClientFromEnv()
+		if err != nil {
+			log.Printf("[Updater] create Launcher health client failed: %v", err)
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := ipcClient.SendServerHealthy(ctx, operationID, appVersion.Version); err != nil {
+			log.Printf("[Updater] report server healthy failed: %v", err)
+			return
+		}
+		log.Printf("[Updater] Launcher update %s marked server healthy", operationID)
+	}()
 }
 
 func (a *App) GetWindowTitle() string {
@@ -1866,6 +1921,7 @@ func (a *App) WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint st
 
 	// 设置认证结果（重要：这样后续的 API 调用才能识别已登录状态）
 	a.authResult = authResult
+	a.reportLauncherServerHealthy()
 
 	// 保存凭证
 	config.GlobalConfig.ServerAddress = serverAddr

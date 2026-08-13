@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"runtime"
 	"strings"
 	"time"
@@ -18,10 +19,27 @@ import (
 )
 
 const maxManifestSize = 1024 * 1024
+const EnvUpdateServerAddress = "BEAGLE_SIGNAL_UPDATE_SERVER"
+
+func ResolveUpdateServerAddress(defaultAddress string) string {
+	if override := strings.TrimSpace(os.Getenv(EnvUpdateServerAddress)); override != "" {
+		return override
+	}
+	return defaultAddress
+}
 
 type ManifestRelease struct {
-	Version string `json:"version"`
-	Channel string `json:"channel"`
+	Version             string `json:"version"`
+	CommitID            string `json:"commit_id"`
+	Channel             string `json:"channel"`
+	ReleaseNotes        string `json:"release_notes"`
+	MinSupportedVersion string `json:"min_supported_version"`
+	PublishedAt         string `json:"published_at"`
+}
+
+type ManifestUpdate struct {
+	Available bool `json:"available"`
+	Required  bool `json:"required"`
 }
 
 type ManifestArtifacts struct {
@@ -33,10 +51,11 @@ type PublicManifest struct {
 	GeneratedAt   string            `json:"generated_at"`
 	ExpiresAt     string            `json:"expires_at"`
 	Release       ManifestRelease   `json:"release"`
+	Update        ManifestUpdate    `json:"update"`
 	Artifacts     ManifestArtifacts `json:"artifacts"`
 }
 
-func FetchPublicManifest(ctx context.Context, serverAddress, currentVersion, currentArtifactSHA256 string) (*PublicManifest, error) {
+func FetchPublicManifest(ctx context.Context, serverAddress string) (*PublicManifest, error) {
 	baseURL, err := normalizeServerURL(serverAddress)
 	if err != nil {
 		return nil, err
@@ -49,21 +68,14 @@ func FetchPublicManifest(ctx context.Context, serverAddress, currentVersion, cur
 	query.Set("os", runtime.GOOS)
 	query.Set("arch", runtime.GOARCH)
 	query.Set("channel", "stable")
-	if currentVersion != "" {
-		query.Set("current_version", strings.TrimPrefix(currentVersion, "v"))
-	}
-	if currentArtifactSHA256 != "" {
-		query.Set("current_artifact_sha256", strings.ToLower(strings.TrimSpace(currentArtifactSHA256)))
-	}
 	manifestURL.RawQuery = query.Encode()
 
+	client := &http.Client{Timeout: 20 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, manifestURL.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("create manifest request failed: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
-
-	client := &http.Client{Timeout: 20 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request public manifest failed: %w", err)
@@ -91,6 +103,65 @@ func FetchPublicManifest(ctx context.Context, serverAddress, currentVersion, cur
 	return &manifest, nil
 }
 
+func EvaluateDesktopUpdate(currentVersion, currentCommitID string, manifest *PublicManifest) ManifestUpdate {
+	if manifest == nil {
+		return ManifestUpdate{}
+	}
+	available := isUpdateAvailable(currentVersion, currentCommitID, manifest.Release.Version, manifest.Release.CommitID)
+	required := manifest.Release.MinSupportedVersion != "" && compareReleaseVersion(currentVersion, manifest.Release.MinSupportedVersion) < 0
+	return ManifestUpdate{Available: available, Required: required}
+}
+
+func isUpdateAvailable(currentVersion, currentCommitID, targetVersion, targetCommitID string) bool {
+	currentVersion = strings.TrimPrefix(strings.TrimSpace(currentVersion), "v")
+	targetVersion = strings.TrimPrefix(strings.TrimSpace(targetVersion), "v")
+	if currentVersion == "" {
+		return true
+	}
+	comparison := compareReleaseVersion(targetVersion, currentVersion)
+	if comparison != 0 {
+		return comparison > 0
+	}
+	currentCommitID = strings.ToLower(strings.TrimSpace(currentCommitID))
+	targetCommitID = strings.ToLower(strings.TrimSpace(targetCommitID))
+	if currentCommitID == "" || targetCommitID == "" {
+		return false
+	}
+	return !strings.HasPrefix(currentCommitID, targetCommitID) && !strings.HasPrefix(targetCommitID, currentCommitID)
+}
+
+func compareReleaseVersion(left, right string) int {
+	parse := func(value string) ([3]int, bool) {
+		var result [3]int
+		value = strings.TrimPrefix(strings.TrimSpace(value), "v")
+		value = strings.SplitN(value, "-", 2)[0]
+		parts := strings.Split(value, ".")
+		if len(parts) != 3 {
+			return result, false
+		}
+		for index, part := range parts {
+			if _, err := fmt.Sscanf(part, "%d", &result[index]); err != nil {
+				return [3]int{}, false
+			}
+		}
+		return result, true
+	}
+	leftParts, leftOK := parse(left)
+	rightParts, rightOK := parse(right)
+	if !leftOK || !rightOK {
+		return strings.Compare(left, right)
+	}
+	for index := range leftParts {
+		if leftParts[index] < rightParts[index] {
+			return -1
+		}
+		if leftParts[index] > rightParts[index] {
+			return 1
+		}
+	}
+	return 0
+}
+
 func validateManifest(manifest *PublicManifest, serverURL *url.URL) error {
 	if manifest.SchemaVersion != 1 {
 		return fmt.Errorf("unsupported manifest schema_version %d", manifest.SchemaVersion)
@@ -101,12 +172,19 @@ func validateManifest(manifest *PublicManifest, serverURL *url.URL) error {
 	}
 	manifest.Release.Version = version
 
+	generatedAt, err := time.Parse(time.RFC3339, manifest.GeneratedAt)
+	if err != nil {
+		return fmt.Errorf("invalid manifest generated_at: %w", err)
+	}
 	expiresAt, err := time.Parse(time.RFC3339, manifest.ExpiresAt)
 	if err != nil {
 		return fmt.Errorf("invalid manifest expires_at: %w", err)
 	}
 	if !expiresAt.After(time.Now().UTC()) {
 		return errors.New("public manifest has expired")
+	}
+	if !expiresAt.After(generatedAt) || expiresAt.Sub(generatedAt) > 10*time.Minute {
+		return errors.New("public manifest validity window is invalid")
 	}
 
 	artifact := manifest.Artifacts.App

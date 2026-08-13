@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,19 +54,21 @@ func TestEnsureCurrentAppDownloadsAndPersistsInitialVersion(t *testing.T) {
 	digestBytes := sha256.Sum256(content)
 	digest := hex.EncodeToString(digestBytes[:])
 	currentContent, currentDigest := content, digest
+	currentCommit := "1122334455667788990011223344556677889900"
 
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/public/updater/manifest":
 			require.Equal(t, "desktop", r.URL.Query().Get("component"))
+			now := time.Now().UTC()
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"schema_version": 1,
-				"generated_at":   time.Now().UTC().Format(time.RFC3339),
-				"expires_at":     time.Now().UTC().Add(10 * time.Minute).Format(time.RFC3339),
+				"generated_at":   now.Format(time.RFC3339),
+				"expires_at":     now.Add(10 * time.Minute).Format(time.RFC3339),
 				"release": map[string]any{
-					"version": "1.2.3",
-					"channel": "stable",
+					"version": "1.2.3", "commit_id": currentCommit,
+					"published_at": now.Add(-time.Minute).Format(time.RFC3339), "channel": "stable",
 				},
 				"artifacts": map[string]any{
 					"app": map[string]any{
@@ -129,30 +132,52 @@ func TestEnsureCurrentAppDownloadsAndPersistsInitialVersion(t *testing.T) {
 	currentContent = []byte("runtime-republished-desktop-app")
 	runtimeDigestBytes := sha256.Sum256(currentContent)
 	currentDigest = hex.EncodeToString(runtimeDigestBytes[:])
+	currentCommit = "abcdef0123456789abcdef0123456789abcdef01"
 	coord, err := NewCoordinator(paths, server.URL)
 	require.NoError(t, err)
-	snapshot, err := coord.HandleUpdateRequest(t.Context(), &launcheripc.UpdateRequest{
-		SchemaVersion: 1, RequestID: "runtime-update", Source: "manual", TargetVersion: "latest",
-		Artifact: launcheripc.ArtifactPayload{},
+	_, err = coord.HandleConnect(t.Context(), &launcheripc.ConnectRequest{PID: 200, Version: "1.2.3"})
+	require.NoError(t, err)
+	accepted, err := coord.HandleUpdateApply(t.Context(), &launcheripc.UpdateApplyRequest{
+		SchemaVersion: 1, RequestID: "runtime-update", TargetVersion: "1.2.3",
+		Artifact: launcheripc.ArtifactPayload{ID: "app-artifact", SHA256: currentDigest},
 	})
 	require.NoError(t, err)
-	require.Equal(t, "runtime-update", snapshot.OperationID)
-	require.Eventually(t, func() bool {
-		state, stateErr := coord.GetState(t.Context())
-		return stateErr == nil && state.Update != nil && state.Update.Phase == "staged"
-	}, time.Second, 10*time.Millisecond)
-	require.NoError(t, coord.HandleUpdateConfirm(t.Context(), &launcheripc.UpdateConfirmRequest{SchemaVersion: 1, OperationID: snapshot.OperationID}))
+	require.Equal(t, "runtime-update", accepted.OperationID)
+	require.Equal(t, "waiting_for_exit", accepted.Phase)
 	select {
-	case <-coord.RestartRequested():
+	case <-coord.UpdateAccepted():
 	case <-time.After(time.Second):
-		t.Fatal("runtime update did not request an App restart")
+		t.Fatal("runtime update was not handed to Launcher")
 	}
+	require.NoError(t, coord.ExecuteAcceptedUpdate(t.Context()))
 	runtimeCurrent := coord.Current()
 	require.NotNil(t, runtimeCurrent)
 	require.Equal(t, currentDigest, runtimeCurrent.Artifact.SHA256)
 	runtimeActualDigest, err := fileSHA256(filepath.Join(paths.VersionsDir, runtimeCurrent.App))
 	require.NoError(t, err)
 	require.Equal(t, currentDigest, runtimeActualDigest)
+}
+
+func TestFetchPublicManifestDoesNotSendLocalBuildIdentity(t *testing.T) {
+	commitID := "1122334455667788990011223344556677889900"
+	digest := strings.Repeat("a", 64)
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Empty(t, r.URL.Query().Get("current_version"))
+		require.Empty(t, r.URL.Query().Get("current_commit_id"))
+		now := time.Now().UTC()
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"schema_version": 1, "generated_at": now.Format(time.RFC3339), "expires_at": now.Add(10 * time.Minute).Format(time.RFC3339),
+			"release":   map[string]any{"version": "1.0.2", "commit_id": commitID, "channel": "stable", "published_at": now.Format(time.RFC3339)},
+			"artifacts": map[string]any{"app": map[string]any{"id": "app", "role": "app", "os": runtime.GOOS, "arch": runtime.GOARCH, "package_type": "binary", "filename": "desktop.bin", "download_url": server.URL + "/artifact", "size": 1, "sha256": digest}},
+		})
+	}))
+	defer server.Close()
+
+	manifest, err := FetchPublicManifest(t.Context(), server.URL)
+	require.NoError(t, err)
+	require.True(t, EvaluateDesktopUpdate("1.0.2", "abcdef0", manifest).Available)
+	require.False(t, EvaluateDesktopUpdate("1.0.2", "1122334", manifest).Available)
 }
 
 func TestAtomicWriteAndReadStateJSON(t *testing.T) {
@@ -229,8 +254,75 @@ func TestCoordinatorStateTransitions(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "1.0.0", connData.ExpectedVersion)
 
-	// State
-	state, err := coord.GetState(ctx)
+}
+
+func TestCoordinatorRequiresLocalAndServerHealth(t *testing.T) {
+	paths, err := NewPaths(t.TempDir())
 	require.NoError(t, err)
-	require.Equal(t, "1.0.0", state.CurrentVersion)
+	current := &CurrentInfo{SchemaVersion: 1, Version: "1.1.0", App: paths.ArtifactAppName("1.1.0", strings.Repeat("b", 64)), Artifact: launcheripc.ArtifactPayload{SHA256: strings.Repeat("b", 64)}}
+	previous := &CurrentInfo{SchemaVersion: 1, Version: "1.0.0", App: paths.ArtifactAppName("1.0.0", strings.Repeat("a", 64)), Artifact: launcheripc.ArtifactPayload{SHA256: strings.Repeat("a", 64)}}
+	task := &UpdateTaskState{SchemaVersion: 1, OperationID: "op-health", TargetVersion: "1.1.0", TargetApp: current.App, Phase: "restarting", Artifact: current.Artifact}
+	require.NoError(t, atomicWriteJSON(paths.CurrentFile, current))
+	require.NoError(t, atomicWriteJSON(paths.PreviousFile, previous))
+	require.NoError(t, atomicWriteJSON(paths.UpdateTaskFile, task))
+
+	coord, err := NewCoordinator(paths, "http://127.0.0.1")
+	require.NoError(t, err)
+	coord.BeginAppRun(current, 301)
+	_, err = coord.HandleConnect(t.Context(), &launcheripc.ConnectRequest{PID: 301, Version: "1.1.0"})
+	require.NoError(t, err)
+	require.NoError(t, coord.HandleAppReady(t.Context(), &launcheripc.AppReadyRequest{PID: 301, Version: "1.1.0"}))
+	var persistedTask UpdateTaskState
+	require.NoError(t, readStateJSON(paths.UpdateTaskFile, &persistedTask))
+	require.Equal(t, "locally_healthy", persistedTask.Phase)
+	require.NoError(t, coord.HandleServerHealthy(t.Context(), &launcheripc.ServerHealthyRequest{OperationID: "op-health", Version: "1.1.0"}))
+	require.NoError(t, readStateJSON(paths.UpdateTaskFile, &persistedTask))
+	require.Equal(t, "succeeded", persistedTask.Phase)
+}
+
+func TestCoordinatorAcceptsAppReadyBeforeHealthObservationStarts(t *testing.T) {
+	paths, err := NewPaths(t.TempDir())
+	require.NoError(t, err)
+	current := &CurrentInfo{SchemaVersion: 1, Version: "1.1.0", App: paths.ArtifactAppName("1.1.0", strings.Repeat("b", 64)), Artifact: launcheripc.ArtifactPayload{SHA256: strings.Repeat("b", 64)}}
+	previous := &CurrentInfo{SchemaVersion: 1, Version: "1.0.0", App: paths.ArtifactAppName("1.0.0", strings.Repeat("a", 64)), Artifact: launcheripc.ArtifactPayload{SHA256: strings.Repeat("a", 64)}}
+	task := &UpdateTaskState{SchemaVersion: 1, OperationID: "op-early-ready", TargetVersion: "1.1.0", TargetApp: current.App, Phase: "restarting", Artifact: current.Artifact}
+	require.NoError(t, atomicWriteJSON(paths.CurrentFile, current))
+	require.NoError(t, atomicWriteJSON(paths.PreviousFile, previous))
+	require.NoError(t, atomicWriteJSON(paths.UpdateTaskFile, task))
+
+	coord, err := NewCoordinator(paths, "http://127.0.0.1")
+	require.NoError(t, err)
+	_, err = coord.HandleConnect(t.Context(), &launcheripc.ConnectRequest{PID: 302, Version: "1.1.0"})
+	require.NoError(t, err)
+	require.NoError(t, coord.HandleAppReady(t.Context(), &launcheripc.AppReadyRequest{PID: 302, Version: "1.1.0"}))
+
+	coord.BeginAppRun(current, 302)
+	var persistedTask UpdateTaskState
+	require.NoError(t, readStateJSON(paths.UpdateTaskFile, &persistedTask))
+	require.Equal(t, "locally_healthy", persistedTask.Phase)
+	require.NoError(t, coord.HandleServerHealthy(t.Context(), &launcheripc.ServerHealthyRequest{OperationID: "op-early-ready", Version: "1.1.0"}))
+	require.NoError(t, readStateJSON(paths.UpdateTaskFile, &persistedTask))
+	require.Equal(t, "succeeded", persistedTask.Phase)
+}
+
+func TestCoordinatorRollsBackFailedUpdatedApp(t *testing.T) {
+	paths, err := NewPaths(t.TempDir())
+	require.NoError(t, err)
+	current := &CurrentInfo{SchemaVersion: 1, Version: "1.1.0", App: paths.ArtifactAppName("1.1.0", strings.Repeat("b", 64)), Artifact: launcheripc.ArtifactPayload{SHA256: strings.Repeat("b", 64)}}
+	previous := &CurrentInfo{SchemaVersion: 1, Version: "1.0.0", App: paths.ArtifactAppName("1.0.0", strings.Repeat("a", 64)), Artifact: launcheripc.ArtifactPayload{SHA256: strings.Repeat("a", 64)}}
+	task := &UpdateTaskState{SchemaVersion: 1, OperationID: "op-rollback", TargetVersion: "1.1.0", TargetApp: current.App, Phase: "restarting", Artifact: current.Artifact}
+	require.NoError(t, atomicWriteJSON(paths.CurrentFile, current))
+	require.NoError(t, atomicWriteJSON(paths.PreviousFile, previous))
+	require.NoError(t, atomicWriteJSON(paths.UpdateTaskFile, task))
+
+	coord, err := NewCoordinator(paths, "http://127.0.0.1")
+	require.NoError(t, err)
+	require.True(t, coord.RollbackAfterFailure(&launcheripc.ErrorDetail{Code: launcheripc.ErrAppStartFailed, Message: "start failed"}))
+	require.Equal(t, "1.0.0", coord.Current().Version)
+	var persisted CurrentInfo
+	require.NoError(t, readStateJSON(paths.CurrentFile, &persisted))
+	require.Equal(t, "1.0.0", persisted.Version)
+	var persistedTask UpdateTaskState
+	require.NoError(t, readStateJSON(paths.UpdateTaskFile, &persistedTask))
+	require.Equal(t, "rolled_back", persistedTask.Phase)
 }

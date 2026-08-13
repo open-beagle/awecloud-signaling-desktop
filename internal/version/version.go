@@ -29,7 +29,7 @@ func GetVersion() string {
 
 // GetFullVersion 获取完整版本信息
 func GetFullVersion() string {
-	return fmt.Sprintf("%s (commit: %s, built: %s, build: %s)",
+	return fmt.Sprintf("%s (commit: %s, commit time: %s, build: %s)",
 		Version, GitCommit, BuildTime, BuildNumber)
 }
 

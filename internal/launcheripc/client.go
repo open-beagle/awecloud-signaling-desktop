@@ -9,9 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
-	"strconv"
 	"time"
 )
 
@@ -71,52 +69,23 @@ func (c *Client) SendAppReady(ctx context.Context, version string, pid int) erro
 	return c.postJSON(ctx, "/v1/session/app-ready", req, nil)
 }
 
-func (c *Client) SendServerHealthy(ctx context.Context, taskID, version string) error {
+func (c *Client) SendServerHealthy(ctx context.Context, operationID, version string) error {
 	req := ServerHealthyRequest{
 		SchemaVersion: SchemaVersion,
-		TaskID:        taskID,
+		OperationID:   operationID,
 		Version:       version,
 		HeartbeatAt:   time.Now().UTC(),
 	}
 	return c.postJSON(ctx, "/v1/session/server-healthy", req, nil)
 }
 
-func (c *Client) RequestUpdate(ctx context.Context, req *UpdateRequest) (*UpdateSnapshot, error) {
+func (c *Client) ApplyUpdate(ctx context.Context, req *UpdateApplyRequest) (*UpdateAccepted, error) {
 	req.SchemaVersion = SchemaVersion
-	var snapshot UpdateSnapshot
-	if err := c.postJSON(ctx, "/v1/updates/request", req, &snapshot); err != nil {
+	var accepted UpdateAccepted
+	if err := c.postJSON(ctx, "/v1/updates/apply", req, &accepted); err != nil {
 		return nil, err
 	}
-	return &snapshot, nil
-}
-
-func (c *Client) ConfirmUpdate(ctx context.Context, operationID string) error {
-	req := UpdateConfirmRequest{
-		SchemaVersion: SchemaVersion,
-		OperationID:   operationID,
-	}
-	return c.postJSON(ctx, "/v1/updates/confirm", req, nil)
-}
-
-func (c *Client) GetState(ctx context.Context) (*StateResponseData, error) {
-	var respData StateResponseData
-	if err := c.getJSON(ctx, "/v1/state", &respData); err != nil {
-		return nil, err
-	}
-	return &respData, nil
-}
-
-func (c *Client) GetEvents(ctx context.Context, afterSeq int64, waitSec int) (*EventsResponseData, error) {
-	query := url.Values{}
-	query.Set("after_sequence", strconv.FormatInt(afterSeq, 10))
-	query.Set("wait_seconds", strconv.Itoa(waitSec))
-	path := "/v1/events?" + query.Encode()
-
-	var respData EventsResponseData
-	if err := c.getJSON(ctx, path, &respData); err != nil {
-		return nil, err
-	}
-	return &respData, nil
+	return &accepted, nil
 }
 
 func (c *Client) postJSON(ctx context.Context, path string, reqBody any, outData any) error {
@@ -136,23 +105,6 @@ func (c *Client) postJSON(ctx context.Context, path string, reqBody any, outData
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("HTTP post failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	return parseCommonResponse(resp.Body, outData)
-}
-
-func (c *Client) getJSON(ctx context.Context, path string, outData any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+HostHeader+path, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Host", HostHeader)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("HTTP get failed: %w", err)
 	}
 	defer resp.Body.Close()
 

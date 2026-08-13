@@ -6,6 +6,10 @@
 // @ts-ignore: Unused imports
 import { Create as $Create } from "@wailsio/runtime";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as launcher$0 from "../launcher/models.js";
+
 /**
  * CreateLoginSessionResult 创建登录会话结果（暴露给前端）
  */
@@ -41,6 +45,66 @@ export class CreateLoginSessionResult {
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new CreateLoginSessionResult(/** @type {Partial<CreateLoginSessionResult>} */($$parsedSource));
+    }
+}
+
+export class DesktopUpdateState {
+    /**
+     * Creates a new DesktopUpdateState instance.
+     * @param {Partial<DesktopUpdateState>} [$$source = {}] - The source object to create the DesktopUpdateState.
+     */
+    constructor($$source = {}) {
+        if (!("current_version" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["current_version"] = "";
+        }
+        if (!("current_commit_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["current_commit_id"] = "";
+        }
+        if (!("current_commit_time" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["current_commit_time"] = "";
+        }
+        if (!("checked_at" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["checked_at"] = "";
+        }
+        if (!("manifest" in $$source)) {
+            /**
+             * @member
+             * @type {launcher$0.PublicManifest | null}
+             */
+            this["manifest"] = null;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DesktopUpdateState instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {DesktopUpdateState}
+     */
+    static createFrom($$source = {}) {
+        const $$createField4_0 = $$createType1;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("manifest" in $$parsedSource) {
+            $$parsedSource["manifest"] = $$createField4_0($$parsedSource["manifest"]);
+        }
+        return new DesktopUpdateState(/** @type {Partial<DesktopUpdateState>} */($$parsedSource));
     }
 }
 
@@ -206,7 +270,7 @@ export class DomainItem {
      * @returns {DomainItem}
      */
     static createFrom($$source = {}) {
-        const $$createField3_0 = $$createType0;
+        const $$createField3_0 = $$createType2;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("ssh_users" in $$parsedSource) {
             $$parsedSource["ssh_users"] = $$createField3_0($$parsedSource["ssh_users"]);
@@ -321,7 +385,7 @@ export class HostInfo {
      * @returns {HostInfo}
      */
     static createFrom($$source = {}) {
-        const $$createField3_0 = $$createType0;
+        const $$createField3_0 = $$createType2;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("ssh_users" in $$parsedSource) {
             $$parsedSource["ssh_users"] = $$createField3_0($$parsedSource["ssh_users"]);
@@ -373,7 +437,7 @@ export class KubeconfigResult {
      * @returns {KubeconfigResult}
      */
     static createFrom($$source = {}) {
-        const $$createField1_0 = $$createType0;
+        const $$createField1_0 = $$createType2;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("clusters" in $$parsedSource) {
             $$parsedSource["clusters"] = $$createField1_0($$parsedSource["clusters"]);
@@ -875,12 +939,12 @@ export class VersionInfo {
              */
             this["gitCommit"] = "";
         }
-        if (!("buildDate" in $$source)) {
+        if (!("commitTime" in $$source)) {
             /**
              * @member
              * @type {string}
              */
-            this["buildDate"] = "";
+            this["commitTime"] = "";
         }
         if (!("buildNumber" in $$source)) {
             /**
@@ -905,4 +969,6 @@ export class VersionInfo {
 }
 
 // Private type creation functions
-const $$createType0 = $Create.Array($Create.Any);
+const $$createType0 = launcher$0.PublicManifest.createFrom;
+const $$createType1 = $Create.Nullable($$createType0);
+const $$createType2 = $Create.Array($Create.Any);

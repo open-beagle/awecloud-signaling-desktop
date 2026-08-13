@@ -59,29 +59,34 @@ func readStateJSON[T any](filePath string, v *T) error {
 }
 
 type CurrentInfo struct {
-	SchemaVersion int                       `json:"schema_version"`
-	Version       string                    `json:"version"`
-	App           string                    `json:"app"`
+	SchemaVersion int                         `json:"schema_version"`
+	Version       string                      `json:"version"`
+	CommitID      string                      `json:"commit_id"`
+	CommitTime    string                      `json:"commit_time"`
+	App           string                      `json:"app"`
 	Artifact      launcheripc.ArtifactPayload `json:"artifact"`
-	InstalledAt   string                    `json:"installed_at"`
+	InstalledAt   string                      `json:"installed_at"`
 }
 
 type UpdateTaskState struct {
-	SchemaVersion int                       `json:"schema_version"`
-	OperationID   string                    `json:"operation_id"`
-	RequestID     string                    `json:"request_id"`
-	TaskID        *string                   `json:"task_id"`
-	Source        string                    `json:"source"`
-	TargetVersion string                    `json:"target_version"`
-	TargetApp     string                    `json:"target_app"`
-	Force         bool                      `json:"force"`
-	Phase         string                    `json:"phase"`
-	Progress      int                       `json:"progress"`
-	Sequence      int64                     `json:"sequence"`
-	Artifact      launcheripc.ArtifactPayload `json:"artifact"`
-	CreatedAt     string                    `json:"created_at"`
-	UpdatedAt     string                    `json:"updated_at"`
-	Error         *launcheripc.ErrorDetail  `json:"error"`
+	SchemaVersion    int                         `json:"schema_version"`
+	OperationID      string                      `json:"operation_id"`
+	RequestID        string                      `json:"request_id"`
+	TaskID           *string                     `json:"task_id"`
+	Source           string                      `json:"source"`
+	TargetVersion    string                      `json:"target_version"`
+	TargetCommitID   string                      `json:"target_commit_id"`
+	TargetCommitTime string                      `json:"target_commit_time"`
+	TargetApp        string                      `json:"target_app"`
+	Force            bool                        `json:"force"`
+	Phase            string                      `json:"phase"`
+	Sequence         int64                       `json:"sequence"`
+	Artifact         launcheripc.ArtifactPayload `json:"artifact"`
+	ReleaseNotes     string                      `json:"release_notes"`
+	Required         bool                        `json:"required"`
+	CreatedAt        string                      `json:"created_at"`
+	UpdatedAt        string                      `json:"updated_at"`
+	Error            *launcheripc.ErrorDetail    `json:"error"`
 }
 
 type HealthInfo struct {

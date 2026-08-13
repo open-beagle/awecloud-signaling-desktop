@@ -18,7 +18,7 @@ func NewProcessManager() *ProcessManager {
 	return &ProcessManager{}
 }
 
-func (pm *ProcessManager) StartApp(appPath, endpoint, token, expectedVersion, launcherPath string) (int, error) {
+func (pm *ProcessManager) StartApp(appPath, endpoint, token, expectedVersion, launcherPath, operationID string) (int, error) {
 	if _, err := os.Stat(appPath); err != nil {
 		return 0, fmt.Errorf("app executable not found: %w", err)
 	}
@@ -30,6 +30,7 @@ func (pm *ProcessManager) StartApp(appPath, endpoint, token, expectedVersion, la
 		fmt.Sprintf("%s=%s", launcheripc.EnvAppVersion, expectedVersion),
 		fmt.Sprintf("%s=%s", launcheripc.EnvLauncherPath, launcherPath),
 		fmt.Sprintf("%s=%d", launcheripc.EnvIPCVersion, launcheripc.IPCVersion),
+		fmt.Sprintf("%s=%s", launcheripc.EnvUpdateOperationID, operationID),
 	)
 
 	cmd.Stdout = os.Stdout

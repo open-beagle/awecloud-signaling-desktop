@@ -90,10 +90,59 @@ export class ArtifactPayload {
     }
 }
 
-export class UpdateRequest {
+export class UpdateAccepted {
     /**
-     * Creates a new UpdateRequest instance.
-     * @param {Partial<UpdateRequest>} [$$source = {}] - The source object to create the UpdateRequest.
+     * Creates a new UpdateAccepted instance.
+     * @param {Partial<UpdateAccepted>} [$$source = {}] - The source object to create the UpdateAccepted.
+     */
+    constructor($$source = {}) {
+        if (!("operation_id" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["operation_id"] = "";
+        }
+        if (!("phase" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["phase"] = "";
+        }
+        if (!("accepted" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["accepted"] = false;
+        }
+        if (!("duplicate" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["duplicate"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new UpdateAccepted instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {UpdateAccepted}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new UpdateAccepted(/** @type {Partial<UpdateAccepted>} */($$parsedSource));
+    }
+}
+
+export class UpdateApplyRequest {
+    /**
+     * Creates a new UpdateApplyRequest instance.
+     * @param {Partial<UpdateApplyRequest>} [$$source = {}] - The source object to create the UpdateApplyRequest.
      */
     constructor($$source = {}) {
         if (!("schema_version" in $$source)) {
@@ -109,20 +158,6 @@ export class UpdateRequest {
              * @type {string}
              */
             this["request_id"] = "";
-        }
-        if (!("source" in $$source)) {
-            /**
-             * @member
-             * @type {string}
-             */
-            this["source"] = "";
-        }
-        if (!("task_id" in $$source)) {
-            /**
-             * @member
-             * @type {string | null}
-             */
-            this["task_id"] = null;
         }
         if (!("force" in $$source)) {
             /**
@@ -157,17 +192,17 @@ export class UpdateRequest {
     }
 
     /**
-     * Creates a new UpdateRequest instance from a string or object.
+     * Creates a new UpdateApplyRequest instance from a string or object.
      * @param {any} [$$source = {}]
-     * @returns {UpdateRequest}
+     * @returns {UpdateApplyRequest}
      */
     static createFrom($$source = {}) {
-        const $$createField7_0 = $$createType0;
+        const $$createField5_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("artifact" in $$parsedSource) {
-            $$parsedSource["artifact"] = $$createField7_0($$parsedSource["artifact"]);
+            $$parsedSource["artifact"] = $$createField5_0($$parsedSource["artifact"]);
         }
-        return new UpdateRequest(/** @type {Partial<UpdateRequest>} */($$parsedSource));
+        return new UpdateApplyRequest(/** @type {Partial<UpdateApplyRequest>} */($$parsedSource));
     }
 }
 

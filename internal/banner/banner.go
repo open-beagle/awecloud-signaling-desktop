@@ -25,7 +25,7 @@ func Print() {
 	// 版本信息（左对齐）
 	printKeyValue("Version", version.Version)
 	printKeyValue("Git Commit", version.GitCommit)
-	printKeyValue("Build Date", version.BuildTime)
+	printKeyValue("Commit Time", version.BuildTime)
 	printKeyValue("Go Version", runtime.Version())
 
 	// 底部边框

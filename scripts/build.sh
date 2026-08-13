@@ -44,7 +44,7 @@ fi
 BUILD_ADDRESS="${SIGNALING_ADDRESS}"
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo "0")
-BUILD_DATE=$(TZ=Asia/Shanghai date '+%Y-%m-%d_%H:%M:%S')
+COMMIT_TIME=$(git show -s --format=%cI HEAD 2>/dev/null || echo "unknown")
 
 # 目标平台
 PLATFORMS="${PLATFORMS:-windows/amd64}"  # 默认仅构建 Windows amd64
@@ -60,7 +60,7 @@ echo "Version:      ${BUILD_VERSION}"
 echo "Build Number: ${BUILD_NUMBER}"
 echo "Environment:  .env loaded"
 echo "Git Commit:   ${GIT_COMMIT}"
-echo "Build Date:   ${BUILD_DATE}"
+echo "Commit Time:  ${COMMIT_TIME}"
 echo "Platforms:    ${PLATFORMS}"
 echo ""
 
@@ -303,7 +303,7 @@ for PLATFORM in "${PLATFORM_ARRAY[@]}"; do
     # 注入版本信息到 version 包
     LDFLAGS="${LDFLAGS} -X 'github.com/open-beagle/awecloud-signaling-desktop/internal/version.Version=${BUILD_VERSION}'"
     LDFLAGS="${LDFLAGS} -X 'github.com/open-beagle/awecloud-signaling-desktop/internal/version.GitCommit=${GIT_COMMIT}'"
-    LDFLAGS="${LDFLAGS} -X 'github.com/open-beagle/awecloud-signaling-desktop/internal/version.BuildTime=${BUILD_DATE}'"
+    LDFLAGS="${LDFLAGS} -X 'github.com/open-beagle/awecloud-signaling-desktop/internal/version.BuildTime=${COMMIT_TIME}'"
     LDFLAGS="${LDFLAGS} -X 'github.com/open-beagle/awecloud-signaling-desktop/internal/version.BuildNumber=${BUILD_NUMBER}'"
     if [ -n "${BUILD_ADDRESS}" ]; then
         LDFLAGS="${LDFLAGS} -X 'github.com/open-beagle/awecloud-signaling-desktop/internal/config.buildAddress=${BUILD_ADDRESS}'"

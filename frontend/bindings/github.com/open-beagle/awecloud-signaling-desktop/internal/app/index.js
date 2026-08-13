@@ -9,6 +9,7 @@ export {
 
 export {
     CreateLoginSessionResult,
+    DesktopUpdateState,
     DeviceInfo,
     DomainItem,
     GRPCStatus,

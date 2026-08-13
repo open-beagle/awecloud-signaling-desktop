@@ -7,20 +7,15 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
 type CoordinatorHandler interface {
 	HandleConnect(ctx context.Context, req *ConnectRequest) (*ConnectResponseData, error)
-	HandleUpdateRequest(ctx context.Context, req *UpdateRequest) (*UpdateSnapshot, error)
-	HandleUpdateConfirm(ctx context.Context, req *UpdateConfirmRequest) error
+	HandleUpdateApply(ctx context.Context, req *UpdateApplyRequest) (*UpdateAccepted, error)
 	HandleAppReady(ctx context.Context, req *AppReadyRequest) error
 	HandleServerHealthy(ctx context.Context, req *ServerHealthyRequest) error
-	GetState(ctx context.Context) (*StateResponseData, error)
-	GetEvents(ctx context.Context, afterSeq int64, waitSec int) (*EventsResponseData, error)
 }
 
 type Server struct {
@@ -31,8 +26,6 @@ type Server struct {
 	listener    net.Listener
 	httpServer  *http.Server
 	cleanup     func() error
-	pollMu      sync.Mutex
-	hasActivePoll bool
 }
 
 func NewServer(endpoint, token string, expectedUID uint32, handler CoordinatorHandler) *Server {
@@ -54,12 +47,9 @@ func (s *Server) Start() error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/session/connect", s.handleConnect)
-	mux.HandleFunc("/v1/updates/request", s.handleUpdateRequest)
-	mux.HandleFunc("/v1/updates/confirm", s.handleUpdateConfirm)
+	mux.HandleFunc("/v1/updates/apply", s.handleUpdateApply)
 	mux.HandleFunc("/v1/session/app-ready", s.handleAppReady)
 	mux.HandleFunc("/v1/session/server-healthy", s.handleServerHealthy)
-	mux.HandleFunc("/v1/state", s.handleState)
-	mux.HandleFunc("/v1/events", s.handleEvents)
 
 	handler := s.authMiddleware(s.browserCheckMiddleware(mux))
 
@@ -139,17 +129,17 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	s.writeSuccess(w, http.StatusOK, data)
 }
 
-func (s *Server) handleUpdateRequest(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleUpdateApply(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		s.writeError(w, http.StatusMethodNotAllowed, ErrInvalidRequest, "method not allowed")
 		return
 	}
-	var req UpdateRequest
+	var req UpdateApplyRequest
 	if err := ReadRequestJSON(r, &req); err != nil {
 		s.writeError(w, http.StatusBadRequest, ErrInvalidRequest, err.Error())
 		return
 	}
-	snapshot, err := s.coordinator.HandleUpdateRequest(r.Context(), &req)
+	accepted, err := s.coordinator.HandleUpdateApply(r.Context(), &req)
 	if err != nil {
 		if strings.Contains(err.Error(), "in progress") {
 			s.writeError(w, http.StatusConflict, ErrUpdateInProgress, err.Error())
@@ -158,28 +148,7 @@ func (s *Server) handleUpdateRequest(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusBadRequest, ErrInvalidRequest, err.Error())
 		return
 	}
-	s.writeSuccess(w, http.StatusOK, map[string]any{
-		"operation_id": snapshot.OperationID,
-		"phase":        snapshot.Phase,
-		"duplicate":    false,
-	})
-}
-
-func (s *Server) handleUpdateConfirm(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		s.writeError(w, http.StatusMethodNotAllowed, ErrInvalidRequest, "method not allowed")
-		return
-	}
-	var req UpdateConfirmRequest
-	if err := ReadRequestJSON(r, &req); err != nil {
-		s.writeError(w, http.StatusBadRequest, ErrInvalidRequest, err.Error())
-		return
-	}
-	if err := s.coordinator.HandleUpdateConfirm(r.Context(), &req); err != nil {
-		s.writeError(w, http.StatusConflict, ErrInvalidRequest, err.Error())
-		return
-	}
-	s.writeSuccess(w, http.StatusOK, nil)
+	s.writeSuccess(w, http.StatusOK, accepted)
 }
 
 func (s *Server) handleAppReady(w http.ResponseWriter, r *http.Request) {
@@ -214,57 +183,6 @@ func (s *Server) handleServerHealthy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.writeSuccess(w, http.StatusOK, nil)
-}
-
-func (s *Server) handleState(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		s.writeError(w, http.StatusMethodNotAllowed, ErrInvalidRequest, "method not allowed")
-		return
-	}
-	data, err := s.coordinator.GetState(r.Context())
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, ErrInvalidRequest, err.Error())
-		return
-	}
-	s.writeSuccess(w, http.StatusOK, data)
-}
-
-func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		s.writeError(w, http.StatusMethodNotAllowed, ErrInvalidRequest, "method not allowed")
-		return
-	}
-
-	s.pollMu.Lock()
-	if s.hasActivePoll {
-		s.pollMu.Unlock()
-		s.writeError(w, http.StatusConflict, ErrConcurrentPoll, "another poll is already active")
-		return
-	}
-	s.hasActivePoll = true
-	s.pollMu.Unlock()
-
-	defer func() {
-		s.pollMu.Lock()
-		s.hasActivePoll = false
-		s.pollMu.Unlock()
-	}()
-
-	afterSeq, _ := strconv.ParseInt(r.URL.Query().Get("after_sequence"), 10, 64)
-	waitSec, _ := strconv.Atoi(r.URL.Query().Get("wait_seconds"))
-	if waitSec < 0 {
-		waitSec = 0
-	}
-	if waitSec > 25 {
-		waitSec = 25
-	}
-
-	data, err := s.coordinator.GetEvents(r.Context(), afterSeq, waitSec)
-	if err != nil {
-		s.writeError(w, http.StatusInternalServerError, ErrInvalidRequest, err.Error())
-		return
-	}
-	s.writeSuccess(w, http.StatusOK, data)
 }
 
 func (s *Server) writeSuccess(w http.ResponseWriter, status int, data any) {

@@ -19,16 +19,15 @@ type Coordinator struct {
 	sessionID     string
 	launcherPID   int
 	currentAppPID int
+	appReadyPID   int
 	mu            sync.Mutex
-	eventCond     *sync.Cond
-	events        []launcheripc.IPCEvent
-	nextSeq       int64
 	current       *CurrentInfo
 	previous      *CurrentInfo
 	task          *UpdateTaskState
 	health        *HealthInfo
-	appReadyCh    chan struct{}
-	restartCh     chan struct{}
+	acceptedCh    chan struct{}
+	rollbackCh    chan struct{}
+	healthRun     uint64
 }
 
 func NewCoordinator(paths *Paths, serverAddress string) (*Coordinator, error) {
@@ -37,11 +36,9 @@ func NewCoordinator(paths *Paths, serverAddress string) (*Coordinator, error) {
 		serverAddress: serverAddress,
 		sessionID:     fmt.Sprintf("session-%d", time.Now().UnixNano()),
 		launcherPID:   os.Getpid(),
-		appReadyCh:    make(chan struct{}, 1),
-		restartCh:     make(chan struct{}, 1),
+		acceptedCh:    make(chan struct{}, 1),
+		rollbackCh:    make(chan struct{}, 1),
 	}
-	c.eventCond = sync.NewCond(&c.mu)
-
 	if err := c.reloadState(); err != nil {
 		return nil, err
 	}
@@ -53,20 +50,14 @@ func (c *Coordinator) reloadState() error {
 	if err := readStateJSON(c.paths.CurrentFile, &current); err == nil {
 		c.current = &current
 	}
-
 	var previous CurrentInfo
 	if err := readStateJSON(c.paths.PreviousFile, &previous); err == nil {
 		c.previous = &previous
 	}
-
 	var task UpdateTaskState
 	if err := readStateJSON(c.paths.UpdateTaskFile, &task); err == nil {
 		c.task = &task
-		c.nextSeq = task.Sequence + 1
-	} else {
-		c.nextSeq = 1
 	}
-
 	var health HealthInfo
 	if err := readStateJSON(c.paths.HealthFile, &health); err == nil {
 		c.health = &health
@@ -74,188 +65,206 @@ func (c *Coordinator) reloadState() error {
 	return nil
 }
 
-func (c *Coordinator) HandleConnect(ctx context.Context, req *launcheripc.ConnectRequest) (*launcheripc.ConnectResponseData, error) {
+func (c *Coordinator) HandleConnect(_ context.Context, req *launcheripc.ConnectRequest) (*launcheripc.ConnectResponseData, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
+	if req.PID <= 0 {
+		return nil, errors.New("Desktop App PID is invalid")
+	}
+	if c.current != nil && !sameVersion(req.Version, c.current.Version) {
+		return nil, errors.New("Desktop App version does not match current version")
+	}
 	c.currentAppPID = req.PID
-
-	var updateSnap *launcheripc.UpdateSnapshot
-	if c.task != nil {
-		updateSnap = &launcheripc.UpdateSnapshot{
-			OperationID: c.task.OperationID,
-			Phase:       c.task.Phase,
-			Progress:    c.task.Progress,
-			Error:       c.task.Error,
-		}
-	}
-
-	expectedVer := "1.0.0"
+	expectedVersion := "1.0.0"
 	if c.current != nil {
-		expectedVer = c.current.Version
+		expectedVersion = c.current.Version
 	}
-
 	return &launcheripc.ConnectResponseData{
 		SessionID:       c.sessionID,
 		LauncherPID:     c.launcherPID,
-		ExpectedVersion: expectedVer,
+		ExpectedVersion: expectedVersion,
 		Recovered:       false,
-		NextEventSeq:    c.nextSeq,
-		Update:          updateSnap,
 	}, nil
 }
 
-func (c *Coordinator) HandleUpdateRequest(ctx context.Context, req *launcheripc.UpdateRequest) (*launcheripc.UpdateSnapshot, error) {
+func (c *Coordinator) HandleUpdateApply(ctx context.Context, req *launcheripc.UpdateApplyRequest) (*launcheripc.UpdateAccepted, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.task != nil && (c.task.Phase != "succeeded" && c.task.Phase != "failed" && c.task.Phase != "rolled_back") {
-		if req.TaskID != nil && c.task.TaskID != nil && *req.TaskID == *c.task.TaskID {
-			return &launcheripc.UpdateSnapshot{
-				OperationID: c.task.OperationID,
-				Phase:       c.task.Phase,
-				Progress:    c.task.Progress,
-				Error:       c.task.Error,
-			}, nil
+	if c.task != nil && !terminalPhase(c.task.Phase) {
+		if req.RequestID == c.task.RequestID {
+			accepted := acceptedFromTask(c.task, true)
+			c.mu.Unlock()
+			return accepted, nil
 		}
+		c.mu.Unlock()
 		return nil, errors.New("update in progress")
 	}
-
-	if req.TargetVersion == "latest" || req.Artifact.SHA256 == "" {
-		currentVersion, currentSHA := "", ""
-		if c.current != nil {
-			currentVersion, currentSHA = c.current.Version, c.current.Artifact.SHA256
-		}
-		manifest, err := FetchPublicManifest(ctx, c.serverAddress, currentVersion, currentSHA)
-		if err != nil {
-			return nil, err
-		}
-		if strings.EqualFold(currentSHA, manifest.Artifacts.App.SHA256) {
-			return nil, errors.New("Desktop App is already current")
-		}
-		req.TargetVersion = manifest.Release.Version
-		req.Artifact = *manifest.Artifacts.App
+	if c.current == nil || c.currentAppPID <= 0 {
+		c.mu.Unlock()
+		return nil, errors.New("current Desktop App session is unavailable")
 	}
+	current := *c.current
+	c.mu.Unlock()
 
-	opID := req.RequestID
-	if req.TaskID != nil && *req.TaskID != "" {
-		opID = *req.TaskID
-	}
-
-	targetApp := c.paths.ArtifactAppName(req.TargetVersion, req.Artifact.SHA256)
-
-	c.task = &UpdateTaskState{
-		SchemaVersion: 1,
-		OperationID:   opID,
-		RequestID:     req.RequestID,
-		TaskID:        req.TaskID,
-		Source:        req.Source,
-		TargetVersion: req.TargetVersion,
-		TargetApp:     targetApp,
-		Force:         req.Force,
-		Phase:         "accepted",
-		Progress:      0,
-		Sequence:      c.nextSeq,
-		Artifact:      req.Artifact,
-		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
-		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
-	}
-	c.nextSeq++
-
-	_ = atomicWriteJSON(c.paths.UpdateTaskFile, c.task)
-	c.broadcastEventLocked("update_progress", map[string]any{"phase": "accepted", "progress": 0})
-
-	go c.runBackgroundDownload(req.Artifact)
-
-	return &launcheripc.UpdateSnapshot{
-		OperationID: opID,
-		Phase:       "accepted",
-		Progress:    0,
-	}, nil
-}
-
-func (c *Coordinator) runBackgroundDownload(art launcheripc.ArtifactPayload) {
-	c.updatePhase("downloading", 10, nil)
-
-	res, err := DownloadAndVerifyArtifact(context.Background(), c.paths.DownloadsDir, &art, func(p int) {
-		c.updatePhase("downloading", p, nil)
-	})
-
+	manifest, err := FetchPublicManifest(ctx, c.serverAddress)
 	if err != nil {
-		c.updatePhase("failed", 0, &launcheripc.ErrorDetail{Code: launcheripc.ErrDownloadFailed, Message: err.Error()})
-		return
+		return nil, err
+	}
+	manifest.Update = EvaluateDesktopUpdate(current.Version, current.CommitID, manifest)
+	if !manifest.Update.Available || strings.EqualFold(current.Artifact.SHA256, manifest.Artifacts.App.SHA256) {
+		return nil, errors.New("Desktop App is already current")
+	}
+	if req.TargetVersion != "" && req.TargetVersion != manifest.Release.Version {
+		return nil, errors.New("requested Desktop version does not match public manifest")
+	}
+	if req.Artifact.ID != manifest.Artifacts.App.ID || !strings.EqualFold(req.Artifact.SHA256, manifest.Artifacts.App.SHA256) {
+		return nil, errors.New("requested Desktop artifact does not match public manifest")
 	}
 
-	c.updatePhase("verifying", 90, nil)
-
-	appDst := filepath.Join(c.paths.VersionsDir, c.task.TargetApp)
-	_ = os.Remove(appDst)
-	if err := os.Rename(res.PartPath, appDst); err != nil {
-		c.updatePhase("failed", 0, &launcheripc.ErrorDetail{Code: launcheripc.ErrInstallFailed, Message: err.Error()})
-		return
+	now := time.Now().UTC().Format(time.RFC3339)
+	task := &UpdateTaskState{
+		SchemaVersion:    1,
+		OperationID:      req.RequestID,
+		RequestID:        req.RequestID,
+		Source:           "manual",
+		TargetVersion:    manifest.Release.Version,
+		TargetCommitID:   manifest.Release.CommitID,
+		TargetCommitTime: manifest.Release.PublishedAt,
+		TargetApp:        c.paths.ArtifactAppName(manifest.Release.Version, manifest.Artifacts.App.SHA256),
+		Force:            req.Force,
+		Phase:            "waiting_for_exit",
+		Artifact:         *manifest.Artifacts.App,
+		ReleaseNotes:     manifest.Release.ReleaseNotes,
+		Required:         manifest.Update.Required || req.Force,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
-	_ = os.Chmod(appDst, 0755)
+	if err := atomicWriteJSON(c.paths.UpdateTaskFile, task); err != nil {
+		return nil, err
+	}
 
-	c.updatePhase("staged", 100, nil)
+	c.mu.Lock()
+	c.task = task
+	c.mu.Unlock()
+	select {
+	case c.acceptedCh <- struct{}{}:
+	default:
+	}
+	return acceptedFromTask(task, false), nil
 }
 
-func (c *Coordinator) updatePhase(phase string, progress int, errDetail *launcheripc.ErrorDetail) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.task == nil {
-		return
-	}
-
-	c.task.Phase = phase
-	c.task.Progress = progress
-	c.task.Error = errDetail
-	c.task.Sequence = c.nextSeq
-	c.nextSeq++
-	c.task.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-
-	_ = atomicWriteJSON(c.paths.UpdateTaskFile, c.task)
-
-	if phase == "failed" || phase == "succeeded" || phase == "rolled_back" {
-		c.broadcastEventLocked("update_result", map[string]any{"result": phase, "error": errDetail})
-	} else {
-		c.broadcastEventLocked("update_progress", map[string]any{"phase": phase, "progress": progress})
+func acceptedFromTask(task *UpdateTaskState, duplicate bool) *launcheripc.UpdateAccepted {
+	return &launcheripc.UpdateAccepted{
+		OperationID: task.OperationID,
+		Phase:       task.Phase,
+		Accepted:    true,
+		Duplicate:   duplicate,
 	}
 }
 
-func (c *Coordinator) HandleUpdateConfirm(ctx context.Context, req *launcheripc.UpdateConfirmRequest) error {
+func terminalPhase(phase string) bool {
+	return phase == "succeeded" || phase == "failed" || phase == "rolled_back"
+}
+
+func (c *Coordinator) UpdateAccepted() <-chan struct{}    { return c.acceptedCh }
+func (c *Coordinator) RollbackRequested() <-chan struct{} { return c.rollbackCh }
+
+func (c *Coordinator) HasAcceptedUpdate() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.task != nil && c.task.Phase == "waiting_for_exit"
+}
 
-	if c.task == nil || c.task.Phase != "staged" {
-		return errors.New("update task is not in staged phase")
+func (c *Coordinator) CancelAcceptedUpdate(detail *launcheripc.ErrorDetail) {
+	c.setTaskFailure("failed", detail)
+}
+
+func (c *Coordinator) ExecuteAcceptedUpdate(ctx context.Context) error {
+	c.mu.Lock()
+	if c.task == nil || c.task.Phase != "waiting_for_exit" {
+		c.mu.Unlock()
+		return errors.New("no accepted Desktop update is waiting for exit")
+	}
+	artifact := c.task.Artifact
+	targetApp := c.task.TargetApp
+	c.mu.Unlock()
+
+	c.setTaskPhase("downloading")
+	result, err := DownloadAndVerifyArtifact(ctx, c.paths.DownloadsDir, &artifact, nil)
+	if err != nil {
+		c.setTaskFailure("failed", &launcheripc.ErrorDetail{Code: launcheripc.ErrDownloadFailed, Message: err.Error()})
+		return err
+	}
+	c.setTaskPhase("verifying")
+	appDestination := filepath.Join(c.paths.VersionsDir, targetApp)
+	if err := os.Remove(appDestination); err != nil && !os.IsNotExist(err) {
+		_ = os.Remove(result.PartPath)
+		c.setTaskFailure("failed", &launcheripc.ErrorDetail{Code: launcheripc.ErrInstallFailed, Message: err.Error()})
+		return err
+	}
+	if err := os.Rename(result.PartPath, appDestination); err != nil {
+		_ = os.Remove(result.PartPath)
+		c.setTaskFailure("failed", &launcheripc.ErrorDetail{Code: launcheripc.ErrInstallFailed, Message: err.Error()})
+		return err
+	}
+	if err := os.Chmod(appDestination, 0700); err != nil {
+		c.setTaskFailure("failed", &launcheripc.ErrorDetail{Code: launcheripc.ErrInstallFailed, Message: err.Error()})
+		return err
 	}
 
-	if req.OperationID != c.task.OperationID {
-		return errors.New("update operation does not match staged task")
-	}
-	if c.current == nil {
-		return errors.New("current Desktop App state is unavailable")
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.current == nil || c.task == nil {
+		return errors.New("Desktop update state disappeared during installation")
 	}
 	previous := *c.current
-	next := CurrentInfo{SchemaVersion: 1, Version: c.task.TargetVersion, App: c.task.TargetApp, Artifact: c.task.Artifact, InstalledAt: time.Now().UTC().Format(time.RFC3339)}
+	next := CurrentInfo{
+		SchemaVersion: 1,
+		Version:       c.task.TargetVersion,
+		CommitID:      c.task.TargetCommitID,
+		CommitTime:    c.task.TargetCommitTime,
+		App:           c.task.TargetApp,
+		Artifact:      c.task.Artifact,
+		InstalledAt:   time.Now().UTC().Format(time.RFC3339),
+	}
 	if err := atomicWriteJSON(c.paths.PreviousFile, &previous); err != nil {
 		return err
 	}
 	if err := atomicWriteJSON(c.paths.CurrentFile, &next); err != nil {
 		return err
 	}
-	c.previous, c.current = &previous, &next
 	c.task.Phase = "restarting"
-	_ = atomicWriteJSON(c.paths.UpdateTaskFile, c.task)
-	select {
-	case c.restartCh <- struct{}{}:
-	default:
+	c.task.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := atomicWriteJSON(c.paths.UpdateTaskFile, c.task); err != nil {
+		_ = atomicWriteJSON(c.paths.CurrentFile, &previous)
+		return err
 	}
+	c.previous, c.current = &previous, &next
 	return nil
 }
 
-func (c *Coordinator) RestartRequested() <-chan struct{} { return c.restartCh }
+func (c *Coordinator) setTaskPhase(phase string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.task == nil {
+		return
+	}
+	c.task.Phase = phase
+	c.task.Error = nil
+	c.task.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	_ = atomicWriteJSON(c.paths.UpdateTaskFile, c.task)
+}
+
+func (c *Coordinator) setTaskFailure(phase string, detail *launcheripc.ErrorDetail) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.task == nil {
+		return
+	}
+	c.task.Phase = phase
+	c.task.Error = detail
+	c.task.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	_ = atomicWriteJSON(c.paths.UpdateTaskFile, c.task)
+}
 
 func (c *Coordinator) Current() *CurrentInfo {
 	c.mu.Lock()
@@ -267,109 +276,134 @@ func (c *Coordinator) Current() *CurrentInfo {
 	return &current
 }
 
-func (c *Coordinator) HandleAppReady(ctx context.Context, req *launcheripc.AppReadyRequest) error {
+func (c *Coordinator) OperationForApp(current *CurrentInfo) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if current == nil || c.task == nil || c.task.Phase != "restarting" || !sameVersion(current.Version, c.task.TargetVersion) {
+		return ""
+	}
+	return c.task.OperationID
+}
+
+func (c *Coordinator) BeginAppRun(current *CurrentInfo, pid int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if current == nil || c.task == nil || c.task.Phase != "restarting" || !sameVersion(current.Version, c.task.TargetVersion) {
+		return
+	}
+	c.healthRun++
+	run := c.healthRun
+	now := time.Now().UTC()
+	deadline := now.Add(90 * time.Second)
+	c.health = &HealthInfo{
+		SchemaVersion: 1, OperationID: c.task.OperationID, TargetVersion: current.Version,
+		TargetApp: current.App, PID: pid, Status: "observing",
+		StartedAt: now.Format(time.RFC3339), StartupDeadlineAt: deadline.Format(time.RFC3339),
+	}
+	_ = atomicWriteJSON(c.paths.HealthFile, c.health)
+	if c.appReadyPID == pid {
+		c.markLocallyHealthyLocked()
+	}
+	go func() {
+		timer := time.NewTimer(time.Until(deadline))
+		defer timer.Stop()
+		<-timer.C
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if c.healthRun == run && c.health != nil && c.health.Status == "observing" {
+			c.rollbackLocked(&launcheripc.ErrorDetail{Code: launcheripc.ErrAppReadyTimeout, Message: "new Desktop App did not become healthy within 90 seconds"})
+		}
+	}()
+}
+
+func (c *Coordinator) RollbackAfterFailure(detail *launcheripc.ErrorDetail) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.task == nil || (c.task.Phase != "restarting" && c.task.Phase != "locally_healthy") || c.previous == nil {
+		return false
+	}
+	c.rollbackLocked(detail)
 	select {
-	case c.appReadyCh <- struct{}{}:
+	case <-c.rollbackCh:
 	default:
 	}
-	return nil
+	return true
 }
 
-func (c *Coordinator) HandleServerHealthy(ctx context.Context, req *launcheripc.ServerHealthyRequest) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.task != nil && (c.task.Phase == "restarting" || c.task.Phase == "locally_healthy") {
-		c.task.Phase = "succeeded"
-		c.task.Progress = 100
-		c.task.Sequence = c.nextSeq
-		c.nextSeq++
+func (c *Coordinator) rollbackLocked(detail *launcheripc.ErrorDetail) {
+	if c.previous == nil || c.task == nil {
+		return
+	}
+	previous := *c.previous
+	if err := atomicWriteJSON(c.paths.CurrentFile, &previous); err != nil {
+		c.task.Phase = "failed"
+		c.task.Error = &launcheripc.ErrorDetail{Code: launcheripc.ErrRollbackFailed, Message: err.Error()}
 		_ = atomicWriteJSON(c.paths.UpdateTaskFile, c.task)
-		c.broadcastEventLocked("update_result", map[string]any{"result": "succeeded", "error": nil})
+		return
+	}
+	c.current = &previous
+	c.healthRun++
+	now := time.Now().UTC().Format(time.RFC3339)
+	c.health = &HealthInfo{SchemaVersion: 1, OperationID: c.task.OperationID, TargetVersion: c.task.TargetVersion, TargetApp: c.task.TargetApp, Status: "rolled_back", StartedAt: now, StartupDeadlineAt: now, Failure: detail}
+	c.task.Phase = "rolled_back"
+	c.task.Error = detail
+	c.task.UpdatedAt = now
+	_ = atomicWriteJSON(c.paths.HealthFile, c.health)
+	_ = atomicWriteJSON(c.paths.UpdateTaskFile, c.task)
+	select {
+	case c.rollbackCh <- struct{}{}:
+	default:
+	}
+}
+
+func (c *Coordinator) HandleAppReady(_ context.Context, req *launcheripc.AppReadyRequest) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.current == nil || !sameVersion(req.Version, c.current.Version) || req.PID != c.currentAppPID {
+		return errors.New("Desktop App ready identity does not match current process")
+	}
+	c.appReadyPID = req.PID
+	if c.task != nil && c.task.Phase == "restarting" && c.health != nil {
+		c.markLocallyHealthyLocked()
 	}
 	return nil
 }
 
-func (c *Coordinator) GetState(ctx context.Context) (*launcheripc.StateResponseData, error) {
+func (c *Coordinator) markLocallyHealthyLocked() {
+	if c.task == nil || c.health == nil || c.task.Phase != "restarting" {
+		return
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	c.health.AppReadyAt = &now
+	c.task.Phase = "locally_healthy"
+	c.task.UpdatedAt = now
+	_ = atomicWriteJSON(c.paths.HealthFile, c.health)
+	_ = atomicWriteJSON(c.paths.UpdateTaskFile, c.task)
+}
+
+func (c *Coordinator) HandleServerHealthy(_ context.Context, req *launcheripc.ServerHealthyRequest) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-
-	curVer := "1.0.0"
-	if c.current != nil {
-		curVer = c.current.Version
+	if c.task == nil || c.task.Phase != "locally_healthy" {
+		return nil
 	}
-
-	var updateSnap *launcheripc.UpdateSnapshot
-	if c.task != nil {
-		updateSnap = &launcheripc.UpdateSnapshot{
-			OperationID: c.task.OperationID,
-			Phase:       c.task.Phase,
-			Progress:    c.task.Progress,
-			Error:       c.task.Error,
-		}
+	if req.OperationID != c.task.OperationID || !sameVersion(req.Version, c.task.TargetVersion) {
+		return errors.New("healthy Desktop App identity does not match active update")
 	}
-
-	status := "healthy"
+	now := time.Now().UTC().Format(time.RFC3339)
+	c.task.Phase = "succeeded"
+	c.task.UpdatedAt = now
+	c.task.Error = nil
+	_ = atomicWriteJSON(c.paths.UpdateTaskFile, c.task)
 	if c.health != nil {
-		status = c.health.Status
+		c.health.Status = "healthy"
+		c.health.ServerHealthyAt = &now
+		_ = atomicWriteJSON(c.paths.HealthFile, c.health)
 	}
-
-	return &launcheripc.StateResponseData{
-		SessionID:      c.sessionID,
-		CurrentVersion: curVer,
-		Health:         launcheripc.HealthStatus{Status: status},
-		Update:         updateSnap,
-	}, nil
+	c.healthRun++
+	return nil
 }
 
-func (c *Coordinator) GetEvents(ctx context.Context, afterSeq int64, waitSec int) (*launcheripc.EventsResponseData, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	resEvents := make([]launcheripc.IPCEvent, 0)
-	for _, e := range c.events {
-		if e.Sequence > afterSeq {
-			resEvents = append(resEvents, e)
-		}
-	}
-
-	if len(resEvents) > 0 || waitSec == 0 {
-		return &launcheripc.EventsResponseData{
-			SessionID:   c.sessionID,
-			CursorReset: afterSeq > c.nextSeq,
-			Events:      resEvents,
-		}, nil
-	}
-
-	// Long poll wait up to waitSec
-	c.eventCond.Wait()
-
-	for _, e := range c.events {
-		if e.Sequence > afterSeq {
-			resEvents = append(resEvents, e)
-		}
-	}
-
-	return &launcheripc.EventsResponseData{
-		SessionID:   c.sessionID,
-		CursorReset: false,
-		Events:      resEvents,
-	}, nil
-}
-
-func (c *Coordinator) broadcastEventLocked(eventType string, data any) {
-	opID := ""
-	if c.task != nil {
-		opID = c.task.OperationID
-	}
-
-	evt := launcheripc.IPCEvent{
-		Sequence:    c.nextSeq - 1,
-		Type:        eventType,
-		CreatedAt:   time.Now().UTC(),
-		OperationID: opID,
-		Data:        data,
-	}
-	c.events = append(c.events, evt)
-	c.eventCond.Broadcast()
+func sameVersion(left, right string) bool {
+	return strings.TrimPrefix(strings.TrimSpace(left), "v") == strings.TrimPrefix(strings.TrimSpace(right), "v")
 }

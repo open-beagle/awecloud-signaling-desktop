@@ -3,11 +3,12 @@ package launcheripc
 import "time"
 
 const (
-	EnvLauncherEndpoint = "BEAGLE_SIGNAL_LAUNCHER_ENDPOINT"
-	EnvLauncherToken    = "BEAGLE_SIGNAL_LAUNCHER_TOKEN"
-	EnvAppVersion       = "BEAGLE_SIGNAL_APP_VERSION"
-	EnvLauncherPath     = "BEAGLE_SIGNAL_LAUNCHER_PATH"
-	EnvIPCVersion       = "BEAGLE_SIGNAL_IPC_VERSION"
+	EnvLauncherEndpoint  = "BEAGLE_SIGNAL_LAUNCHER_ENDPOINT"
+	EnvLauncherToken     = "BEAGLE_SIGNAL_LAUNCHER_TOKEN"
+	EnvAppVersion        = "BEAGLE_SIGNAL_APP_VERSION"
+	EnvLauncherPath      = "BEAGLE_SIGNAL_LAUNCHER_PATH"
+	EnvIPCVersion        = "BEAGLE_SIGNAL_IPC_VERSION"
+	EnvUpdateOperationID = "BEAGLE_SIGNAL_UPDATE_OPERATION_ID"
 )
 
 const (
@@ -22,7 +23,6 @@ const (
 	ErrUnsupportedIPCVersion    = "unsupported_ipc_version"
 	ErrIPCConnectTimeout        = "ipc_connect_timeout"
 	ErrSessionMismatch          = "session_mismatch"
-	ErrConcurrentPoll           = "concurrent_poll"
 	ErrIPCRecoveryFailed        = "ipc_recovery_failed"
 	ErrLauncherUpdateRequired   = "launcher_update_required"
 	ErrUpdateInProgress         = "update_in_progress"
@@ -60,20 +60,11 @@ type ConnectRequest struct {
 	ProcessStartedAt string `json:"process_started_at"`
 }
 
-type UpdateSnapshot struct {
-	OperationID string       `json:"operation_id"`
-	Phase       string       `json:"phase"`
-	Progress    int          `json:"progress"`
-	Error       *ErrorDetail `json:"error"`
-}
-
 type ConnectResponseData struct {
-	SessionID       string          `json:"session_id"`
-	LauncherPID     int             `json:"launcher_pid"`
-	ExpectedVersion string          `json:"expected_version"`
-	Recovered       bool            `json:"recovered"`
-	NextEventSeq    int64           `json:"next_event_sequence"`
-	Update          *UpdateSnapshot `json:"update"`
+	SessionID       string `json:"session_id"`
+	LauncherPID     int    `json:"launcher_pid"`
+	ExpectedVersion string `json:"expected_version"`
+	Recovered       bool   `json:"recovered"`
 }
 
 type ArtifactPayload struct {
@@ -88,20 +79,20 @@ type ArtifactPayload struct {
 	SHA256      string `json:"sha256"`
 }
 
-type UpdateRequest struct {
+type UpdateApplyRequest struct {
 	SchemaVersion int             `json:"schema_version"`
 	RequestID     string          `json:"request_id"`
-	Source        string          `json:"source"`
-	TaskID        *string         `json:"task_id"`
 	Force         bool            `json:"force"`
 	TargetVersion string          `json:"target_version"`
 	Manifest      any             `json:"manifest"`
 	Artifact      ArtifactPayload `json:"artifact"`
 }
 
-type UpdateConfirmRequest struct {
-	SchemaVersion int    `json:"schema_version"`
-	OperationID   string `json:"operation_id"`
+type UpdateAccepted struct {
+	OperationID string `json:"operation_id"`
+	Phase       string `json:"phase"`
+	Accepted    bool   `json:"accepted"`
+	Duplicate   bool   `json:"duplicate"`
 }
 
 type AppReadyRequest struct {
@@ -113,32 +104,7 @@ type AppReadyRequest struct {
 
 type ServerHealthyRequest struct {
 	SchemaVersion int       `json:"schema_version"`
-	TaskID        string    `json:"task_id"`
+	OperationID   string    `json:"operation_id"`
 	Version       string    `json:"version"`
 	HeartbeatAt   time.Time `json:"heartbeat_at"`
-}
-
-type HealthStatus struct {
-	Status string `json:"status"`
-}
-
-type StateResponseData struct {
-	SessionID      string          `json:"session_id"`
-	CurrentVersion string          `json:"current_version"`
-	Health         HealthStatus    `json:"health"`
-	Update         *UpdateSnapshot `json:"update"`
-}
-
-type IPCEvent struct {
-	Sequence    int64     `json:"sequence"`
-	Type        string    `json:"type"`
-	CreatedAt   time.Time `json:"created_at"`
-	OperationID string    `json:"operation_id"`
-	Data        any       `json:"data"`
-}
-
-type EventsResponseData struct {
-	SessionID   string     `json:"session_id"`
-	CursorReset bool       `json:"cursor_reset"`
-	Events      []IPCEvent `json:"events"`
 }

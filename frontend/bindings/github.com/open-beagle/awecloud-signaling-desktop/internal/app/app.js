@@ -29,11 +29,30 @@ import * as application$0 from "../../../../wailsapp/wails/v3/pkg/application/mo
 import * as $models from "./models.js";
 
 /**
+ * @param {launcheripc$0.UpdateApplyRequest | null} req
+ * @returns {$CancellablePromise<launcheripc$0.UpdateAccepted | null>}
+ */
+export function ApplyDesktopUpdate(req) {
+    return $Call.ByID(4051350032, req).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType1($result);
+    }));
+}
+
+/**
+ * @returns {$CancellablePromise<$models.DesktopUpdateState | null>}
+ */
+export function CheckDesktopUpdate() {
+    return $Call.ByID(3448553140).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType3($result);
+    }));
+}
+
+/**
  * @returns {$CancellablePromise<$models.SavedCredentials | null>}
  */
 export function CheckSavedCredentials() {
     return $Call.ByID(130989340).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType1($result);
+        return $$createType5($result);
     }));
 }
 
@@ -43,7 +62,7 @@ export function CheckSavedCredentials() {
  */
 export function CheckVersion() {
     return $Call.ByID(3213254289).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType3($result);
+        return $$createType7($result);
     }));
 }
 
@@ -60,14 +79,6 @@ export function ClearCredentials() {
  */
 export function CloseLoginWindow() {
     return $Call.ByID(4198148980);
-}
-
-/**
- * @param {string} operationID
- * @returns {$CancellablePromise<void>}
- */
-export function ConfirmIPCUpdate(operationID) {
-    return $Call.ByID(2394152566, operationID);
 }
 
 /**
@@ -88,7 +99,7 @@ export function ConnectService(serviceID) {
  */
 export function CreateLoginSession(serverAddr, usernameHint) {
     return $Call.ByID(3992960678, serverAddr, usernameHint).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType5($result);
+        return $$createType9($result);
     }));
 }
 
@@ -108,7 +119,7 @@ export function DeleteDevice(deviceToken) {
  */
 export function GenerateKubeconfig() {
     return $Call.ByID(351207437).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType7($result);
+        return $$createType11($result);
     }));
 }
 
@@ -117,7 +128,7 @@ export function GenerateKubeconfig() {
  */
 export function GetConfig() {
     return $Call.ByID(3210756173).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType9($result);
+        return $$createType13($result);
     }));
 }
 
@@ -127,7 +138,7 @@ export function GetConfig() {
  */
 export function GetDevices() {
     return $Call.ByID(237845170).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType12($result);
+        return $$createType16($result);
     }));
 }
 
@@ -137,7 +148,7 @@ export function GetDevices() {
  */
 export function GetDomainList() {
     return $Call.ByID(4215633643).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType15($result);
+        return $$createType19($result);
     }));
 }
 
@@ -147,7 +158,7 @@ export function GetDomainList() {
  */
 export function GetGRPCStatus() {
     return $Call.ByID(3652517293).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType17($result);
+        return $$createType21($result);
     }));
 }
 
@@ -158,7 +169,7 @@ export function GetGRPCStatus() {
  */
 export function GetHostServices(hostID) {
     return $Call.ByID(3432160785, hostID).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType20($result);
+        return $$createType24($result);
     }));
 }
 
@@ -168,15 +179,8 @@ export function GetHostServices(hostID) {
  */
 export function GetHosts() {
     return $Call.ByID(2353309006).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType23($result);
+        return $$createType27($result);
     }));
-}
-
-/**
- * @returns {$CancellablePromise<any>}
- */
-export function GetIPCUpdateState() {
-    return $Call.ByID(287437795);
 }
 
 /**
@@ -192,7 +196,7 @@ export function GetLogLevel() {
  */
 export function GetLogs() {
     return $Call.ByID(1466252692).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType24($result);
+        return $$createType28($result);
     }));
 }
 
@@ -202,7 +206,7 @@ export function GetLogs() {
  */
 export function GetProxyStatus() {
     return $Call.ByID(391408139).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType27($result);
+        return $$createType31($result);
     }));
 }
 
@@ -213,7 +217,7 @@ export function GetProxyStatus() {
  */
 export function GetResourceTenants() {
     return $Call.ByID(223320176).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType29($result);
+        return $$createType33($result);
     }));
 }
 
@@ -223,7 +227,7 @@ export function GetResourceTenants() {
  */
 export function GetResources() {
     return $Call.ByID(2898432568).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType32($result);
+        return $$createType36($result);
     }));
 }
 
@@ -232,7 +236,7 @@ export function GetResources() {
  */
 export function GetServices() {
     return $Call.ByID(2641329379).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType20($result);
+        return $$createType24($result);
     }));
 }
 
@@ -242,7 +246,7 @@ export function GetServices() {
  */
 export function GetTunnelStatus() {
     return $Call.ByID(3308965971).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType34($result);
+        return $$createType38($result);
     }));
 }
 
@@ -251,7 +255,7 @@ export function GetTunnelStatus() {
  */
 export function GetVersion() {
     return $Call.ByID(1667803041).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType36($result);
+        return $$createType40($result);
     }));
 }
 
@@ -339,14 +343,6 @@ export function ReconnectTunnel() {
 }
 
 /**
- * @param {launcheripc$0.UpdateRequest | null} req
- * @returns {$CancellablePromise<any>}
- */
-export function RequestIPCUpdate(req) {
-    return $Call.ByID(180522793, req);
-}
-
-/**
  * SetContainerServiceLocalPort changes only this device's listener port. The
  * Kubernetes Service target port remains resource.Port.
  * @param {string} resourceID
@@ -355,7 +351,7 @@ export function RequestIPCUpdate(req) {
  */
 export function SetContainerServiceLocalPort(resourceID, localPort) {
     return $Call.ByID(1340784315, resourceID, localPort).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType32($result);
+        return $$createType36($result);
     }));
 }
 
@@ -402,7 +398,7 @@ export function Startup() {
  */
 export function SwitchResourceTenant(tenantID) {
     return $Call.ByID(418404945, tenantID).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType32($result);
+        return $$createType36($result);
     }));
 }
 
@@ -423,47 +419,51 @@ export function ToggleFavorite(serviceID) {
  */
 export function WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint) {
     return $Call.ByID(3344282757, serverAddr, sessionID, deviceFingerprint).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType38($result);
+        return $$createType42($result);
     }));
 }
 
 // Private type creation functions
-const $$createType0 = $models.SavedCredentials.createFrom;
+const $$createType0 = launcheripc$0.UpdateAccepted.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
-const $$createType2 = $models.VersionCheckResult.createFrom;
+const $$createType2 = $models.DesktopUpdateState.createFrom;
 const $$createType3 = $Create.Nullable($$createType2);
-const $$createType4 = $models.CreateLoginSessionResult.createFrom;
+const $$createType4 = $models.SavedCredentials.createFrom;
 const $$createType5 = $Create.Nullable($$createType4);
-const $$createType6 = $models.KubeconfigResult.createFrom;
+const $$createType6 = $models.VersionCheckResult.createFrom;
 const $$createType7 = $Create.Nullable($$createType6);
-const $$createType8 = config$0.Config.createFrom;
+const $$createType8 = $models.CreateLoginSessionResult.createFrom;
 const $$createType9 = $Create.Nullable($$createType8);
-const $$createType10 = $models.DeviceInfo.createFrom;
+const $$createType10 = $models.KubeconfigResult.createFrom;
 const $$createType11 = $Create.Nullable($$createType10);
-const $$createType12 = $Create.Array($$createType11);
-const $$createType13 = $models.DomainItem.createFrom;
-const $$createType14 = $Create.Nullable($$createType13);
-const $$createType15 = $Create.Array($$createType14);
-const $$createType16 = $models.GRPCStatus.createFrom;
-const $$createType17 = $Create.Nullable($$createType16);
-const $$createType18 = $models.ServiceInfo.createFrom;
-const $$createType19 = $Create.Nullable($$createType18);
-const $$createType20 = $Create.Array($$createType19);
-const $$createType21 = $models.HostInfo.createFrom;
-const $$createType22 = $Create.Nullable($$createType21);
-const $$createType23 = $Create.Array($$createType22);
-const $$createType24 = $Create.Array($Create.Any);
-const $$createType25 = $models.ProxyStatusInfo.createFrom;
+const $$createType12 = config$0.Config.createFrom;
+const $$createType13 = $Create.Nullable($$createType12);
+const $$createType14 = $models.DeviceInfo.createFrom;
+const $$createType15 = $Create.Nullable($$createType14);
+const $$createType16 = $Create.Array($$createType15);
+const $$createType17 = $models.DomainItem.createFrom;
+const $$createType18 = $Create.Nullable($$createType17);
+const $$createType19 = $Create.Array($$createType18);
+const $$createType20 = $models.GRPCStatus.createFrom;
+const $$createType21 = $Create.Nullable($$createType20);
+const $$createType22 = $models.ServiceInfo.createFrom;
+const $$createType23 = $Create.Nullable($$createType22);
+const $$createType24 = $Create.Array($$createType23);
+const $$createType25 = $models.HostInfo.createFrom;
 const $$createType26 = $Create.Nullable($$createType25);
 const $$createType27 = $Create.Array($$createType26);
-const $$createType28 = $models.ResourceTenantInfo.createFrom;
-const $$createType29 = $Create.Array($$createType28);
-const $$createType30 = client$0.ResourceInfo.createFrom;
-const $$createType31 = $Create.Nullable($$createType30);
-const $$createType32 = $Create.Array($$createType31);
-const $$createType33 = $models.TunnelStatus.createFrom;
-const $$createType34 = $Create.Nullable($$createType33);
-const $$createType35 = $models.VersionInfo.createFrom;
-const $$createType36 = $Create.Nullable($$createType35);
-const $$createType37 = $models.LoginResultGRPC.createFrom;
+const $$createType28 = $Create.Array($Create.Any);
+const $$createType29 = $models.ProxyStatusInfo.createFrom;
+const $$createType30 = $Create.Nullable($$createType29);
+const $$createType31 = $Create.Array($$createType30);
+const $$createType32 = $models.ResourceTenantInfo.createFrom;
+const $$createType33 = $Create.Array($$createType32);
+const $$createType34 = client$0.ResourceInfo.createFrom;
+const $$createType35 = $Create.Nullable($$createType34);
+const $$createType36 = $Create.Array($$createType35);
+const $$createType37 = $models.TunnelStatus.createFrom;
 const $$createType38 = $Create.Nullable($$createType37);
+const $$createType39 = $models.VersionInfo.createFrom;
+const $$createType40 = $Create.Nullable($$createType39);
+const $$createType41 = $models.LoginResultGRPC.createFrom;
+const $$createType42 = $Create.Nullable($$createType41);
