@@ -695,10 +695,17 @@ func (a *App) reportLauncherServerHealthy() {
 
 func (a *App) GetWindowTitle() string {
 	if appVersion.BuildNumber != "0" && appVersion.BuildNumber != "" {
-		// 格式：Signaling v0.2.0 (Build 46 @ 2026-01-15_02:30:39)
-		return fmt.Sprintf("Signaling  %s (Build %s @ %s)", appVersion.Version, appVersion.BuildNumber, appVersion.BuildTime)
+		return fmt.Sprintf("Signaling  %s (Build %s @ %s)", appVersion.Version, appVersion.BuildNumber, formatWindowBuildTime(appVersion.BuildTime))
 	}
 	return fmt.Sprintf("Signaling  %s", appVersion.Version)
+}
+
+func formatWindowBuildTime(value string) string {
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return value
+	}
+	return parsed.Format("2006-01-02T15:04:05")
 }
 
 type SavedCredentials struct {
