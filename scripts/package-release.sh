@@ -37,8 +37,8 @@ for spec in "${specs[@]}"; do
     artifacts="$(jq -c --argjson item "${item}" '. + [$item]' <<< "${artifacts}")"
 done
 
-jq -n --arg published_at "${PUBLISHED_AT}" --arg version "${VERSION}" --arg commit "${COMMIT}" --argjson artifacts "${artifacts}" \
-  '{schema_version:1,published_at:$published_at,release:{component:"desktop",version:$version,commit_id:$commit,channel:"stable",release_notes:("Desktop build "+$commit),min_supported_version:""},artifacts:$artifacts}' \
+jq -n --arg published_at "${PUBLISHED_AT}" --arg commit_date "${PUBLISHED_AT}" --arg version "${VERSION}" --arg commit "${COMMIT}" --argjson artifacts "${artifacts}" \
+  '{schema_version:1,published_at:$published_at,release:{component:"desktop",version:$version,commit_id:$commit,commit_date:$commit_date,channel:"stable",release_notes:("Desktop build "+$commit),min_supported_version:""},artifacts:$artifacts}' \
   > "${PUBLISH_DIR}/updater/releases/desktop/latest.json"
 jq -n --arg generated_at "${PUBLISHED_AT}" --arg base "${BASE_URL}" \
   '{schema_version:1,generated_at:$generated_at,manifests:[$base+"/updater/releases/agent/latest.json",$base+"/updater/releases/endpoint/latest.json",$base+"/updater/releases/desktop/latest.json"]}' \
