@@ -138,6 +138,7 @@ import { useAuthStore } from '../stores/auth'
 import { useServicesStore } from '../stores/services'
 import { useDomainsStore } from '../stores/domains'
 import { useUpdateStore } from '../stores/update'
+import { useResourceCatalog } from '../composables/useResourceCatalog'
 import UpdateModal from './update/UpdateModal.vue'
 import {
   ClearCredentials,
@@ -156,6 +157,7 @@ const authStore = useAuthStore()
 const servicesStore = useServicesStore()
 const domainsStore = useDomainsStore()
 const updateStore = useUpdateStore()
+const resourceCatalog = useResourceCatalog()
 const updateModalRef = ref<InstanceType<typeof UpdateModal> | null>(null)
 const displayVersion = computed(() => {
   const version = updateStore.currentVersion || '-'
@@ -291,6 +293,9 @@ const loadDomains = async () => {
 onMounted(async () => {
   loadConnectionStatus()
   loadDomains()
+  resourceCatalog.initialize().catch(error => {
+    console.error('Failed to preload Kubernetes Pods and Services:', error)
+  })
   tunnelTimer = window.setInterval(loadTunnelStatus, 5000)
   grpcTimer = window.setInterval(loadGRPCStatus, 5000)
   domainsTimer = window.setInterval(loadDomains, 30000)
@@ -328,12 +333,16 @@ const handleUserCommand = async (command: string) => {
     await ClearCredentials()
     authStore.logout()
     servicesStore.clearConnections()
+    domainsStore.clearDomains()
+    resourceCatalog.clear()
     router.push('/login')
     ElMessage.success('已清除登录状态，请使用其他账号登录')
   } else if (command === 'logout') {
     await Logout()
     authStore.logout()
     servicesStore.clearConnections()
+    domainsStore.clearDomains()
+    resourceCatalog.clear()
     router.push('/login')
     ElMessage.success('已退出登录')
   }

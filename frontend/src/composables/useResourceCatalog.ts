@@ -39,6 +39,7 @@ const loading = ref(false)
 const error = ref('')
 const lastFetchedAt = ref('')
 let inFlight: Promise<void> | null = null
+let generation = 0
 
 function readableError(cause: any, fallback: string) {
   if (typeof cause === 'string' && cause.trim()) return cause
@@ -54,47 +55,64 @@ export function useResourceCatalog() {
       return
     }
     if (inFlight) return inFlight
-    inFlight = (async () => {
+    const requestGeneration = generation
+    const requestTenantID = activeTenantID.value
+    let request!: Promise<void>
+    request = (async () => {
       loading.value = true
       error.value = ''
       try {
         const fetched = ((await GetResources()) || []).filter(Boolean) as Resource[]
+        if (requestGeneration !== generation || requestTenantID !== activeTenantID.value) return
         resources.value = fetched
         const fetchedAt = new Date().toLocaleString()
         lastFetchedAt.value = fetchedAt
       } catch (cause: any) {
+        if (requestGeneration !== generation) return
         error.value = readableError(cause, '资源加载失败，请检查网络后重试')
       } finally {
-        loading.value = false
-        inFlight = null
+        if (inFlight === request) {
+          loading.value = false
+          inFlight = null
+        }
       }
     })()
-    return inFlight
+    inFlight = request
+    return request
   }
 
   async function loadTenants() {
     if (inFlight) return inFlight
-    inFlight = (async () => {
+    const requestGeneration = generation
+    let request!: Promise<void>
+    request = (async () => {
       loading.value = true
       error.value = ''
       try {
-        tenantOptions.value = ((await GetResourceTenants()) || []) as ResourceTenant[]
+        const fetchedTenants = ((await GetResourceTenants()) || []) as ResourceTenant[]
+        if (requestGeneration !== generation) return
+        tenantOptions.value = fetchedTenants
         if (!tenantOptions.value.some(tenant => tenant.id === activeTenantID.value)) {
           activeTenantID.value = tenantOptions.value[0]?.id || ''
         }
         if (activeTenantID.value) await selectTenantInternal()
       } catch (cause: any) {
+        if (requestGeneration !== generation) return
         error.value = readableError(cause, 'Tenant 加载失败，请检查网络后重试')
       } finally {
-        loading.value = false
-        inFlight = null
+        if (inFlight === request) {
+          loading.value = false
+          inFlight = null
+        }
       }
     })()
-    return inFlight
+    inFlight = request
+    return request
   }
 
   async function selectTenantInternal() {
     await SwitchResourceTenant(activeTenantID.value)
+    generation += 1
     resources.value = []
     lastFetchedAt.value = ''
   }
@@ -131,6 +149,17 @@ export function useResourceCatalog() {
     }
   }
 
+  function clear() {
+    generation += 1
+    resources.value = []
+    tenantOptions.value = []
+    activeTenantID.value = ''
+    loading.value = false
+    error.value = ''
+    lastFetchedAt.value = ''
+    inFlight = null
+  }
+
   return {
     resources,
     tenantOptions,
@@ -141,6 +170,7 @@ export function useResourceCatalog() {
     loadResources,
     loadTenants,
     switchTenant,
-    initialize
+    initialize,
+    clear
   }
 }
