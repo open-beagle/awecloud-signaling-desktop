@@ -34,7 +34,7 @@
         <template #default="{ row }">{{ row.region || '-' }}</template>
       </el-table-column>
       <el-table-column label="API 地址" min-width="300">
-        <template #default="{ row }"><code>https://{{ row.domain }}</code></template>
+        <template #default="{ row }"><code>{{ kubernetesAPIURL(row.domain) }}</code></template>
       </el-table-column>
       <el-table-column label="状态" width="110">
         <template #default="{ row }">
@@ -97,6 +97,7 @@ import { CopyDocument, Download, Refresh } from '@element-plus/icons-vue'
 import { GetKubeconfigTargets, InstallKubeconfig } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/internal/app/app'
 import { useDomainsStore } from '../stores/domains'
 import type { DomainItem } from '../stores/domains'
+import { kubernetesAPIURL } from '../utils/kubernetes'
 
 interface InstallTarget {
   id: string
@@ -149,7 +150,7 @@ function kubeconfigFor(domain: DomainItem) {
 clusters:
 - cluster:
     insecure-skip-tls-verify: true
-    server: https://${domain.domain}
+    server: ${kubernetesAPIURL(domain.domain)}
   name: ${name}
 contexts:
 - context:

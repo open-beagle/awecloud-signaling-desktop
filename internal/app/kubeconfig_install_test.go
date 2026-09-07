@@ -6,6 +6,20 @@ import (
 	"testing"
 )
 
+func TestKubeconfigServerUsesKubernetesAPIPort(t *testing.T) {
+	tests := map[string]string{
+		"kubernetes.beijing.beagle":          "https://kubernetes.beijing.beagle:6443",
+		"https://kubernetes.beijing.beagle":  "https://kubernetes.beijing.beagle:6443",
+		"https://kubernetes.beijing.beagle/": "https://kubernetes.beijing.beagle:6443/",
+		"kubernetes.beijing.beagle:7443":     "https://kubernetes.beijing.beagle:7443",
+	}
+	for input, expected := range tests {
+		if actual := kubeconfigServer(input); actual != expected {
+			t.Errorf("kubeconfigServer(%q) = %q, want %q", input, actual, expected)
+		}
+	}
+}
+
 func TestWriteLocalKubeconfigCreatesAndReplaces(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".kube", "config")
 	if err := writeLocalKubeconfig(path, []byte("apiVersion: v1\nkind: Config\n")); err != nil {

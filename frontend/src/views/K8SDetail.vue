@@ -39,6 +39,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import Layout from '../components/Layout.vue'
 import { useDomainsStore } from '../stores/domains'
+import { kubernetesAPIURL } from '../utils/kubernetes'
 
 const route = useRoute()
 const domainsStore = useDomainsStore()
@@ -73,7 +74,7 @@ kind: Config
 clusters:
 - name: ${reg}
   cluster:
-    server: https://${dom}:6443
+    server: ${kubernetesAPIURL(dom)}
     insecure-skip-tls-verify: true
 contexts:
 - name: ${reg}

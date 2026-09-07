@@ -3,6 +3,8 @@ package app
 import (
 	"bytes"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -192,10 +194,17 @@ func kubeconfigClusterName(domain *DomainItem) string {
 
 func kubeconfigServer(domain string) string {
 	domain = strings.TrimSpace(domain)
-	if strings.HasPrefix(domain, "https://") || strings.HasPrefix(domain, "http://") {
+	if !strings.HasPrefix(domain, "https://") && !strings.HasPrefix(domain, "http://") {
+		domain = "https://" + domain
+	}
+	parsed, err := url.Parse(domain)
+	if err != nil || parsed.Hostname() == "" {
 		return domain
 	}
-	return "https://" + domain
+	if parsed.Port() == "" {
+		parsed.Host = net.JoinHostPort(parsed.Hostname(), "6443")
+	}
+	return parsed.String()
 }
 
 func readKubeconfigTarget(target *KubeconfigTarget) ([]byte, error) {

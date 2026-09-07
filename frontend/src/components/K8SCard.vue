@@ -20,6 +20,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import type { DomainItem } from '../stores/domains'
+import { kubernetesAPIURL } from '../utils/kubernetes'
 
 const props = defineProps<{
   domain: DomainItem
@@ -57,7 +58,7 @@ clusters:
 - name: ${region}
   cluster:
     insecure-skip-tls-verify: true
-    server: https://${domain.domain}:6443
+    server: ${kubernetesAPIURL(domain.domain)}
 contexts:
 - context:
     cluster: ${region}
