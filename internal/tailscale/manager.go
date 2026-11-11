@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"tailscale.com/client/local"
 	"tailscale.com/tsnet"
 
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
@@ -30,6 +31,12 @@ type Manager struct {
 	connected   bool
 	mutex       sync.RWMutex
 
+	// 入站 TCP 兜底处理器注册表（支持先注册后连接或重连恢复）
+	fallbackMu       sync.Mutex
+	nextFallbackID   uint64
+	fallbackHandlers map[uint64]tsnet.FallbackTCPHandler
+	fallbackUnreg    map[uint64]func()
+
 	// 生命周期
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -39,8 +46,10 @@ type Manager struct {
 func NewManager() *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{
-		ctx:    ctx,
-		cancel: cancel,
+		fallbackHandlers: make(map[uint64]tsnet.FallbackTCPHandler),
+		fallbackUnreg:    make(map[uint64]func()),
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 }
 
@@ -93,6 +102,8 @@ func (m *Manager) Connect(controlURL, authKey, hostname string) error {
 	} else {
 		return fmt.Errorf("未获取到隧道 IP")
 	}
+
+	m.attachFallbackHandlers()
 
 	// 启动状态监控
 	go m.watchStatus()
@@ -224,6 +235,15 @@ func (m *Manager) tryReconnect() error {
 func (m *Manager) Disconnect() error {
 	m.cancel()
 
+	m.fallbackMu.Lock()
+	for id, unreg := range m.fallbackUnreg {
+		if unreg != nil {
+			unreg()
+		}
+		delete(m.fallbackUnreg, id)
+	}
+	m.fallbackMu.Unlock()
+
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
@@ -239,6 +259,72 @@ func (m *Manager) Disconnect() error {
 
 	log.Printf("[INFO] [Tunnel] 已断开")
 	return nil
+}
+
+// LocalClient 返回当前 tsnet 的本地控制面客户端（用于入站连接 WhoIs 校验）
+func (m *Manager) LocalClient() (*local.Client, error) {
+	m.mutex.RLock()
+	srv := m.tsServer
+	m.mutex.RUnlock()
+	if srv == nil {
+		return nil, fmt.Errorf("隧道未启动")
+	}
+	return srv.LocalClient()
+}
+
+// RegisterFallbackTCPHandler 注册用户态隧道入站 TCP 按需拦截处理器，返回注销函数
+func (m *Manager) RegisterFallbackTCPHandler(cb tsnet.FallbackTCPHandler) func() {
+	if cb == nil {
+		return func() {}
+	}
+
+	m.fallbackMu.Lock()
+	m.nextFallbackID++
+	id := m.nextFallbackID
+	m.fallbackHandlers[id] = cb
+
+	m.mutex.RLock()
+	srv := m.tsServer
+	m.mutex.RUnlock()
+	if srv != nil {
+		m.fallbackUnreg[id] = srv.RegisterFallbackTCPHandler(cb)
+	}
+	m.fallbackMu.Unlock()
+
+	return func() {
+		m.fallbackMu.Lock()
+		delete(m.fallbackHandlers, id)
+		if unreg := m.fallbackUnreg[id]; unreg != nil {
+			delete(m.fallbackUnreg, id)
+			m.fallbackMu.Unlock()
+			unreg()
+			return
+		}
+		m.fallbackMu.Unlock()
+	}
+}
+
+func (m *Manager) attachFallbackHandlers() {
+	m.mutex.RLock()
+	srv := m.tsServer
+	m.mutex.RUnlock()
+	if srv == nil {
+		return
+	}
+
+	m.fallbackMu.Lock()
+	defer m.fallbackMu.Unlock()
+	for id, unreg := range m.fallbackUnreg {
+		if unreg != nil {
+			unreg()
+		}
+		delete(m.fallbackUnreg, id)
+	}
+	for id, cb := range m.fallbackHandlers {
+		if cb != nil {
+			m.fallbackUnreg[id] = srv.RegisterFallbackTCPHandler(cb)
+		}
+	}
 }
 
 // Dial 通过隧道网络拨号

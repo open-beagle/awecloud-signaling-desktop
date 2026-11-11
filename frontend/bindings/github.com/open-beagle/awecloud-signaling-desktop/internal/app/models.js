@@ -187,6 +187,83 @@ export class DeviceInfo {
              */
             this["ip"] = "";
         }
+        if (!("node_id" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["node_id"] = 0;
+        }
+        if (!("rdp_mode" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["rdp_mode"] = "";
+        }
+        if (!("rdp_allow_share" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["rdp_allow_share"] = false;
+        }
+        if (!("rdp_admin_disabled" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["rdp_admin_disabled"] = false;
+        }
+        if (!("rdp_local_ready" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["rdp_local_ready"] = false;
+        }
+        if (!("rdp_local_port" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["rdp_local_port"] = 0;
+        }
+        if (!("rdp_tunnel_exposed" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["rdp_tunnel_exposed"] = false;
+        }
+        if (!("rdp_connectable" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["rdp_connectable"] = false;
+        }
+        if (!("owner_username" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["owner_username"] = "";
+        }
+        if (!("is_shared" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["is_shared"] = false;
+        }
+        if (!("grant_expires_at_unix" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["grant_expires_at_unix"] = 0;
+        }
 
         Object.assign(this, $$source);
     }
@@ -1061,6 +1138,65 @@ export class TunnelStatus {
     static createFrom($$source = {}) {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new TunnelStatus(/** @type {Partial<TunnelStatus>} */($$parsedSource));
+    }
+}
+
+/**
+ * UpdateDeviceRDPConfigInput 前端调用修改设备远程桌面配置的参数
+ */
+export class UpdateDeviceRDPConfigInput {
+    /**
+     * Creates a new UpdateDeviceRDPConfigInput instance.
+     * @param {Partial<UpdateDeviceRDPConfigInput>} [$$source = {}] - The source object to create the UpdateDeviceRDPConfigInput.
+     */
+    constructor($$source = {}) {
+        if (!("node_id" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["node_id"] = 0;
+        }
+        if (!("device_token" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["device_token"] = "";
+        }
+        if (!("rdp_mode" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["rdp_mode"] = "";
+        }
+        if (!("update_allow_share" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["update_allow_share"] = false;
+        }
+        if (!("rdp_allow_share" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["rdp_allow_share"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new UpdateDeviceRDPConfigInput instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {UpdateDeviceRDPConfigInput}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new UpdateDeviceRDPConfigInput(/** @type {Partial<UpdateDeviceRDPConfigInput>} */($$parsedSource));
     }
 }
 

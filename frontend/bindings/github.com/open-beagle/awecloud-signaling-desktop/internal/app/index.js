@@ -25,6 +25,7 @@ export {
     SavedCredentials,
     ServiceInfo,
     TunnelStatus,
+    UpdateDeviceRDPConfigInput,
     VersionCheckResult,
     VersionInfo
 } from "./models.js";

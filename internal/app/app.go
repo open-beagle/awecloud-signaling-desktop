@@ -21,6 +21,7 @@ import (
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcher"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcheripc"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/proxy"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/rdp"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/serviceroute"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/tailscale"
 	appVersion "github.com/open-beagle/awecloud-signaling-desktop/internal/version"
@@ -40,13 +41,17 @@ type App struct {
 	loginMutex    sync.Mutex                 // 保护登录窗口的并发访问
 
 	// ZTNA: DNS 劫持 + VIP 分配 + 本地代理
-	dnsServer       *dns.Server
-	vipAllocator    *vip.Allocator
-	networkCfg      *vip.NetworkConfig // VIP 网络配置（macOS loopback alias 管理）
-	proxyManager    *proxy.Manager
-	svcProxyMgr     *proxy.SVCProxyManager // K8S Service gRPC 代理管理器
-	containerRoutes *containerroute.Manager
-	serviceRoutes   *serviceroute.Manager
+	dnsServer         *dns.Server
+	vipAllocator      *vip.Allocator
+	networkCfg        *vip.NetworkConfig // VIP 网络配置（macOS loopback alias 管理）
+	proxyManager      *proxy.Manager
+	svcProxyMgr       *proxy.SVCProxyManager // K8S Service gRPC 代理管理器
+	containerRoutes   *containerroute.Manager
+	serviceRoutes     *serviceroute.Manager
+	rdpDetector       *rdp.Detector
+	rdpDetectorCancel context.CancelFunc
+	rdpInbound        *rdp.InboundGate
+	rdpOutbound       *rdp.OutboundManager
 
 	tenantMutex           sync.Mutex
 	tenantOperationMutex  sync.Mutex
@@ -130,7 +135,8 @@ func (a *App) setupSystemTray() {
 }
 
 func (a *App) shutdown() {
-	// 清理 ZTNA 网络栈
+	// 清理 ZTNA 网络栈与 RDP 运行态
+	a.stopRDPRuntime()
 	a.cleanupZTNA()
 
 	if a.desktopClient != nil {
@@ -167,6 +173,12 @@ func (a *App) cleanupZTNA() {
 		a.svcProxyMgr = nil
 	}
 
+	// 停止主控端本地 RDP 代理
+	if a.rdpOutbound != nil {
+		a.rdpOutbound.StopAll()
+		a.rdpOutbound = nil
+	}
+
 	// 清理 VIP 网络配置（macOS 上删除 loopback alias）
 	if a.networkCfg != nil {
 		a.networkCfg.Cleanup()
@@ -195,6 +207,7 @@ func (a *App) clearTenantContext() {
 // identity. It intentionally does not alter the persisted login config; the
 // caller commits new credentials only after the next authentication succeeds.
 func (a *App) teardownLocalSession() {
+	a.stopRDPRuntime()
 	a.cleanupZTNA()
 	if a.tsManager != nil {
 		_ = a.tsManager.Disconnect()
@@ -263,8 +276,11 @@ func (a *App) Login(serverAddr, clientName, clientSecret string, rememberMe bool
 	fmt.Sscanf(parts[0], "%d", &desktopID)
 	secret := parts[1]
 
+	a.initRDPRuntimeForClient(a.desktopClient)
+
 	authResult, err := a.desktopClient.Authenticate(desktopID, secret)
 	if err != nil {
+		a.stopRDPRuntime()
 		a.desktopClient.Stop()
 		a.desktopClient = nil
 		return fmt.Errorf("authentication failed: %w", err)
@@ -329,6 +345,7 @@ func (a *App) initializeTailscale() error {
 
 	// 更新心跳信息
 	a.desktopClient.UpdateHeartbeat(a.tsManager.GetIP(), true)
+	a.attachRDPToTunnel()
 
 	// 初始化 ZTNA 网络栈（DNS + VIP + Proxy）
 	if err := a.initializeZTNA(); err != nil {
@@ -365,6 +382,9 @@ func (a *App) initializeZTNA() error {
 	a.svcProxyMgr = proxy.NewSVCProxyManager(a.tsManager.Dial)
 	a.serviceRoutes = serviceroute.NewManager(a.vipAllocator, a.svcProxyMgr)
 
+	// 2.6 创建远程桌面主控端本地按需代理管理器
+	a.initRDPOutbound()
+
 	// 3. 创建并启动本地 DNS 服务器
 	// 使用平台推荐地址：macOS 用 127.0.0.1:15353（macOS 默认无 127.0.0.2），其他平台用 127.0.0.2
 	dnsPort := dns.RecommendedPort()
@@ -397,6 +417,11 @@ func (a *App) isDomainAllowed(domain string) bool {
 
 // resolveDomain DNS 解析回调：查询 Server → 分配 VIP → 启动代理
 func (a *App) resolveDomain(domain string) (string, bool) {
+	if a.rdpOutbound != nil {
+		if rdpVIP, ok := a.rdpOutbound.ResolveVIP(domain); ok {
+			return rdpVIP, true
+		}
+	}
 	if !a.isDomainAllowed(domain) {
 		log.Printf("[App] DNS 解析拒绝: 域名不属于当前账号或 Tenant (%s)", domain)
 		return "", false
@@ -472,7 +497,8 @@ func (a *App) Logout() {
 		}
 	}
 
-	// 清理 ZTNA 网络栈
+	// 清理 ZTNA 网络栈与 RDP 运行态
+	a.stopRDPRuntime()
 	a.cleanupZTNA()
 
 	// 断开隧道（也加超时保护）
@@ -1096,18 +1122,9 @@ func (a *App) GetDevices() ([]*DeviceInfo, error) {
 	// 转换为前端格式
 	result := make([]*DeviceInfo, 0, len(devices))
 	for _, d := range devices {
-		result = append(result, &DeviceInfo{
-			DeviceToken: d.DeviceToken,
-			DeviceName:  d.DeviceName,
-			OS:          d.OS,
-			Arch:        d.Arch,
-			Hostname:    d.Hostname,
-			Status:      d.Status,
-			LastUsedAt:  d.LastUsedAt,
-			CreatedAt:   d.CreatedAt,
-			IsCurrent:   d.IsCurrent,
-			IP:          d.IP,
-		})
+		if converted := clientDeviceToAppDevice(d); converted != nil {
+			result = append(result, converted)
+		}
 	}
 
 	return result, nil
@@ -1407,16 +1424,27 @@ func (a *App) CheckVersion() (*VersionCheckResult, error) {
 
 // DeviceInfo 设备信息
 type DeviceInfo struct {
-	DeviceToken string `json:"device_token"`
-	DeviceName  string `json:"device_name"`
-	OS          string `json:"os"`
-	Arch        string `json:"arch"`
-	Hostname    string `json:"hostname"`
-	Status      string `json:"status"`
-	LastUsedAt  string `json:"last_used_at"`
-	CreatedAt   string `json:"created_at"`
-	IsCurrent   bool   `json:"is_current"`
-	IP          string `json:"ip"`
+	DeviceToken        string `json:"device_token"`
+	DeviceName         string `json:"device_name"`
+	OS                 string `json:"os"`
+	Arch               string `json:"arch"`
+	Hostname           string `json:"hostname"`
+	Status             string `json:"status"`
+	LastUsedAt         string `json:"last_used_at"`
+	CreatedAt          string `json:"created_at"`
+	IsCurrent          bool   `json:"is_current"`
+	IP                 string `json:"ip"`
+	NodeID             uint64 `json:"node_id"`
+	RDPMode            string `json:"rdp_mode"`
+	RDPAllowShare      bool   `json:"rdp_allow_share"`
+	RDPAdminDisabled   bool   `json:"rdp_admin_disabled"`
+	RDPLocalReady      bool   `json:"rdp_local_ready"`
+	RDPLocalPort       int    `json:"rdp_local_port"`
+	RDPTunnelExposed   bool   `json:"rdp_tunnel_exposed"`
+	RDPConnectable     bool   `json:"rdp_connectable"`
+	OwnerUsername      string `json:"owner_username"`
+	IsShared           bool   `json:"is_shared"`
+	GrantExpiresAtUnix int64  `json:"grant_expires_at_unix"`
 }
 
 // VersionCheckResult 版本检查结果
@@ -1756,21 +1784,24 @@ func (a *App) WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint st
 		log.Printf("[App] Failed to close login window: %v", err)
 	}
 
-	// 使用新获得的凭证在客户端上进行认证
-	authResult, err := desktopClient.Authenticate(result.DesktopID, result.DeviceToken)
-	if err != nil {
-		log.Printf("[App] Failed to authenticate with new credentials: %v", err)
-		desktopClient.Stop()
-		return nil, fmt.Errorf("authentication failed: %w", err)
-	}
-
-	log.Printf("[App] Authentication successful with new credentials")
-
 	// 保存 Desktop 客户端（重要：用于后续的 API 调用）
 	if a.desktopClient != nil || a.tsManager != nil {
 		a.teardownLocalSession()
 	}
 	a.desktopClient = desktopClient
+	a.initRDPRuntimeForClient(a.desktopClient)
+
+	// 使用新获得的凭证在客户端上进行认证
+	authResult, err := desktopClient.Authenticate(result.DesktopID, result.DeviceToken)
+	if err != nil {
+		log.Printf("[App] Failed to authenticate with new credentials: %v", err)
+		a.stopRDPRuntime()
+		desktopClient.Stop()
+		a.desktopClient = nil
+		return nil, fmt.Errorf("authentication failed: %w", err)
+	}
+
+	log.Printf("[App] Authentication successful with new credentials")
 
 	// 设置重连回调
 	a.desktopClient.SetReconnectCallback(func(reason client.ReconnectReason, message string) error {

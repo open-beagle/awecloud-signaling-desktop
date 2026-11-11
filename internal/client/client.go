@@ -57,12 +57,16 @@ type DesktopClient struct {
 	// 数据流
 	dataStream       pb.DesktopService_DataStreamClient
 	dataStreamMutex  sync.Mutex
+	dataStreamSendMu sync.Mutex
 	dataStreamStopCh chan struct{} // 用于停止旧的 receiveDataStream goroutine
 
-	// 隧道状态（用于心跳上报）
-	tunnelIP        string
-	tunnelConnected bool
-	tunnelMutex     sync.RWMutex
+	// 隧道与本地 RDP 状态（用于心跳上报）
+	tunnelIP         string
+	tunnelConnected  bool
+	rdpLocalReady    bool
+	rdpLocalPort     int
+	rdpTunnelExposed bool
+	tunnelMutex      sync.RWMutex
 
 	// 隧道状态查询回调（用于重连时获取最新状态）
 	getTunnelStatus func() (ip string, connected bool)
@@ -74,6 +78,10 @@ type DesktopClient struct {
 	// 重连回调（用于通知 App 层重新获取 authKey）
 	onReconnectNeeded func(reason ReconnectReason, message string) error
 
+	// RDP 策略与设备变更回调
+	onRDPPolicy      func(policy *pb.DesktopInboundRDPPolicy)
+	onDevicesUpdated func(devices []*DeviceInfo)
+
 	// 已授权服务列表
 	authorizedServices []*pb.AuthorizedService
 	servicesMutex      sync.RWMutex
@@ -83,6 +91,7 @@ type DesktopClient struct {
 	cachedHostServices map[string][]*pb.AuthorizedService // 主机服务缓存（key: hostID）
 	cachedDevices      []*DeviceInfo                      // 设备列表缓存
 	cachedFavorites    []string                           // 收藏列表缓存
+	cachedRDPPolicy    *pb.DesktopInboundRDPPolicy        // 当前被控端入站策略缓存
 	cacheMutex         sync.RWMutex                       // 保护所有缓存字段
 
 	// 上下文
@@ -181,7 +190,32 @@ func (c *DesktopClient) ClearResourceCaches() {
 	c.cacheMutex.Lock()
 	c.cachedHosts = nil
 	c.cachedHostServices = make(map[string][]*pb.AuthorizedService)
+	c.cachedRDPPolicy = nil
 	c.cacheMutex.Unlock()
+}
+
+// GetDesktopID 返回当前已认证的 Desktop 节点 ID
+func (c *DesktopClient) GetDesktopID() uint64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.desktopID
+}
+
+// SetRDPPolicyCallback 设置被控端入站策略变更回调
+func (c *DesktopClient) SetRDPPolicyCallback(callback func(policy *pb.DesktopInboundRDPPolicy)) {
+	c.onRDPPolicy = callback
+}
+
+// SetDevicesUpdatedCallback 设置设备列表推送变更回调
+func (c *DesktopClient) SetDevicesUpdatedCallback(callback func(devices []*DeviceInfo)) {
+	c.onDevicesUpdated = callback
+}
+
+// GetCachedRDPPolicy 返回最近一次收到的入站策略快照
+func (c *DesktopClient) GetCachedRDPPolicy() *pb.DesktopInboundRDPPolicy {
+	c.cacheMutex.RLock()
+	defer c.cacheMutex.RUnlock()
+	return c.cachedRDPPolicy
 }
 
 // IsAuthenticated 检查是否已认证
@@ -221,6 +255,31 @@ func (c *DesktopClient) GetAuthorizedServices() []*pb.AuthorizedService {
 	c.servicesMutex.RLock()
 	defer c.servicesMutex.RUnlock()
 	return c.authorizedServices
+}
+
+func (c *DesktopClient) buildHeartbeatRequest() *pb.DesktopHeartbeatRequest {
+	c.mu.RLock()
+	desktopID := c.desktopID
+	secret := c.secret
+	c.mu.RUnlock()
+
+	c.tunnelMutex.RLock()
+	tunnelIP := c.tunnelIP
+	tunnelConnected := c.tunnelConnected
+	rdpLocalReady := c.rdpLocalReady
+	rdpLocalPort := c.rdpLocalPort
+	rdpTunnelExposed := c.rdpTunnelExposed
+	c.tunnelMutex.RUnlock()
+
+	return &pb.DesktopHeartbeatRequest{
+		DesktopId:        desktopID,
+		TunnelIp:         tunnelIP,
+		TunnelConnected:  tunnelConnected,
+		Secret:           secret,
+		RdpLocalReady:    rdpLocalReady,
+		RdpLocalPort:     int32(rdpLocalPort),
+		RdpTunnelExposed: rdpTunnelExposed,
+	}
 }
 
 // startHeartbeat 启动心跳
@@ -274,18 +333,8 @@ func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) er
 	c.heartbeatStream = stream
 	c.setGRPCConnected(true)
 
-	// 获取当前隧道状态
-	c.tunnelMutex.RLock()
-	currentIP := c.tunnelIP
-	currentConnected := c.tunnelConnected
-	c.tunnelMutex.RUnlock()
-
 	// 发送首次心跳
-	req := &pb.DesktopHeartbeatRequest{
-		DesktopId:       c.desktopID,
-		TunnelIp:        currentIP,
-		TunnelConnected: currentConnected,
-	}
+	req := c.buildHeartbeatRequest()
 
 	if err := stream.Send(req); err != nil {
 		c.heartbeatStream = nil
@@ -296,7 +345,7 @@ func (c *DesktopClient) startHeartbeat(tunnelIP string, tunnelConnected bool) er
 		return fmt.Errorf("failed to send initial heartbeat: %w", err)
 	}
 
-	log.Printf("[DesktopClient] Heartbeat started, tunnelIP=%s", currentIP)
+	log.Printf("[DesktopClient] Heartbeat started, tunnelIP=%s", req.TunnelIp)
 
 	// 启动接收和发送 goroutine（使用 stopCh 控制生命周期）
 	go c.receiveHeartbeat(stopCh)
@@ -491,17 +540,7 @@ func (c *DesktopClient) sendHeartbeat(stopCh chan struct{}) {
 		case <-stopCh:
 			return
 		case <-ticker.C:
-			// 获取当前隧道状态
-			c.tunnelMutex.RLock()
-			tunnelIP := c.tunnelIP
-			tunnelConnected := c.tunnelConnected
-			c.tunnelMutex.RUnlock()
-
-			req := &pb.DesktopHeartbeatRequest{
-				DesktopId:       c.desktopID,
-				TunnelIp:        tunnelIP,
-				TunnelConnected: tunnelConnected,
-			}
+			req := c.buildHeartbeatRequest()
 
 			stream, currentStopCh, err := c.sendCurrentHeartbeat(req)
 			if err != nil {
@@ -548,15 +587,43 @@ func (c *DesktopClient) UpdateHeartbeat(tunnelIP string, tunnelConnected bool) {
 	}
 
 	// 立即发送一次心跳更新
-	req := &pb.DesktopHeartbeatRequest{
-		DesktopId:       c.desktopID,
-		TunnelIp:        tunnelIP,
-		TunnelConnected: tunnelConnected,
-	}
+	req := c.buildHeartbeatRequest()
 
 	failedStream, stopCh, err := c.sendCurrentHeartbeat(req)
 	if err != nil {
 		log.Printf("[DesktopClient] Failed to update heartbeat: %v", err)
+		if failedStream != nil && stopCh != nil && c.invalidateHeartbeat(failedStream, stopCh) {
+			go c.retryHeartbeat()
+		}
+	}
+}
+
+// SetRDPHeartbeatStatus 仅更新本地缓存的 RDP 探测与入站状态（供启动阶段预设）
+func (c *DesktopClient) SetRDPHeartbeatStatus(localReady bool, localPort int, tunnelExposed bool) {
+	c.tunnelMutex.Lock()
+	c.rdpLocalReady = localReady
+	c.rdpLocalPort = localPort
+	c.rdpTunnelExposed = tunnelExposed
+	c.tunnelMutex.Unlock()
+}
+
+// UpdateRDPHeartbeat 当本地 RDP 监听就绪度或隧道入站开放状态变化时立即推送心跳更新
+func (c *DesktopClient) UpdateRDPHeartbeat(localReady bool, localPort int, tunnelExposed bool) {
+	c.tunnelMutex.Lock()
+	changed := c.rdpLocalReady != localReady || c.rdpLocalPort != localPort || c.rdpTunnelExposed != tunnelExposed
+	c.rdpLocalReady = localReady
+	c.rdpLocalPort = localPort
+	c.rdpTunnelExposed = tunnelExposed
+	c.tunnelMutex.Unlock()
+
+	if !changed || !c.IsAuthenticated() {
+		return
+	}
+
+	req := c.buildHeartbeatRequest()
+	failedStream, stopCh, err := c.sendCurrentHeartbeat(req)
+	if err != nil {
+		log.Printf("[DesktopClient] Failed to send RDP heartbeat update: %v", err)
 		if failedStream != nil && stopCh != nil && c.invalidateHeartbeat(failedStream, stopCh) {
 			go c.retryHeartbeat()
 		}
@@ -676,21 +743,64 @@ func (c *DesktopClient) GetHostServices(hostID string) ([]*pb.AuthorizedService,
 
 // DeviceInfo 设备信息
 type DeviceInfo struct {
-	DeviceToken string `json:"device_token"`
-	DeviceName  string `json:"device_name"`
-	OS          string `json:"os"`
-	Arch        string `json:"arch"`
-	Hostname    string `json:"hostname"`
-	Status      string `json:"status"`
-	LastUsedAt  string `json:"last_used_at"`
-	CreatedAt   string `json:"created_at"`
-	IsCurrent   bool   `json:"is_current"`
-	IP          string `json:"ip"`
+	DeviceToken        string `json:"device_token"`
+	DeviceName         string `json:"device_name"`
+	OS                 string `json:"os"`
+	Arch               string `json:"arch"`
+	Hostname           string `json:"hostname"`
+	Status             string `json:"status"`
+	LastUsedAt         string `json:"last_used_at"`
+	CreatedAt          string `json:"created_at"`
+	IsCurrent          bool   `json:"is_current"`
+	IP                 string `json:"ip"`
+	NodeID             uint64 `json:"node_id"`
+	RDPMode            string `json:"rdp_mode"`
+	RDPAllowShare      bool   `json:"rdp_allow_share"`
+	RDPAdminDisabled   bool   `json:"rdp_admin_disabled"`
+	RDPLocalReady      bool   `json:"rdp_local_ready"`
+	RDPLocalPort       int    `json:"rdp_local_port"`
+	RDPTunnelExposed   bool   `json:"rdp_tunnel_exposed"`
+	RDPConnectable     bool   `json:"rdp_connectable"`
+	OwnerUsername      string `json:"owner_username"`
+	IsShared           bool   `json:"is_shared"`
+	GrantExpiresAtUnix int64  `json:"grant_expires_at_unix"`
 }
 
-// GetMyDevices 获取我的设备列表
+func protoToDeviceInfo(d *pb.DeviceInfo) *DeviceInfo {
+	if d == nil {
+		return nil
+	}
+	return &DeviceInfo{
+		DeviceToken:        d.DeviceToken,
+		DeviceName:         d.DeviceName,
+		OS:                 d.Os,
+		Arch:               d.Arch,
+		Hostname:           d.Hostname,
+		Status:             d.Status,
+		LastUsedAt:         d.LastUsedAt,
+		CreatedAt:          d.CreatedAt,
+		IsCurrent:          d.IsCurrent,
+		IP:                 d.Ip,
+		NodeID:             d.NodeId,
+		RDPMode:            d.RdpMode,
+		RDPAllowShare:      d.RdpAllowShare,
+		RDPAdminDisabled:   d.RdpAdminDisabled,
+		RDPLocalReady:      d.RdpLocalReady,
+		RDPLocalPort:       int(d.RdpLocalPort),
+		RDPTunnelExposed:   d.RdpTunnelExposed,
+		RDPConnectable:     d.RdpConnectable,
+		OwnerUsername:      d.OwnerUsername,
+		IsShared:           d.IsShared,
+		GrantExpiresAtUnix: d.GrantExpiresAtUnix,
+	}
+}
+
+// GetMyDevices 获取我的设备列表（含他人临时共享给我的远程桌面设备）
 func (c *DesktopClient) GetMyDevices() ([]*DeviceInfo, error) {
-	if !c.IsAuthenticated() {
+	c.mu.RLock()
+	desktopID, secret := c.desktopID, c.secret
+	c.mu.RUnlock()
+	if desktopID == 0 || secret == "" {
 		return nil, fmt.Errorf("未认证")
 	}
 
@@ -698,7 +808,8 @@ func (c *DesktopClient) GetMyDevices() ([]*DeviceInfo, error) {
 	defer cancel()
 
 	req := &pb.GetMyDevicesRequest{
-		DesktopId: c.desktopID,
+		DesktopId: desktopID,
+		Secret:    secret,
 	}
 
 	resp, err := c.grpcClient.GetMyDevices(ctx, req)
@@ -716,18 +827,9 @@ func (c *DesktopClient) GetMyDevices() ([]*DeviceInfo, error) {
 
 	devices := make([]*DeviceInfo, 0, len(resp.Devices))
 	for _, d := range resp.Devices {
-		devices = append(devices, &DeviceInfo{
-			DeviceToken: d.DeviceToken,
-			DeviceName:  d.DeviceName,
-			OS:          d.Os,
-			Arch:        d.Arch,
-			Hostname:    d.Hostname,
-			Status:      d.Status,
-			LastUsedAt:  d.LastUsedAt,
-			CreatedAt:   d.CreatedAt,
-			IsCurrent:   d.IsCurrent,
-			IP:          d.Ip,
-		})
+		if converted := protoToDeviceInfo(d); converted != nil {
+			devices = append(devices, converted)
+		}
 	}
 
 	// 更新缓存
@@ -736,6 +838,99 @@ func (c *DesktopClient) GetMyDevices() ([]*DeviceInfo, error) {
 	c.cacheMutex.Unlock()
 
 	return devices, nil
+}
+
+// RDPSessionAuditEvent 远程桌面入站审计事件上报载体
+type RDPSessionAuditEvent struct {
+	SessionUUID           string
+	EventType             string // started / ended / rejected
+	SourceHeadscaleNodeID uint64
+	SourceNodeID          uint64
+	SourceUserName        string
+	SourceDeviceName      string
+	SourceIP              string
+	GrantID               uint64
+	CloseReason           string
+	DurationMs            int64
+	TimestampUnix         int64
+}
+
+// UpdateDeviceRDPConfig 修改本人名下任一 Desktop 设备的远程桌面开放模式或共享许可
+func (c *DesktopClient) UpdateDeviceRDPConfig(targetNodeID uint64, deviceToken string, rdpMode string, updateAllowShare bool, rdpAllowShare bool) (*DeviceInfo, error) {
+	c.mu.RLock()
+	desktopID, secret := c.desktopID, c.secret
+	c.mu.RUnlock()
+	if desktopID == 0 || secret == "" {
+		return nil, fmt.Errorf("未认证")
+	}
+
+	ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	defer cancel()
+
+	resp, err := c.grpcClient.UpdateDeviceRDPConfig(ctx, &pb.UpdateDeviceRDPConfigRequest{
+		DesktopId:        desktopID,
+		Secret:           secret,
+		TargetNodeId:     targetNodeID,
+		DeviceToken:      deviceToken,
+		RdpMode:          rdpMode,
+		UpdateAllowShare: updateAllowShare,
+		RdpAllowShare:    rdpAllowShare,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("修改远程桌面配置失败: %w", err)
+	}
+	if !resp.Success {
+		return nil, fmt.Errorf("%s", resp.Message)
+	}
+
+	updated := protoToDeviceInfo(resp.Device)
+	if updated != nil {
+		c.cacheMutex.Lock()
+		for i, item := range c.cachedDevices {
+			if item != nil && !item.IsShared && (item.NodeID == updated.NodeID || item.DeviceToken == updated.DeviceToken) {
+				c.cachedDevices[i] = updated
+				break
+			}
+		}
+		c.cacheMutex.Unlock()
+	}
+	return updated, nil
+}
+
+// ReportRDPSessionAudit 上报被控端入站连接建立、关闭或拒绝审计事件
+func (c *DesktopClient) ReportRDPSessionAudit(evt RDPSessionAuditEvent) error {
+	c.mu.RLock()
+	desktopID, secret := c.desktopID, c.secret
+	c.mu.RUnlock()
+	if desktopID == 0 || secret == "" {
+		return fmt.Errorf("未认证")
+	}
+
+	ctx, cancel := context.WithTimeout(c.ctx, 8*time.Second)
+	defer cancel()
+
+	resp, err := c.grpcClient.ReportRDPSessionAudit(ctx, &pb.ReportRDPSessionAuditRequest{
+		DesktopId:             desktopID,
+		Secret:                secret,
+		SessionUuid:           evt.SessionUUID,
+		EventType:             evt.EventType,
+		SourceHeadscaleNodeId: evt.SourceHeadscaleNodeID,
+		SourceNodeId:          evt.SourceNodeID,
+		SourceUserName:        evt.SourceUserName,
+		SourceDeviceName:      evt.SourceDeviceName,
+		SourceIp:              evt.SourceIP,
+		GrantId:               evt.GrantID,
+		CloseReason:           evt.CloseReason,
+		DurationMs:            evt.DurationMs,
+		TimestampUnix:         evt.TimestampUnix,
+	})
+	if err != nil {
+		return fmt.Errorf("上报远程桌面审计失败: %w", err)
+	}
+	if !resp.Success {
+		return fmt.Errorf("%s", resp.Message)
+	}
+	return nil
 }
 
 // OfflineDevice 设备下线
@@ -979,6 +1174,10 @@ func (c *DesktopClient) startDataStream() error {
 	default:
 	}
 
+	c.mu.RLock()
+	desktopID, secret := c.desktopID, c.secret
+	c.mu.RUnlock()
+
 	c.dataStreamMutex.Lock()
 	defer c.dataStreamMutex.Unlock()
 
@@ -1002,22 +1201,68 @@ func (c *DesktopClient) startDataStream() error {
 
 	c.dataStream = stream
 
-	// 发送首条消息，携带 desktop_id
+	// 发送首条消息，携带 desktop_id 与认证 secret
 	req := &pb.DesktopDataRequest{
-		DesktopId:   c.desktopID,
+		DesktopId:   desktopID,
 		RefreshType: pb.DesktopDataType_DESKTOP_DATA_TYPE_ALL,
+		Secret:      secret,
 	}
-	if err := stream.Send(req); err != nil {
+	c.dataStreamSendMu.Lock()
+	err = stream.Send(req)
+	c.dataStreamSendMu.Unlock()
+	if err != nil {
 		return fmt.Errorf("failed to send initial data request: %w", err)
 	}
 
 	log.Printf("[DesktopClient] DataStream started")
 
-	// 启动接收 goroutine
+	// 启动接收与策略租约定时续期 goroutine
 	stopCh := c.dataStreamStopCh
 	go c.receiveDataStream(stopCh)
+	go c.refreshRDPPolicyLoop(stopCh)
 
 	return nil
+}
+
+func (c *DesktopClient) sendDataStreamRefresh(refreshType pb.DesktopDataType) error {
+	c.mu.RLock()
+	desktopID, secret := c.desktopID, c.secret
+	c.mu.RUnlock()
+
+	c.dataStreamMutex.Lock()
+	stream := c.dataStream
+	c.dataStreamMutex.Unlock()
+	if stream == nil || desktopID == 0 {
+		return nil
+	}
+
+	c.dataStreamSendMu.Lock()
+	defer c.dataStreamSendMu.Unlock()
+	return stream.Send(&pb.DesktopDataRequest{
+		DesktopId:   desktopID,
+		RefreshType: refreshType,
+		Secret:      secret,
+	})
+}
+
+// refreshRDPPolicyLoop 每 2 分钟请求一次最新入站策略快照，确保 5 分钟租约窗口在在线期间持续有效
+func (c *DesktopClient) refreshRDPPolicyLoop(stopCh <-chan struct{}) {
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-stopCh:
+			return
+		case <-ticker.C:
+			if err := c.sendDataStreamRefresh(pb.DesktopDataType_DESKTOP_DATA_TYPE_RDP_POLICY); err != nil {
+				log.Printf("[DesktopClient] Periodic RDP policy refresh failed: %v", err)
+				return
+			}
+		}
+	}
 }
 
 // receiveDataStream 接收数据流推送（通过 stopCh 控制退出）
@@ -1101,8 +1346,11 @@ func (c *DesktopClient) handleDataStreamResponse(resp *pb.DesktopDataResponse) {
 		c.updateHostsCache(resp.Hosts)
 		c.updateDevicesCache(resp.Devices)
 		c.updateFavoritesCache(resp.FavoriteServiceIds)
-		log.Printf("[DesktopClient] DataStream ALL: services=%d, hosts=%d, devices=%d, favorites=%d",
-			len(resp.Services), len(resp.Hosts), len(resp.Devices), len(resp.FavoriteServiceIds))
+		if resp.RdpPolicy != nil {
+			c.updateRDPPolicyCache(resp.RdpPolicy)
+		}
+		log.Printf("[DesktopClient] DataStream ALL: services=%d, hosts=%d, devices=%d, favorites=%d, hasRDPPolicy=%v",
+			len(resp.Services), len(resp.Hosts), len(resp.Devices), len(resp.FavoriteServiceIds), resp.RdpPolicy != nil)
 
 	case pb.DesktopDataType_DESKTOP_DATA_TYPE_SERVICES:
 		c.updateServicesCache(resp.Services)
@@ -1119,6 +1367,10 @@ func (c *DesktopClient) handleDataStreamResponse(resp *pb.DesktopDataResponse) {
 	case pb.DesktopDataType_DESKTOP_DATA_TYPE_FAVORITES:
 		c.updateFavoritesCache(resp.FavoriteServiceIds)
 		log.Printf("[DesktopClient] DataStream FAVORITES: %d", len(resp.FavoriteServiceIds))
+
+	case pb.DesktopDataType_DESKTOP_DATA_TYPE_RDP_POLICY:
+		c.updateRDPPolicyCache(resp.RdpPolicy)
+		log.Printf("[DesktopClient] DataStream RDP_POLICY: enabled=%v", resp.GetRdpPolicy().GetEffectiveEnabled())
 	}
 }
 
@@ -1157,22 +1409,27 @@ func (c *DesktopClient) updateDevicesCache(devices []*pb.DeviceInfo) {
 	}
 	result := make([]*DeviceInfo, 0, len(devices))
 	for _, d := range devices {
-		result = append(result, &DeviceInfo{
-			DeviceToken: d.DeviceToken,
-			DeviceName:  d.DeviceName,
-			OS:          d.Os,
-			Arch:        d.Arch,
-			Hostname:    d.Hostname,
-			Status:      d.Status,
-			LastUsedAt:  d.LastUsedAt,
-			CreatedAt:   d.CreatedAt,
-			IsCurrent:   d.IsCurrent,
-			IP:          d.Ip,
-		})
+		if converted := protoToDeviceInfo(d); converted != nil {
+			result = append(result, converted)
+		}
 	}
 	c.cacheMutex.Lock()
 	c.cachedDevices = result
 	c.cacheMutex.Unlock()
+
+	if c.onDevicesUpdated != nil {
+		c.onDevicesUpdated(result)
+	}
+}
+
+func (c *DesktopClient) updateRDPPolicyCache(policy *pb.DesktopInboundRDPPolicy) {
+	c.cacheMutex.Lock()
+	c.cachedRDPPolicy = policy
+	c.cacheMutex.Unlock()
+
+	if c.onRDPPolicy != nil {
+		c.onRDPPolicy(policy)
+	}
 }
 
 // updateFavoritesCache 更新收藏列表缓存
