@@ -4,7 +4,9 @@ import (
 	"context"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -82,6 +84,20 @@ func main() {
 		log.Fatalf("Failed to get embedded frontend assets: %v", err)
 	}
 
+	winOpts := application.WindowsOptions{
+		DisableQuitOnLastWindowClosed: true,
+	}
+	windowTitle := "awecloud-signaling"
+	if customAppDir := strings.TrimSpace(os.Getenv("SIGNAL_DESKTOP_APP_DIR")); customAppDir != "" {
+		windowTitle = "awecloud-signaling [Staging]"
+		if absAppDir, absErr := filepath.Abs(customAppDir); absErr == nil {
+			webviewDir := filepath.Join(absAppDir, "webview2")
+			if mkErr := os.MkdirAll(webviewDir, 0700); mkErr == nil {
+				winOpts.WebviewUserDataPath = webviewDir
+			}
+		}
+	}
+
 	// 创建 Wails v3 应用
 	mainApp := application.New(application.Options{
 		Name:        "awecloud-signaling",
@@ -99,14 +115,12 @@ func main() {
 		Linux: application.LinuxOptions{
 			DisableQuitOnLastWindowClosed: true,
 		},
-		Windows: application.WindowsOptions{
-			DisableQuitOnLastWindowClosed: true,
-		},
+		Windows: winOpts,
 	})
 
 	// 创建主窗口
 	mainWindow := mainApp.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:     "awecloud-signaling",
+		Title:     windowTitle,
 		Width:     1024,
 		Height:    768,
 		MinWidth:  800,

@@ -3,7 +3,11 @@
 package singleton
 
 import (
+	"crypto/sha256"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -34,12 +38,22 @@ const mutexName = "Global\\AWECloudSignalingDesktop"
 // windowClassName Wails 窗口类名
 const windowClassName = "wails"
 
+func resolvedMutexName() (string, bool) {
+	if customDir := strings.TrimSpace(os.Getenv("SIGNAL_DESKTOP_APP_DIR")); customDir != "" {
+		canonical := strings.ToLower(filepath.Clean(customDir))
+		sum := sha256.Sum256([]byte(canonical))
+		return fmt.Sprintf("%s_%x", mutexName, sum[:8]), true
+	}
+	return mutexName, false
+}
+
 // CheckSingleInstance 检查是否已有实例运行
 // 返回 true 表示当前是唯一实例，可以继续运行
 // 返回 false 表示已有实例运行，应该退出
 func CheckSingleInstance() bool {
+	targetMutex, isolated := resolvedMutexName()
 	// 将字符串转换为 UTF-16
-	name, _ := syscall.UTF16PtrFromString(mutexName)
+	name, _ := syscall.UTF16PtrFromString(targetMutex)
 
 	// 创建互斥锁
 	// createMutex.Call 的第三个返回值就是 GetLastError 的结果
@@ -51,8 +65,10 @@ func CheckSingleInstance() bool {
 
 	// 检查是否已存在
 	if err == syscall.Errno(ERROR_ALREADY_EXISTS) {
-		// 已有实例运行，尝试激活已有窗口
-		activateExistingWindow()
+		// 默认模式下尝试激活已有窗口；隔离目录模式下避免误拉起日常客户端窗口
+		if !isolated {
+			activateExistingWindow()
+		}
 		closeHandle.Call(handle)
 		return false
 	}

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -17,6 +18,12 @@ var lockFile *os.File
 // 1. macOS 的 os.TempDir() 在不同启动方式下可能返回不同路径
 // 2. Linux 的 /tmp 可能被 systemd-tmpfiles 定期清理
 func lockFilePath() string {
+	if customDir := strings.TrimSpace(os.Getenv("SIGNAL_DESKTOP_APP_DIR")); customDir != "" {
+		dir := filepath.Clean(customDir)
+		_ = os.MkdirAll(dir, 0700)
+		return filepath.Join(dir, "singleton.lock")
+	}
+
 	// 优先使用用户配置目录（与应用数据目录一致）
 	configDir, err := os.UserConfigDir()
 	if err == nil {
