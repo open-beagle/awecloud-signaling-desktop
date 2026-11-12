@@ -37,7 +37,7 @@ func TestIsSyntheticLoopbackFakeIP(t *testing.T) {
 	require.True(t, IsSyntheticLoopbackFakeIP("signal.example.com", fake))
 	require.False(t, IsSyntheticLoopbackFakeIP("signal.example.com", loopback1))
 	require.False(t, IsSyntheticLoopbackFakeIP("signal.example.com", lan))
-	require.False(t, IsSyntheticLoopbackFakeIP("signal.example.com", tunFake))
+	require.True(t, IsSyntheticLoopbackFakeIP("signal.example.com", tunFake))
 	require.False(t, IsSyntheticLoopbackFakeIP("localhost", fake))
 	require.False(t, IsSyntheticLoopbackFakeIP("home-pc.rdp.beagle", []net.IPAddr{{IP: net.ParseIP("127.1.0.2")}}))
 	require.False(t, IsSyntheticLoopbackFakeIP("127.107.0.92", fake))
@@ -72,6 +72,22 @@ func TestResolverBypassesSyntheticLoopbackViaUDP(t *testing.T) {
 	require.NotEmpty(t, ips)
 	require.Equal(t, "203.0.113.25", ips[0].IP.String())
 	require.Equal(t, dnsAddr, r.VerifiedDNSServer())
+
+	// OpenClash 198.18.0.0/15 Fake-IP 场景：路由器 DNS 同样返回 198.18.0.15 时应自动跳过路由器并从干净公网 DNS 解析真实 IP
+	poisonedGatewayDNS := startMockARecordDNSServer(t, net.IPv4(198, 18, 0, 15))
+	rOpenClash := &DirectResolver{
+		osLookup: func(ctx context.Context, host string) ([]net.IPAddr, error) {
+			return []net.IPAddr{{IP: net.ParseIP("198.18.0.15")}}, nil
+		},
+		adapterDNS: func() []string {
+			return []string{poisonedGatewayDNS}
+		},
+		fallbackDNS: []string{dnsAddr},
+	}
+	ipsClash, err := rOpenClash.ResolveIPAddr(ctx, "headscale.example.com")
+	require.NoError(t, err)
+	require.NotEmpty(t, ipsClash)
+	require.Equal(t, "203.0.113.25", ipsClash[0].IP.String())
 }
 
 func TestDialContextConnectsRealTargetWhenOSReturnsSyntheticLoopback(t *testing.T) {
