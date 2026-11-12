@@ -594,6 +594,7 @@ const enablingSystemDNS = ref(false);
 const connectingToken = ref("");
 const copyingToken = ref("");
 let peerLinkPollTimer: ReturnType<typeof setInterval> | null = null;
+let latestPeerLinkRequest = 0;
 
 const myDevices = computed(() => devices.value.filter((d) => !d.is_shared));
 const sharedDevices = computed(() => devices.value.filter((d) => d.is_shared));
@@ -653,8 +654,10 @@ const loadDevices = async () => {
 };
 
 const loadPeerLinks = async () => {
+  const request = ++latestPeerLinkRequest;
   try {
     const states = await GetPeerLinkStates();
+    if (request !== latestPeerLinkRequest) return;
     const nextMap: Record<string, PeerLinkState> = {};
     if (states) {
       for (const [ip, state] of Object.entries(states)) {
@@ -665,7 +668,8 @@ const loadPeerLinks = async () => {
     }
     peerLinks.value = nextMap;
   } catch {
-    // 忽略未就绪时的瞬态查询失败
+    // Never retain a stale direct-path badge when the current query fails.
+    if (request === latestPeerLinkRequest) peerLinks.value = {};
   }
 };
 
@@ -694,20 +698,22 @@ const refreshAll = async () => {
 
 const getPeerLinkBadge = (
   ip?: string,
-): { label: string; type: "success" | "warning" } | null => {
+): { label: string; type: "success" | "warning" | "info" } | null => {
   if (!ip) return null;
   const st = peerLinks.value[ip];
-  if (!st) return null;
+  if (!st || !st.online) return null;
+  // Relay names the peer's home DERP; it does not prove traffic is relayed.
+  if (!st.active) return { label: "链路待建立", type: "info" };
   if (st.is_direct) {
     return { label: "P2P 直连", type: "success" };
   }
-  if (st.active || st.relay) {
+  if (st.relay) {
     return {
       label: st.relay ? `DERP 中继 (${st.relay})` : "DERP 中继",
       type: "warning",
     };
   }
-  return null;
+  return { label: "链路待确认", type: "info" };
 };
 
 const canConnectRDP = (device: DeviceInfo) => {

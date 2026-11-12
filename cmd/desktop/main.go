@@ -46,6 +46,7 @@ func main() {
 		}
 	}
 	log.Printf("[Startup] version=%s commit=%s build=%s", appVersion.Version, appVersion.GitCommit, appVersion.BuildNumber)
+	diagnostics.EnableDiscoveryLogging()
 
 	// 加载配置
 	cfg, err := config.Load()

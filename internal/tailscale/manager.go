@@ -107,6 +107,9 @@ func (m *Manager) Connect(controlURL, authKey, hostname string) error {
 	}
 
 	m.attachFallbackHandlers()
+	if lc, err := m.LocalClient(); err == nil {
+		go watchDiscoveryDiagnostics(m.ctx, lc)
+	}
 
 	// 启动状态监控
 	go m.watchStatus()
