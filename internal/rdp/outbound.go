@@ -93,11 +93,11 @@ type OutboundManager struct {
 	idleTTL      time.Duration
 	nowFunc      func() time.Time
 
-	mu            sync.RWMutex
-	routesByNode  map[uint64]*outboundRoute
-	domainToVIP   map[string]string
-	stopOnce      sync.Once
-	stopCh        chan struct{}
+	mu           sync.RWMutex
+	routesByNode map[uint64]*outboundRoute
+	domainToVIP  map[string]string
+	stopOnce     sync.Once
+	stopCh       chan struct{}
 }
 
 // OutboundManagerOptions 主控端代理管理器配置项

@@ -31,18 +31,18 @@ type closeWriteConn interface {
 }
 
 type activeInboundSession struct {
-	sessionUUID           string
-	peerHeadscaleNodeID   uint64
-	sourceNodeID          uint64
-	sourceUserName        string
-	sourceDeviceName      string
-	sourceIP              string
-	grantID               uint64
-	startedAt             time.Time
-	remoteConn            net.Conn
-	localConn             net.Conn
-	forcedCloseReason     atomic.Value // string
-	closeOnce             sync.Once
+	sessionUUID         string
+	peerHeadscaleNodeID uint64
+	sourceNodeID        uint64
+	sourceUserName      string
+	sourceDeviceName    string
+	sourceIP            string
+	grantID             uint64
+	startedAt           time.Time
+	remoteConn          net.Conn
+	localConn           net.Conn
+	forcedCloseReason   atomic.Value // string
+	closeOnce           sync.Once
 }
 
 func (s *activeInboundSession) forceClose(reason string) {
