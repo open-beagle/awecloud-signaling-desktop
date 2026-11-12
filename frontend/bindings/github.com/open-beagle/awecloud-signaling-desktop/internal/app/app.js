@@ -77,7 +77,7 @@ export function ClearCredentials() {
 }
 
 /**
- * CloseLoginWindow 关闭登录窗口
+ * CloseLoginWindow 取消正在等待的浏览器登录流并关闭遗留窗口
  * @returns {$CancellablePromise<void>}
  */
 export function CloseLoginWindow() {
@@ -368,8 +368,7 @@ export function OpenBrowser(url) {
 }
 
 /**
- * OpenLoginWindow 打开登录窗口（在 Desktop 内部的 WebView 中）
- * 用于 Logto 登录流程
+ * OpenLoginWindow 在系统默认浏览器中打开登录授权链接（兼容保留方法签名）
  * @param {string} loginURL
  * @returns {$CancellablePromise<void>}
  */

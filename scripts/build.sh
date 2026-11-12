@@ -212,12 +212,15 @@ checkMacOSDeps() {
     fi
 }
 
-# 安装前端依赖
-echo -e "${YELLOW}Installing frontend dependencies...${NC}"
-if [ ! -d "frontend/node_modules" ]; then
+# 安装前端依赖（当 @wailsio/runtime 版本变化时自动重新安装）
+echo -e "${YELLOW}Checking frontend dependencies...${NC}"
+EXPECTED_WAILS_RUNTIME=$(node -p "require('./frontend/package.json').dependencies['@wailsio/runtime']" 2>/dev/null || echo "")
+INSTALLED_WAILS_RUNTIME=$(node -p "require('./frontend/node_modules/@wailsio/runtime/package.json').version" 2>/dev/null || echo "")
+if [ ! -d "frontend/node_modules" ] || [ "$EXPECTED_WAILS_RUNTIME" != "$INSTALLED_WAILS_RUNTIME" ]; then
+    echo -e "${YELLOW}Installing frontend dependencies (expected @wailsio/runtime=${EXPECTED_WAILS_RUNTIME}, installed=${INSTALLED_WAILS_RUNTIME})...${NC}"
     npm install --prefix frontend
 else
-    echo "Frontend dependencies already installed, skipping..."
+    echo "Frontend dependencies up to date (@wailsio/runtime=${INSTALLED_WAILS_RUNTIME}), skipping..."
 fi
 
 # 发布构建使用已提交的绑定，避免在 CI 中编译完整的 Wails CLI。

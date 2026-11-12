@@ -95,9 +95,16 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
 }
 
 # Install frontend dependencies
-Write-Host "[INFO] Installing frontend dependencies..."
+Write-Host "[INFO] Checking frontend dependencies..."
 Set-Location "frontend"
-if (-not (Test-Path "node_modules")) {
+$ExpectedWailsRuntime = (Get-Content "package.json" -Raw | ConvertFrom-Json).dependencies.'@wailsio/runtime'
+$InstalledWailsPkg = "node_modules\@wailsio\runtime\package.json"
+$InstalledWailsRuntime = ""
+if (Test-Path $InstalledWailsPkg) {
+    $InstalledWailsRuntime = (Get-Content $InstalledWailsPkg -Raw | ConvertFrom-Json).version
+}
+if ((-not (Test-Path "node_modules")) -or ($InstalledWailsRuntime -ne $ExpectedWailsRuntime)) {
+    Write-Host "[INFO] Installing frontend dependencies (expected @wailsio/runtime=$ExpectedWailsRuntime, installed=$InstalledWailsRuntime)..."
     npm install
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] Failed to install frontend dependencies" -ForegroundColor Red
@@ -105,7 +112,7 @@ if (-not (Test-Path "node_modules")) {
         exit 1
     }
 } else {
-    Write-Host "Frontend dependencies already installed, skipping..."
+    Write-Host "Frontend dependencies up to date (@wailsio/runtime=$InstalledWailsRuntime), skipping..."
 }
 Set-Location $DesktopDir
 

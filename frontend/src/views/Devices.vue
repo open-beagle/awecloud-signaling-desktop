@@ -469,8 +469,10 @@ const handleModeChange = async (device: DeviceInfo, rdpMode: string) => {
   updatingToken.value = device.device_token
   try {
     const updated = await UpdateDeviceRDPConfig({
+      node_id: Number(device.node_id || 0),
       device_token: device.device_token,
       rdp_mode: rdpMode,
+      update_allow_share: false,
       rdp_allow_share: Boolean(device.rdp_allow_share),
     })
     applyUpdatedDevice(updated)
@@ -488,8 +490,10 @@ const handleAllowShareChange = async (device: DeviceInfo, allowShare: boolean) =
   updatingToken.value = device.device_token
   try {
     const updated = await UpdateDeviceRDPConfig({
+      node_id: Number(device.node_id || 0),
       device_token: device.device_token,
       rdp_mode: normalizeMode(device.rdp_mode),
+      update_allow_share: true,
       rdp_allow_share: allowShare,
     })
     applyUpdatedDevice(updated)
