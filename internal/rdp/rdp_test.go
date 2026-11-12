@@ -306,3 +306,78 @@ func TestOutboundManagerConflictFreePortFallbackAndForwarding(t *testing.T) {
 		return mgr.ReapIdleRoutes() == 1
 	}, 2*time.Second, 10*time.Millisecond)
 }
+
+func TestInboundGateDiagnosesLocalLoopbackFirewallTimeout(t *testing.T) {
+	now := time.Now()
+	whois := &fakeWhoIsClient{
+		responses: map[string]*apitype.WhoIsResponse{
+			"100.64.0.2": {
+				Node:        &tailcfg.Node{ID: 502, Name: "travel-mac"},
+				UserProfile: &tailcfg.UserProfile{LoginName: "client-mengsk"},
+			},
+		},
+	}
+
+	var auditMu sync.Mutex
+	var audits []client.RDPSessionAuditEvent
+
+	gate := NewInboundGate(InboundGateOptions{
+		WhoIsProvider: func() (WhoIsClient, error) { return whois, nil },
+		LocalDialer: func(_ context.Context, _, _ string) (net.Conn, error) {
+			return nil, context.DeadlineExceeded
+		},
+		AuditReporter: func(evt client.RDPSessionAuditEvent) {
+			auditMu.Lock()
+			audits = append(audits, evt)
+			auditMu.Unlock()
+		},
+		NowFunc: func() time.Time { return now },
+	})
+	defer gate.Stop()
+
+	gate.SetTunnelConnected(true)
+	gate.UpdateLocalStatus(LocalRDPStatus{
+		Supported:      true,
+		ServiceEnabled: true,
+		PortListening:  true,
+		Ready:          true,
+		LocalPort:      3389,
+	})
+	gate.ApplyPolicy(&pb.DesktopInboundRDPPolicy{
+		EffectiveEnabled: true,
+		RdpMode:          "auto",
+		TargetPort:       3389,
+		IssuedAtUnix:     now.Unix(),
+		ValidUntilUnix:   now.Add(5 * time.Minute).Unix(),
+		AllowedPeers: []*pb.AllowedRDPPeer{
+			{
+				HeadscaleNodeId:   502,
+				SourceNodeId:      12,
+				SourceUserName:    "mengsk",
+				SourceDeviceName:  "travel-mac",
+				HeadscaleUserName: "client-mengsk",
+			},
+		},
+	})
+
+	handler, intercept := gate.FallbackTCPHandler(netip.MustParseAddrPort("100.64.0.2:51000"), netip.MustParseAddrPort("100.64.0.1:3389"))
+	require.True(t, intercept)
+	cClient, cServer := net.Pipe()
+	go handler(cServer)
+	_ = cClient.SetReadDeadline(time.Now().Add(time.Second))
+	buf := make([]byte, 8)
+	_, err := cClient.Read(buf)
+	require.Error(t, err)
+	_ = cClient.Close()
+
+	require.Eventually(t, func() bool {
+		auditMu.Lock()
+		defer auditMu.Unlock()
+		for _, a := range audits {
+			if a.EventType == "rejected" && a.CloseReason == "local_loopback_timeout" && a.SourceHeadscaleNodeID == 502 {
+				return true
+			}
+		}
+		return false
+	}, 2*time.Second, 20*time.Millisecond)
+}

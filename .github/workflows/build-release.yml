@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - release-v*
+  workflow_dispatch:
 
 concurrency:
   group: desktop-release-${{ github.ref }}
@@ -38,12 +39,12 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: "1.26"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Install Linux dependencies
         run: |
@@ -58,8 +59,10 @@ jobs:
 
       - name: Create Desktop environment
         env:
-          SIGNALING_ADDRESS: https://signal.wodcloud.com
+          SIGNALING_ADDRESS: ${{ secrets.SIGNALING_ADDRESS }}
         run: |
+          set -eu
+          test -n "$SIGNALING_ADDRESS" || { echo "Missing required secret: SIGNALING_ADDRESS" >&2; exit 1; }
           umask 077
           printf 'SIGNALING_ADDRESS=%s\n' "$SIGNALING_ADDRESS" > .env
 
@@ -94,17 +97,19 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.26'
+          go-version: "1.26"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
 
       - name: Create Desktop environment
         env:
-          SIGNALING_ADDRESS: https://signal.wodcloud.com
+          SIGNALING_ADDRESS: ${{ secrets.SIGNALING_ADDRESS }}
         run: |
+          set -eu
+          test -n "$SIGNALING_ADDRESS" || { echo "Missing required secret: SIGNALING_ADDRESS" >&2; exit 1; }
           umask 077
           printf 'SIGNALING_ADDRESS=%s\n' "$SIGNALING_ADDRESS" > .env
 

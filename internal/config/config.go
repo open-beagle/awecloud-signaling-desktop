@@ -47,8 +47,16 @@ type LocalConfig struct {
 	PortPreferences map[string]int `json:"port_preferences,omitempty"` // 当前设备的 ContainerService 本地端口
 }
 
-// GetAppDir 返回应用数据目录
+// GetAppDir 返回应用数据目录（优先支持 SIGNAL_DESKTOP_APP_DIR 隔离运行目录）
 func GetAppDir() (string, error) {
+	if customDir := strings.TrimSpace(os.Getenv("SIGNAL_DESKTOP_APP_DIR")); customDir != "" {
+		appDir := filepath.Clean(customDir)
+		if err := os.MkdirAll(appDir, 0700); err != nil {
+			return "", err
+		}
+		return appDir, nil
+	}
+
 	// 获取用户配置目录
 	configDir, err := os.UserConfigDir()
 	if err != nil {

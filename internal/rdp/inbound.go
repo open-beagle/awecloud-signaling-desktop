@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -265,6 +266,7 @@ func (g *InboundGate) handleInboundConn(src netip.AddrPort, remoteConn net.Conn)
 	exposed := g.computeExposedLocked(now)
 	policy := g.policy
 	localPort := g.localStatus.LocalPort
+	localPortListening := g.localStatus.PortListening
 	g.mu.RUnlock()
 
 	if !exposed || policy == nil {
@@ -284,7 +286,7 @@ func (g *InboundGate) handleInboundConn(src netip.AddrPort, remoteConn net.Conn)
 	if peer == nil {
 		log.Printf("[RDP Inbound] 拒绝未授权入站连接 src=%s: %s", src.String(), rejectReason)
 		_ = remoteConn.Close()
-		g.emitRejectedAuditRateLimited(src.Addr().String(), rejectReason, now)
+		g.emitRejectedAuditRateLimited(nil, src.Addr().String(), rejectReason, now)
 		return
 	}
 
@@ -293,7 +295,13 @@ func (g *InboundGate) handleInboundConn(src netip.AddrPort, remoteConn net.Conn)
 	localConn, err := g.localDialer(dialCtx, "tcp", localAddr)
 	cancel()
 	if err != nil {
-		log.Printf("[RDP Inbound] 连接本机 RDP 服务失败 (%s): %v", localAddr, err)
+		if localPortListening && isDialTimeoutError(err) {
+			log.Printf("[RDP Inbound] 连接本机 RDP 回环地址超时 (%s, PortListening=true): %v；请检查 Windows Defender 防火墙规则 RemoteDesktop-UserMode-In-TCP 的 RemoteAddress 是否包含 127.0.0.1（或 Any）", localAddr, err)
+			g.emitRejectedAuditRateLimited(peer, src.Addr().String(), "local_loopback_timeout", now)
+		} else {
+			log.Printf("[RDP Inbound] 连接本机 RDP 服务失败 (%s): %v", localAddr, err)
+			g.emitRejectedAuditRateLimited(peer, src.Addr().String(), "local_dial_failed", now)
+		}
 		_ = remoteConn.Close()
 		return
 	}
@@ -513,23 +521,43 @@ func (g *InboundGate) closeAllSessions(reason string) {
 	}
 }
 
-func (g *InboundGate) emitRejectedAuditRateLimited(sourceIP, reason string, now time.Time) {
+func isDialTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+func (g *InboundGate) emitRejectedAuditRateLimited(peer *pb.AllowedRDPPeer, sourceIP, reason string, now time.Time) {
+	rateKey := sourceIP + "|" + reason
 	g.rejectRateMu.Lock()
-	last, exists := g.lastRejectAt[sourceIP]
+	last, exists := g.lastRejectAt[rateKey]
 	if exists && now.Sub(last) < 15*time.Second {
 		g.rejectRateMu.Unlock()
 		return
 	}
-	g.lastRejectAt[sourceIP] = now
+	g.lastRejectAt[rateKey] = now
 	g.rejectRateMu.Unlock()
 
-	g.emitAuditAsync(client.RDPSessionAuditEvent{
+	evt := client.RDPSessionAuditEvent{
 		SessionUUID:   newRDPSessionUUID(),
 		EventType:     "rejected",
 		SourceIP:      sourceIP,
 		CloseReason:   reason,
 		TimestampUnix: now.Unix(),
-	})
+	}
+	if peer != nil {
+		evt.SourceHeadscaleNodeID = peer.HeadscaleNodeId
+		evt.SourceNodeID = peer.SourceNodeId
+		evt.SourceUserName = peer.SourceUserName
+		evt.SourceDeviceName = peer.SourceDeviceName
+		evt.GrantID = peer.GrantId
+	}
+	g.emitAuditAsync(evt)
 }
 
 func (g *InboundGate) emitAuditAsync(evt client.RDPSessionAuditEvent) {

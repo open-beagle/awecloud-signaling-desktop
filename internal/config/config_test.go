@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -8,8 +9,49 @@ import (
 func useTestConfigRoot(t *testing.T) {
 	t.Helper()
 	root := t.TempDir()
+	t.Setenv("SIGNAL_DESKTOP_APP_DIR", "")
 	t.Setenv("APPDATA", root)
 	t.Setenv("XDG_CONFIG_HOME", root)
+}
+
+func TestGetAppDirHonorsSignalDesktopAppDirEnv(t *testing.T) {
+	defaultRoot := t.TempDir()
+	isolatedDir := filepath.Join(t.TempDir(), "signal-staging")
+	t.Setenv("APPDATA", defaultRoot)
+	t.Setenv("XDG_CONFIG_HOME", defaultRoot)
+	t.Setenv("SIGNAL_DESKTOP_APP_DIR", "  "+isolatedDir+"  ")
+
+	appDir, err := GetAppDir()
+	if err != nil {
+		t.Fatalf("GetAppDir: %v", err)
+	}
+	if appDir != filepath.Clean(isolatedDir) {
+		t.Fatalf("GetAppDir = %q, want %q", appDir, filepath.Clean(isolatedDir))
+	}
+
+	cfgPath, err := GetConfigPath()
+	if err != nil {
+		t.Fatalf("GetConfigPath: %v", err)
+	}
+	if cfgPath != filepath.Join(isolatedDir, "desktop.json") {
+		t.Fatalf("GetConfigPath = %q, want %q", cfgPath, filepath.Join(isolatedDir, "desktop.json"))
+	}
+
+	tunnelDir, err := GetTunnelStateDir()
+	if err != nil {
+		t.Fatalf("GetTunnelStateDir: %v", err)
+	}
+	if tunnelDir != filepath.Join(isolatedDir, "tunnel") {
+		t.Fatalf("GetTunnelStateDir = %q, want %q", tunnelDir, filepath.Join(isolatedDir, "tunnel"))
+	}
+
+	stored := &Config{ServerAddress: "https://signal.example.com", ClientID: "alice"}
+	if err := stored.Save(); err != nil {
+		t.Fatalf("Save isolated config: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(defaultRoot, "signaling-desktop", "desktop.json")); !os.IsNotExist(err) {
+		t.Fatalf("default user config dir must remain untouched when SIGNAL_DESKTOP_APP_DIR is set")
+	}
 }
 
 func TestLoadDropsCredentialsFromDifferentPinnedServer(t *testing.T) {
