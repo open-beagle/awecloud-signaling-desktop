@@ -41,6 +41,14 @@ func TestIsSyntheticLoopbackFakeIP(t *testing.T) {
 	require.False(t, IsSyntheticLoopbackFakeIP("localhost", fake))
 	require.False(t, IsSyntheticLoopbackFakeIP("home-pc.rdp.beagle", []net.IPAddr{{IP: net.ParseIP("127.1.0.2")}}))
 	require.False(t, IsSyntheticLoopbackFakeIP("127.107.0.92", fake))
+
+	t.Cleanup(func() { SetActiveDomainSuffix(DefaultDomainSuffix) })
+	require.Equal(t, ".acme", DeriveBrandDomainSuffix("https://signal.acme.io"))
+	require.Equal(t, ".acme", DeriveBrandDomainSuffix("https://signal.acme.com.cn:8443"))
+	require.Equal(t, ".beagle", DeriveBrandDomainSuffix("http://127.0.0.1:8080"))
+	require.Equal(t, ".beagle", DeriveBrandDomainSuffix("localhost:8080"))
+	SetActiveDomainSuffix(".acme")
+	require.False(t, IsSyntheticLoopbackFakeIP("home.alice.acme", []net.IPAddr{{IP: net.ParseIP("127.1.0.5")}}))
 }
 
 func TestResolverBypassesSyntheticLoopbackViaUDP(t *testing.T) {

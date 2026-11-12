@@ -264,6 +264,27 @@ export class DeviceInfo {
              */
             this["grant_expires_at_unix"] = 0;
         }
+        if (!("host_domain_label" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["host_domain_label"] = "";
+        }
+        if (!("device_domain" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["device_domain"] = "";
+        }
+        if (!("owner_domain_label" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["owner_domain_label"] = "";
+        }
 
         Object.assign(this, $$source);
     }
@@ -353,6 +374,65 @@ export class DomainItem {
             $$parsedSource["ssh_users"] = $$createField3_0($$parsedSource["ssh_users"]);
         }
         return new DomainItem(/** @type {Partial<DomainItem>} */($$parsedSource));
+    }
+}
+
+/**
+ * DomainNamespaceStatus 当前客户端动态品牌域名与本机系统 DNS 拦截状态
+ */
+export class DomainNamespaceStatus {
+    /**
+     * Creates a new DomainNamespaceStatus instance.
+     * @param {Partial<DomainNamespaceStatus>} [$$source = {}] - The source object to create the DomainNamespaceStatus.
+     */
+    constructor($$source = {}) {
+        if (!("domain_suffix" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["domain_suffix"] = "";
+        }
+        if (!("user_domain_label" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["user_domain_label"] = "";
+        }
+        if (!("dns_server_running" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["dns_server_running"] = false;
+        }
+        if (!("dns_listen_addr" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["dns_listen_addr"] = "";
+        }
+        if (!("system_dns_ready" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["system_dns_ready"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DomainNamespaceStatus instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {DomainNamespaceStatus}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new DomainNamespaceStatus(/** @type {Partial<DomainNamespaceStatus>} */($$parsedSource));
     }
 }
 
@@ -811,6 +891,65 @@ export class LoginResultGRPC {
 }
 
 /**
+ * PeerLinkState 远端设备隧道连接路径实时状态（P2P 直连或 DERP 中继）
+ */
+export class PeerLinkState {
+    /**
+     * Creates a new PeerLinkState instance.
+     * @param {Partial<PeerLinkState>} [$$source = {}] - The source object to create the PeerLinkState.
+     */
+    constructor($$source = {}) {
+        if (!("ip" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["ip"] = "";
+        }
+        if (!("online" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["online"] = false;
+        }
+        if (!("active" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["active"] = false;
+        }
+        if (!("is_direct" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["is_direct"] = false;
+        }
+        if (!("relay" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["relay"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PeerLinkState instance from a string or object.
+     * @param {any} [$$source = {}]
+     * @returns {PeerLinkState}
+     */
+    static createFrom($$source = {}) {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PeerLinkState(/** @type {Partial<PeerLinkState>} */($$parsedSource));
+    }
+}
+
+/**
  * ProxyStatusInfo 代理连接状态信息
  */
 export class ProxyStatusInfo {
@@ -1142,7 +1281,7 @@ export class TunnelStatus {
 }
 
 /**
- * UpdateDeviceRDPConfigInput 前端调用修改设备远程桌面配置的参数
+ * UpdateDeviceRDPConfigInput 前端调用修改设备远程桌面配置或个人主机/用户域名的参数
  */
 export class UpdateDeviceRDPConfigInput {
     /**
@@ -1184,6 +1323,34 @@ export class UpdateDeviceRDPConfigInput {
              * @type {boolean}
              */
             this["rdp_allow_share"] = false;
+        }
+        if (!("update_host_domain_label" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["update_host_domain_label"] = false;
+        }
+        if (!("host_domain_label" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["host_domain_label"] = "";
+        }
+        if (!("update_user_domain_label" in $$source)) {
+            /**
+             * @member
+             * @type {boolean}
+             */
+            this["update_user_domain_label"] = false;
+        }
+        if (!("user_domain_label" in $$source)) {
+            /**
+             * @member
+             * @type {string}
+             */
+            this["user_domain_label"] = "";
         }
 
         Object.assign(this, $$source);

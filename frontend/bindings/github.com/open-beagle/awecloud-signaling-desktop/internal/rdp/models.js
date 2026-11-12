@@ -186,6 +186,13 @@ export class RDPEndpointInfo {
              */
             this["vip"] = "";
         }
+        if (!("vip_port" in $$source)) {
+            /**
+             * @member
+             * @type {number}
+             */
+            this["vip_port"] = 0;
+        }
         if (!("local_addr" in $$source)) {
             /**
              * @member

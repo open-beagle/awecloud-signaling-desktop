@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/privilege"
 )
@@ -27,11 +28,33 @@ func RecommendedPort() int {
 	return 15353
 }
 
+// IsSystemDNSConfigured 检查 macOS /etc/resolver/<suffix> 是否已指向本地端口
+func IsSystemDNSConfigured(suffix string, _ string) bool {
+	label := strings.TrimPrefix(NormalizeManagedSuffix(suffix), ".")
+	data, err := os.ReadFile(filepath.Join(resolverDir, label))
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(data), "nameserver 127.0.0.1")
+}
+
 // ConfigureSystemDNS 配置系统 DNS，将 .beagle 域名指向本地 DNS 服务器
-// macOS: 通过 osascript 提权创建 /etc/resolver/beagle 文件
 func ConfigureSystemDNS(port int) error {
+	return ConfigureSystemDNSForSuffix(".beagle", "127.0.0.1", port, true, false)
+}
+
+// ConfigureSystemDNSForSuffix 按动态品牌后缀写入 macOS /etc/resolver/<label>
+func ConfigureSystemDNSForSuffix(suffix string, _ string, port int, allowElevation bool, _ bool) error {
+	label := strings.TrimPrefix(NormalizeManagedSuffix(suffix), ".")
 	content := fmt.Sprintf("%snameserver 127.0.0.1\nport %d\n", resolverHeader, port)
-	resolverPath := filepath.Join(resolverDir, resolverFile)
+	resolverPath := filepath.Join(resolverDir, label)
+
+	if existing, err := os.ReadFile(resolverPath); err == nil && string(existing) == content {
+		return nil
+	}
+	if !allowElevation {
+		return fmt.Errorf("resolver %s 尚未配置", resolverPath)
+	}
 
 	// 通过 osascript 提权创建目录和写入文件
 	cmd := fmt.Sprintf("mkdir -p %s && printf '%%s' '%s' > %s",

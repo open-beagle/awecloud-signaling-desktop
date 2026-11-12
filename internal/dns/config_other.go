@@ -14,11 +14,19 @@ func RecommendedPort() int {
 	return 53
 }
 
-// ConfigureSystemDNS 配置系统 DNS（Linux 平台暂不实现）
-// Linux 的 DNS 劫持在 P2 阶段实现（systemd-resolved 或 /etc/resolv.conf）
+// IsSystemDNSConfigured 默认平台返回 false
+func IsSystemDNSConfigured(_ string, _ string) bool {
+	return false
+}
+
+// ConfigureSystemDNS 配置系统 DNS
 func ConfigureSystemDNS(port int) error {
-	log.Printf("[DNS] Linux 平台暂不支持自动 DNS 配置，请手动将 .beagle 域名指向 127.0.0.2:%d", port)
-	log.Printf("[DNS] 或者使用 IP 地址直接连接 Agent")
+	return ConfigureSystemDNSForSuffix(".beagle", "127.0.0.2", port, false, false)
+}
+
+// ConfigureSystemDNSForSuffix 默认平台提示手动配置
+func ConfigureSystemDNSForSuffix(suffix string, listenIP string, port int, _ bool, _ bool) error {
+	log.Printf("[DNS] 当前平台暂不支持自动 DNS 配置，请手动将 %s 域名指向 %s:%d", suffix, listenIP, port)
 	return nil
 }
 

@@ -10,17 +10,41 @@ import (
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/autostart"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/client"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/dns"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/netutil"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/rdp"
 	pb "github.com/open-beagle/awecloud-signaling-desktop/pkg/proto"
 )
 
-// UpdateDeviceRDPConfigInput 前端调用修改设备远程桌面配置的参数
+// UpdateDeviceRDPConfigInput 前端调用修改设备远程桌面配置或个人主机/用户域名的参数
 type UpdateDeviceRDPConfigInput struct {
-	NodeID           uint64 `json:"node_id"`
-	DeviceToken      string `json:"device_token"`
-	RDPMode          string `json:"rdp_mode"`
-	UpdateAllowShare bool   `json:"update_allow_share"`
-	RDPAllowShare    bool   `json:"rdp_allow_share"`
+	NodeID                uint64 `json:"node_id"`
+	DeviceToken           string `json:"device_token"`
+	RDPMode               string `json:"rdp_mode"`
+	UpdateAllowShare      bool   `json:"update_allow_share"`
+	RDPAllowShare         bool   `json:"rdp_allow_share"`
+	UpdateHostDomainLabel bool   `json:"update_host_domain_label"`
+	HostDomainLabel       string `json:"host_domain_label"`
+	UpdateUserDomainLabel bool   `json:"update_user_domain_label"`
+	UserDomainLabel       string `json:"user_domain_label"`
+}
+
+// DomainNamespaceStatus 当前客户端动态品牌域名与本机系统 DNS 拦截状态
+type DomainNamespaceStatus struct {
+	DomainSuffix     string `json:"domain_suffix"`
+	UserDomainLabel  string `json:"user_domain_label"`
+	DNSServerRunning bool   `json:"dns_server_running"`
+	DNSListenAddr    string `json:"dns_listen_addr"`
+	SystemDNSReady   bool   `json:"system_dns_ready"`
+}
+
+// PeerLinkState 远端设备隧道连接路径实时状态（P2P 直连或 DERP 中继）
+type PeerLinkState struct {
+	IP       string `json:"ip"`
+	Online   bool   `json:"online"`
+	Active   bool   `json:"active"`
+	IsDirect bool   `json:"is_direct"`
+	Relay    string `json:"relay"`
 }
 
 func clientDeviceToAppDevice(d *client.DeviceInfo) *DeviceInfo {
@@ -49,6 +73,9 @@ func clientDeviceToAppDevice(d *client.DeviceInfo) *DeviceInfo {
 		OwnerUsername:      d.OwnerUsername,
 		IsShared:           d.IsShared,
 		GrantExpiresAtUnix: d.GrantExpiresAtUnix,
+		HostDomainLabel:    d.HostDomainLabel,
+		DeviceDomain:       d.DeviceDomain,
+		OwnerDomainLabel:   d.OwnerDomainLabel,
 	}
 }
 
@@ -108,6 +135,16 @@ func (a *App) initRDPRuntimeForClient(dc *client.DesktopClient) {
 		})
 		dc.SetDevicesUpdatedCallback(func(_ []*client.DeviceInfo) {
 			a.emitFrontendEvent("devices:updated", nil)
+		})
+		dc.SetDomainNamespaceCallback(func(domainSuffix string, userDomainLabel string) {
+			if a.dnsServer != nil && domainSuffix != "" {
+				a.dnsServer.SetDomainSuffix(domainSuffix)
+				_ = dns.ConfigureSystemDNSForSuffix(domainSuffix, a.dnsServer.ListenIP(), a.dnsServer.ListenPort(), true, false)
+			}
+			a.emitFrontendEvent("domain:updated", map[string]any{
+				"domain_suffix":     domainSuffix,
+				"user_domain_label": userDomainLabel,
+			})
 		})
 	}
 
@@ -200,7 +237,7 @@ func (a *App) GetLocalRDPStatus() *rdp.LocalRDPStatus {
 	return &st
 }
 
-// UpdateDeviceRDPConfig 修改本人名下当前或远端 Desktop 设备的远程桌面开放模式与共享许可
+// UpdateDeviceRDPConfig 修改本人名下当前或远端 Desktop 设备的远程桌面开放模式、共享许可或三段式个人域名
 func (a *App) UpdateDeviceRDPConfig(input *UpdateDeviceRDPConfigInput) (*DeviceInfo, error) {
 	if a.desktopClient == nil || !a.desktopClient.IsAuthenticated() {
 		return nil, fmt.Errorf("未登录")
@@ -208,17 +245,79 @@ func (a *App) UpdateDeviceRDPConfig(input *UpdateDeviceRDPConfigInput) (*DeviceI
 	if input == nil {
 		return nil, fmt.Errorf("请求参数不能为空")
 	}
-	updated, err := a.desktopClient.UpdateDeviceRDPConfig(
-		input.NodeID,
-		strings.TrimSpace(input.DeviceToken),
-		strings.TrimSpace(input.RDPMode),
-		input.UpdateAllowShare,
-		input.RDPAllowShare,
-	)
+	updated, err := a.desktopClient.UpdateDeviceRDPConfig(client.UpdateDeviceRDPConfigParams{
+		TargetNodeID:          input.NodeID,
+		DeviceToken:           strings.TrimSpace(input.DeviceToken),
+		RDPMode:               strings.TrimSpace(input.RDPMode),
+		UpdateAllowShare:      input.UpdateAllowShare,
+		RDPAllowShare:         input.RDPAllowShare,
+		UpdateHostDomainLabel: input.UpdateHostDomainLabel,
+		HostDomainLabel:       strings.TrimSpace(input.HostDomainLabel),
+		UpdateUserDomainLabel: input.UpdateUserDomainLabel,
+		UserDomainLabel:       strings.TrimSpace(input.UserDomainLabel),
+	})
 	if err != nil {
 		return nil, err
 	}
 	return clientDeviceToAppDevice(updated), nil
+}
+
+// GetDomainNamespaceStatus 获取当前动态品牌域名空间与本机系统 DNS 拦截就绪状态
+func (a *App) GetDomainNamespaceStatus() *DomainNamespaceStatus {
+	suffix := netutil.ActiveDomainSuffix()
+	userLabel := ""
+	if a.desktopClient != nil {
+		if s := a.desktopClient.GetDomainSuffix(); s != "" {
+			suffix = s
+		}
+		userLabel = a.desktopClient.GetUserDomainLabel()
+	}
+
+	dnsRunning := a.dnsServer != nil
+	listenAddr := dns.RecommendedListenAddr()
+	listenIP := "127.0.0.2"
+	if a.dnsServer != nil {
+		listenAddr = a.dnsServer.ListenAddr()
+		listenIP = a.dnsServer.ListenIP()
+	}
+
+	return &DomainNamespaceStatus{
+		DomainSuffix:     suffix,
+		UserDomainLabel:  userLabel,
+		DNSServerRunning: dnsRunning,
+		DNSListenAddr:    listenAddr,
+		SystemDNSReady:   dnsRunning && dns.IsSystemDNSConfigured(suffix, listenIP),
+	}
+}
+
+// EnsureSystemDNSConfigured 手动触发一次性系统 DNS / NRPT 域名后缀规则持久化注册
+func (a *App) EnsureSystemDNSConfigured() (*DomainNamespaceStatus, error) {
+	st := a.GetDomainNamespaceStatus()
+	if !st.DNSServerRunning || a.dnsServer == nil {
+		return st, fmt.Errorf("本地 DNS 服务尚未启动，请确认零信任隧道已连接")
+	}
+	if err := dns.ConfigureSystemDNSForSuffix(st.DomainSuffix, a.dnsServer.ListenIP(), a.dnsServer.ListenPort(), true, true); err != nil {
+		return a.GetDomainNamespaceStatus(), err
+	}
+	return a.GetDomainNamespaceStatus(), nil
+}
+
+// GetPeerLinkStates 查询在线对端节点的实时 P2P 直连 / DERP 中继路径状态
+func (a *App) GetPeerLinkStates() map[string]*PeerLinkState {
+	out := make(map[string]*PeerLinkState)
+	if a.tsManager == nil || !a.tsManager.IsConnected() {
+		return out
+	}
+	for ip, info := range a.tsManager.GetPeerLinkInfos() {
+		out[ip] = &PeerLinkState{
+			IP:       info.IP,
+			Online:   info.Online,
+			Active:   info.Active,
+			IsDirect: info.IsDirect,
+			Relay:    info.Relay,
+		}
+	}
+	return out
 }
 
 func (a *App) findConnectableDevice(deviceToken string) (*client.DeviceInfo, error) {
@@ -278,7 +377,7 @@ func (a *App) PrepareDeviceRDPEndpoint(deviceToken string) (*rdp.RDPEndpointInfo
 	if name == "" {
 		name = target.Hostname
 	}
-	ep, err := a.rdpOutbound.EnsureEndpoint(target.NodeID, name, target.IP)
+	ep, err := a.rdpOutbound.EnsureEndpointWithDomain(target.NodeID, name, target.IP, target.DeviceDomain)
 	if err != nil {
 		return nil, err
 	}

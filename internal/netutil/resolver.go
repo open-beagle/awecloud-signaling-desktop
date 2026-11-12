@@ -95,7 +95,7 @@ func IsSyntheticLoopbackFakeIP(host string, ips []net.IPAddr) bool {
 	if cleanHost == "localhost" ||
 		strings.HasSuffix(cleanHost, ".localhost") ||
 		strings.HasSuffix(cleanHost, ".local") ||
-		strings.HasSuffix(cleanHost, ".beagle") {
+		HasManagedDomainSuffix(cleanHost) {
 		return false
 	}
 	if len(ips) == 0 {

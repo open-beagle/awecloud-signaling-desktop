@@ -21,17 +21,40 @@ func RecommendedPort() int {
 	return 5353
 }
 
-// ConfigureSystemDNS 配置 Linux 系统 DNS，将 .beagle 域名指向本地 DNS 服务器
-// 优先使用 systemd-resolved（resolvectl），回退到 /etc/resolv.conf
-func ConfigureSystemDNS(port int) error {
-	// 方案 1：尝试 systemd-resolved
-	if isSystemdResolvedRunning() {
-		return configureSystemdResolved(port)
+// IsSystemDNSConfigured 检查 Linux systemd-resolved 是否已包含指定后缀分流配置
+func IsSystemDNSConfigured(suffix string, listenIP string) bool {
+	label := strings.TrimPrefix(NormalizeManagedSuffix(suffix), ".")
+	data, err := os.ReadFile("/etc/systemd/resolved.conf.d/" + label + ".conf")
+	if err == nil && strings.Contains(string(data), "~"+label) {
+		return true
 	}
+	return false
+}
 
-	// 方案 2：回退到 /etc/resolv.conf 提示
-	log.Printf("[DNS] systemd-resolved 未运行，请手动配置 DNS")
-	log.Printf("[DNS] 将 .beagle 域名指向 127.0.0.2:%d", port)
+// ConfigureSystemDNS 配置 Linux 系统 DNS，将 .beagle 域名指向本地 DNS 服务器
+func ConfigureSystemDNS(port int) error {
+	return ConfigureSystemDNSForSuffix(".beagle", "127.0.0.2", port, true, false)
+}
+
+// ConfigureSystemDNSForSuffix 配置 Linux 系统 DNS，将动态品牌后缀指向本地 DNS 服务器
+func ConfigureSystemDNSForSuffix(suffix string, listenIP string, port int, _ bool, _ bool) error {
+	label := strings.TrimPrefix(NormalizeManagedSuffix(suffix), ".")
+	if listenIP == "" {
+		listenIP = "127.0.0.2"
+	}
+	if isSystemdResolvedRunning() {
+		confDir := "/etc/systemd/resolved.conf.d"
+		confFile := confDir + "/" + label + ".conf"
+		content := fmt.Sprintf("[Resolve]\nDNS=%s:%d\nDomains=~%s ~beagle\n", listenIP, port, label)
+		if err := os.MkdirAll(confDir, 0755); err == nil {
+			if err := os.WriteFile(confFile, []byte(content), 0644); err == nil {
+				_ = exec.Command("systemctl", "restart", "systemd-resolved").Run()
+				return nil
+			}
+		}
+		return configureResolvectl(port)
+	}
+	log.Printf("[DNS] systemd-resolved 未运行，请手动将 .%s 域名指向 %s:%d", label, listenIP, port)
 	return nil
 }
 

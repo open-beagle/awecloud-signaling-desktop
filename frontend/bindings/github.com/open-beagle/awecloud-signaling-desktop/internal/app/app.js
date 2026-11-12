@@ -127,12 +127,22 @@ export function DeleteDevice(deviceToken) {
 }
 
 /**
+ * EnsureSystemDNSConfigured 手动触发一次性系统 DNS / NRPT 域名后缀规则持久化注册
+ * @returns {$CancellablePromise<$models.DomainNamespaceStatus | null>}
+ */
+export function EnsureSystemDNSConfigured() {
+    return $Call.ByID(3927516329).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType13($result);
+    }));
+}
+
+/**
  * GenerateKubeconfig 保留旧接口，并使用新的安全合并逻辑安装到本机。
  * @returns {$CancellablePromise<$models.KubeconfigResult | null>}
  */
 export function GenerateKubeconfig() {
     return $Call.ByID(351207437).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType13($result);
+        return $$createType15($result);
     }));
 }
 
@@ -149,7 +159,7 @@ export function GetAutostartEnabled() {
  */
 export function GetConfig() {
     return $Call.ByID(3210756173).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType15($result);
+        return $$createType17($result);
     }));
 }
 
@@ -159,7 +169,7 @@ export function GetConfig() {
  */
 export function GetDevices() {
     return $Call.ByID(237845170).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType18($result);
+        return $$createType20($result);
     }));
 }
 
@@ -169,7 +179,17 @@ export function GetDevices() {
  */
 export function GetDomainList() {
     return $Call.ByID(4215633643).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType21($result);
+        return $$createType23($result);
+    }));
+}
+
+/**
+ * GetDomainNamespaceStatus 获取当前动态品牌域名空间与本机系统 DNS 拦截就绪状态
+ * @returns {$CancellablePromise<$models.DomainNamespaceStatus | null>}
+ */
+export function GetDomainNamespaceStatus() {
+    return $Call.ByID(3489462512).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType13($result);
     }));
 }
 
@@ -179,7 +199,7 @@ export function GetDomainList() {
  */
 export function GetGRPCStatus() {
     return $Call.ByID(3652517293).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType23($result);
+        return $$createType25($result);
     }));
 }
 
@@ -190,7 +210,7 @@ export function GetGRPCStatus() {
  */
 export function GetHostServices(hostID) {
     return $Call.ByID(3432160785, hostID).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType26($result);
+        return $$createType28($result);
     }));
 }
 
@@ -200,7 +220,7 @@ export function GetHostServices(hostID) {
  */
 export function GetHosts() {
     return $Call.ByID(2353309006).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType29($result);
+        return $$createType31($result);
     }));
 }
 
@@ -209,7 +229,7 @@ export function GetHosts() {
  */
 export function GetKubeconfigTargets() {
     return $Call.ByID(2506592474).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType32($result);
+        return $$createType34($result);
     }));
 }
 
@@ -219,7 +239,7 @@ export function GetKubeconfigTargets() {
  */
 export function GetLocalRDPStatus() {
     return $Call.ByID(3854377874).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType34($result);
+        return $$createType36($result);
     }));
 }
 
@@ -236,7 +256,17 @@ export function GetLogLevel() {
  */
 export function GetLogs() {
     return $Call.ByID(1466252692).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType35($result);
+        return $$createType37($result);
+    }));
+}
+
+/**
+ * GetPeerLinkStates 查询在线对端节点的实时 P2P 直连 / DERP 中继路径状态
+ * @returns {$CancellablePromise<{ [_ in string]?: $models.PeerLinkState | null }>}
+ */
+export function GetPeerLinkStates() {
+    return $Call.ByID(1826690293).then(/** @type {($result: any) => any} */(($result) => {
+        return $$createType40($result);
     }));
 }
 
@@ -246,7 +276,7 @@ export function GetLogs() {
  */
 export function GetProxyStatus() {
     return $Call.ByID(391408139).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType38($result);
+        return $$createType43($result);
     }));
 }
 
@@ -257,7 +287,7 @@ export function GetProxyStatus() {
  */
 export function GetResourceTenants() {
     return $Call.ByID(223320176).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType40($result);
+        return $$createType45($result);
     }));
 }
 
@@ -267,7 +297,7 @@ export function GetResourceTenants() {
  */
 export function GetResources() {
     return $Call.ByID(2898432568).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType43($result);
+        return $$createType48($result);
     }));
 }
 
@@ -276,7 +306,7 @@ export function GetResources() {
  */
 export function GetServices() {
     return $Call.ByID(2641329379).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType26($result);
+        return $$createType28($result);
     }));
 }
 
@@ -286,7 +316,7 @@ export function GetServices() {
  */
 export function GetTunnelStatus() {
     return $Call.ByID(3308965971).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType45($result);
+        return $$createType50($result);
     }));
 }
 
@@ -295,7 +325,7 @@ export function GetTunnelStatus() {
  */
 export function GetVersion() {
     return $Call.ByID(1667803041).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType47($result);
+        return $$createType52($result);
     }));
 }
 
@@ -319,7 +349,7 @@ export function HideToTray() {
  */
 export function InstallKubeconfig(request) {
     return $Call.ByID(2852743479, request).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType49($result);
+        return $$createType54($result);
     }));
 }
 
@@ -383,7 +413,7 @@ export function OpenLoginWindow(loginURL) {
  */
 export function PrepareDeviceRDPEndpoint(deviceToken) {
     return $Call.ByID(3382740049, deviceToken).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType51($result);
+        return $$createType56($result);
     }));
 }
 
@@ -420,7 +450,7 @@ export function SetAutostartEnabled(enabled) {
  */
 export function SetContainerServiceLocalPort(resourceID, localPort) {
     return $Call.ByID(1340784315, resourceID, localPort).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType43($result);
+        return $$createType48($result);
     }));
 }
 
@@ -467,7 +497,7 @@ export function Startup() {
  */
 export function SwitchResourceTenant(tenantID) {
     return $Call.ByID(418404945, tenantID).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType43($result);
+        return $$createType48($result);
     }));
 }
 
@@ -481,13 +511,13 @@ export function ToggleFavorite(serviceID) {
 }
 
 /**
- * UpdateDeviceRDPConfig 修改本人名下当前或远端 Desktop 设备的远程桌面开放模式与共享许可
+ * UpdateDeviceRDPConfig 修改本人名下当前或远端 Desktop 设备的远程桌面开放模式、共享许可或三段式个人域名
  * @param {$models.UpdateDeviceRDPConfigInput | null} input
  * @returns {$CancellablePromise<$models.DeviceInfo | null>}
  */
 export function UpdateDeviceRDPConfig(input) {
     return $Call.ByID(27079942, input).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType17($result);
+        return $$createType19($result);
     }));
 }
 
@@ -499,7 +529,7 @@ export function UpdateDeviceRDPConfig(input) {
  */
 export function WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint) {
     return $Call.ByID(3344282757, serverAddr, sessionID, deviceFingerprint).then(/** @type {($result: any) => any} */(($result) => {
-        return $$createType53($result);
+        return $$createType58($result);
     }));
 }
 
@@ -516,45 +546,50 @@ const $$createType8 = rdp$0.RDPConnectResult.createFrom;
 const $$createType9 = $Create.Nullable($$createType8);
 const $$createType10 = $models.CreateLoginSessionResult.createFrom;
 const $$createType11 = $Create.Nullable($$createType10);
-const $$createType12 = $models.KubeconfigResult.createFrom;
+const $$createType12 = $models.DomainNamespaceStatus.createFrom;
 const $$createType13 = $Create.Nullable($$createType12);
-const $$createType14 = config$0.Config.createFrom;
+const $$createType14 = $models.KubeconfigResult.createFrom;
 const $$createType15 = $Create.Nullable($$createType14);
-const $$createType16 = $models.DeviceInfo.createFrom;
+const $$createType16 = config$0.Config.createFrom;
 const $$createType17 = $Create.Nullable($$createType16);
-const $$createType18 = $Create.Array($$createType17);
-const $$createType19 = $models.DomainItem.createFrom;
-const $$createType20 = $Create.Nullable($$createType19);
-const $$createType21 = $Create.Array($$createType20);
-const $$createType22 = $models.GRPCStatus.createFrom;
-const $$createType23 = $Create.Nullable($$createType22);
-const $$createType24 = $models.ServiceInfo.createFrom;
+const $$createType18 = $models.DeviceInfo.createFrom;
+const $$createType19 = $Create.Nullable($$createType18);
+const $$createType20 = $Create.Array($$createType19);
+const $$createType21 = $models.DomainItem.createFrom;
+const $$createType22 = $Create.Nullable($$createType21);
+const $$createType23 = $Create.Array($$createType22);
+const $$createType24 = $models.GRPCStatus.createFrom;
 const $$createType25 = $Create.Nullable($$createType24);
-const $$createType26 = $Create.Array($$createType25);
-const $$createType27 = $models.HostInfo.createFrom;
-const $$createType28 = $Create.Nullable($$createType27);
-const $$createType29 = $Create.Array($$createType28);
-const $$createType30 = $models.KubeconfigTarget.createFrom;
-const $$createType31 = $Create.Nullable($$createType30);
-const $$createType32 = $Create.Array($$createType31);
-const $$createType33 = rdp$0.LocalRDPStatus.createFrom;
-const $$createType34 = $Create.Nullable($$createType33);
-const $$createType35 = $Create.Array($Create.Any);
-const $$createType36 = $models.ProxyStatusInfo.createFrom;
-const $$createType37 = $Create.Nullable($$createType36);
-const $$createType38 = $Create.Array($$createType37);
-const $$createType39 = $models.ResourceTenantInfo.createFrom;
-const $$createType40 = $Create.Array($$createType39);
-const $$createType41 = client$0.ResourceInfo.createFrom;
+const $$createType26 = $models.ServiceInfo.createFrom;
+const $$createType27 = $Create.Nullable($$createType26);
+const $$createType28 = $Create.Array($$createType27);
+const $$createType29 = $models.HostInfo.createFrom;
+const $$createType30 = $Create.Nullable($$createType29);
+const $$createType31 = $Create.Array($$createType30);
+const $$createType32 = $models.KubeconfigTarget.createFrom;
+const $$createType33 = $Create.Nullable($$createType32);
+const $$createType34 = $Create.Array($$createType33);
+const $$createType35 = rdp$0.LocalRDPStatus.createFrom;
+const $$createType36 = $Create.Nullable($$createType35);
+const $$createType37 = $Create.Array($Create.Any);
+const $$createType38 = $models.PeerLinkState.createFrom;
+const $$createType39 = $Create.Nullable($$createType38);
+const $$createType40 = $Create.Map($Create.Any, $$createType39);
+const $$createType41 = $models.ProxyStatusInfo.createFrom;
 const $$createType42 = $Create.Nullable($$createType41);
 const $$createType43 = $Create.Array($$createType42);
-const $$createType44 = $models.TunnelStatus.createFrom;
-const $$createType45 = $Create.Nullable($$createType44);
-const $$createType46 = $models.VersionInfo.createFrom;
+const $$createType44 = $models.ResourceTenantInfo.createFrom;
+const $$createType45 = $Create.Array($$createType44);
+const $$createType46 = client$0.ResourceInfo.createFrom;
 const $$createType47 = $Create.Nullable($$createType46);
-const $$createType48 = $models.KubeconfigInstallResult.createFrom;
-const $$createType49 = $Create.Nullable($$createType48);
-const $$createType50 = rdp$0.RDPEndpointInfo.createFrom;
-const $$createType51 = $Create.Nullable($$createType50);
-const $$createType52 = $models.LoginResultGRPC.createFrom;
-const $$createType53 = $Create.Nullable($$createType52);
+const $$createType48 = $Create.Array($$createType47);
+const $$createType49 = $models.TunnelStatus.createFrom;
+const $$createType50 = $Create.Nullable($$createType49);
+const $$createType51 = $models.VersionInfo.createFrom;
+const $$createType52 = $Create.Nullable($$createType51);
+const $$createType53 = $models.KubeconfigInstallResult.createFrom;
+const $$createType54 = $Create.Nullable($$createType53);
+const $$createType55 = rdp$0.RDPEndpointInfo.createFrom;
+const $$createType56 = $Create.Nullable($$createType55);
+const $$createType57 = $models.LoginResultGRPC.createFrom;
+const $$createType58 = $Create.Nullable($$createType57);

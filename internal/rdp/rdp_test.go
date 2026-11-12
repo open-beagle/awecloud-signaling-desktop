@@ -285,6 +285,32 @@ func TestOutboundManagerConflictFreePortFallbackAndForwarding(t *testing.T) {
 	require.Equal(t, "home-win-11-77.rdp.beagle", ep.Domain)
 	require.NotEqual(t, occupiedPort, ep.LocalPort)
 
+	// 验证三段式个人主机域名 VIP 映射与推荐目标地址决策
+	mgrWithDNS := NewOutboundManager(OutboundManagerOptions{
+		Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "tcp", remoteBackend.Addr().String())
+		},
+		VIPAllocator: vip.NewAllocator(),
+		VerifyVIP: func(domain string, expectedVIP string) bool {
+			return domain == "home.alice.acme" && expectedVIP != ""
+		},
+	})
+	defer mgrWithDNS.StopAll()
+
+	epDomain, err := mgrWithDNS.EnsureEndpointWithDomain(88, "HOME-PC", "100.64.0.88", "home.alice.acme")
+	require.NoError(t, err)
+	require.Equal(t, "home.alice.acme", epDomain.Domain)
+	require.NotEmpty(t, epDomain.VIP)
+	vipResolved, ok := mgrWithDNS.ResolveVIP("home.alice.acme")
+	require.True(t, ok)
+	require.Equal(t, epDomain.VIP, vipResolved)
+	if epDomain.VIPPort == DefaultRDPPort {
+		require.Equal(t, "home.alice.acme", epDomain.RecommendedTarget)
+	} else {
+		require.Equal(t, fmt.Sprintf("home.alice.acme:%d", epDomain.VIPPort), epDomain.RecommendedTarget)
+	}
+
 	savedMu.Lock()
 	persistedPort := savedPorts[77]
 	savedMu.Unlock()

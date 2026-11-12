@@ -388,22 +388,26 @@ func (a *App) initializeZTNA() error {
 	a.initRDPOutbound()
 
 	// 3. 创建并启动本地 DNS 服务器
-	// 使用平台推荐地址：macOS 用 127.0.0.1:15353（macOS 默认无 127.0.0.2），其他平台用 127.0.0.2
-	dnsPort := dns.RecommendedPort()
+	// 使用平台推荐地址：macOS 用 127.0.0.1:15353（macOS 默认无 127.0.0.2），其他平台优先 127.0.0.2:53（冲突时自动顺延 127.0.0.3:53）
 	dnsAddr := dns.RecommendedListenAddr()
+	activeSuffix := ".beagle"
+	if a.desktopClient != nil {
+		activeSuffix = a.desktopClient.GetDomainSuffix()
+	}
 
 	a.dnsServer = dns.NewServer(dnsAddr, a.resolveDomain)
+	a.dnsServer.SetDomainSuffix(activeSuffix)
 	if err := a.dnsServer.Start(); err != nil {
 		return fmt.Errorf("启动 DNS 服务器失败: %w", err)
 	}
 
-	// 4. 配置系统 DNS（将 .beagle 域名指向本地 DNS）
-	if err := dns.ConfigureSystemDNS(dnsPort); err != nil {
-		log.Printf("[App] Warning: 系统 DNS 配置失败: %v", err)
-		// 不返回错误，用户可以手动配置
+	// 4. 配置系统 DNS（将动态品牌后缀与 .beagle 指向本地 DNS 监听地址；已存在 NRPT 规则时零弹窗）
+	if err := dns.ConfigureSystemDNSForSuffix(activeSuffix, a.dnsServer.ListenIP(), a.dnsServer.ListenPort(), true, false); err != nil {
+		log.Printf("[App] Warning: 系统 DNS 配置暂未就绪: %v", err)
+		// 不返回错误，前端可一键触发启用或自动降级本地无冲突端口
 	}
 
-	log.Printf("[App] ZTNA 网络栈已就绪（DNS=%s）", dnsAddr)
+	log.Printf("[App] ZTNA 网络栈已就绪（DNS=%s, suffix=%s）", a.dnsServer.ListenAddr(), activeSuffix)
 	return nil
 }
 
@@ -1447,6 +1451,9 @@ type DeviceInfo struct {
 	OwnerUsername      string `json:"owner_username"`
 	IsShared           bool   `json:"is_shared"`
 	GrantExpiresAtUnix int64  `json:"grant_expires_at_unix"`
+	HostDomainLabel    string `json:"host_domain_label"`
+	DeviceDomain       string `json:"device_domain"`
+	OwnerDomainLabel   string `json:"owner_domain_label"`
 }
 
 // VersionCheckResult 版本检查结果

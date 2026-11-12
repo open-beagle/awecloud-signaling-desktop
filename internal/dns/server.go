@@ -19,9 +19,14 @@ type ResolveFunc func(domain string) (vip string, ok bool)
 // Server 本地 DNS 服务器
 type Server struct {
 	listenAddr  string
+	boundIP     string
+	boundPort   int
 	conn        *net.UDPConn
 	resolve     ResolveFunc
-	upstreamDNS string // 上游 DNS 地址（用于转发非 .beagle 域名）
+	upstreamDNS string // 上游 DNS 地址（用于转发非受管内网域名）
+
+	suffixMu     sync.RWMutex
+	domainSuffix string
 
 	stopCh chan struct{}
 	wg     sync.WaitGroup
@@ -30,27 +35,114 @@ type Server struct {
 // NewServer 创建 DNS 服务器
 func NewServer(listenAddr string, resolve ResolveFunc) *Server {
 	return &Server{
-		listenAddr:  listenAddr,
-		resolve:     resolve,
-		upstreamDNS: "8.8.8.8:53",
-		stopCh:      make(chan struct{}),
+		listenAddr:   listenAddr,
+		resolve:      resolve,
+		upstreamDNS:  "223.5.5.5:53",
+		domainSuffix: ".beagle",
+		stopCh:       make(chan struct{}),
 	}
 }
 
-// Start 启动 DNS 服务器
+// SetDomainSuffix 动态设置当前受管内网域名根后缀（同时始终兼容 .beagle）
+func (s *Server) SetDomainSuffix(suffix string) {
+	trimmed := strings.ToLower(strings.TrimSpace(suffix))
+	trimmed = strings.TrimSuffix(trimmed, ".")
+	if trimmed != "" && !strings.HasPrefix(trimmed, ".") {
+		trimmed = "." + trimmed
+	}
+	if trimmed == "" || trimmed == "." {
+		trimmed = ".beagle"
+	}
+	s.suffixMu.Lock()
+	s.domainSuffix = trimmed
+	s.suffixMu.Unlock()
+}
+
+// DomainSuffix 返回当前主受管域名根后缀
+func (s *Server) DomainSuffix() string {
+	s.suffixMu.RLock()
+	defer s.suffixMu.RUnlock()
+	if s.domainSuffix == "" {
+		return ".beagle"
+	}
+	return s.domainSuffix
+}
+
+func (s *Server) matchesManagedSuffix(domain string) bool {
+	lower := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), "."))
+	if strings.HasSuffix(lower, ".beagle") {
+		return true
+	}
+	s.suffixMu.RLock()
+	suffix := s.domainSuffix
+	s.suffixMu.RUnlock()
+	return suffix != "" && strings.HasSuffix(lower, suffix)
+}
+
+// ListenAddr 返回实际绑定生效的 UDP 监听地址
+func (s *Server) ListenAddr() string {
+	if s.boundIP != "" && s.boundPort > 0 {
+		return fmt.Sprintf("%s:%d", s.boundIP, s.boundPort)
+	}
+	return s.listenAddr
+}
+
+// ListenIP 返回实际绑定的本地回环 IP
+func (s *Server) ListenIP() string {
+	if s.boundIP != "" {
+		return s.boundIP
+	}
+	host, _, err := net.SplitHostPort(s.listenAddr)
+	if err == nil && host != "" {
+		return host
+	}
+	return "127.0.0.2"
+}
+
+// ListenPort 返回实际绑定的 UDP 端口
+func (s *Server) ListenPort() int {
+	if s.boundPort > 0 {
+		return s.boundPort
+	}
+	return RecommendedPort()
+}
+
+// Start 启动 DNS 服务器（若 127.0.0.2:53 被同机其他实例占用，自动顺延尝试 127.0.0.3..127.0.0.9:53）
 func (s *Server) Start() error {
-	addr, err := net.ResolveUDPAddr("udp", s.listenAddr)
-	if err != nil {
-		return fmt.Errorf("解析监听地址失败: %w", err)
+	candidates := []string{s.listenAddr}
+	if host, port, err := net.SplitHostPort(s.listenAddr); err == nil && host == "127.0.0.2" && port == "53" {
+		for lastOctet := 3; lastOctet <= 9; lastOctet++ {
+			candidates = append(candidates, fmt.Sprintf("127.0.0.%d:53", lastOctet))
+		}
 	}
 
-	conn, err := net.ListenUDP("udp", addr)
-	if err != nil {
-		return fmt.Errorf("监听 DNS 端口失败: %w", err)
+	var conn *net.UDPConn
+	var lastErr error
+	for _, candidate := range candidates {
+		addr, err := net.ResolveUDPAddr("udp", candidate)
+		if err != nil {
+			lastErr = fmt.Errorf("解析监听地址失败: %w", err)
+			continue
+		}
+		c, err := net.ListenUDP("udp", addr)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		conn = c
+		s.listenAddr = candidate
+		if udpAddr, ok := c.LocalAddr().(*net.UDPAddr); ok && udpAddr != nil {
+			s.boundIP = udpAddr.IP.String()
+			s.boundPort = udpAddr.Port
+		}
+		break
+	}
+	if conn == nil {
+		return fmt.Errorf("监听 DNS 端口失败: %w", lastErr)
 	}
 
 	s.conn = conn
-	log.Printf("[DNS] 本地 DNS 服务器已启动: %s", s.listenAddr)
+	log.Printf("[DNS] 本地 DNS 服务器已启动: %s", s.ListenAddr())
 
 	s.wg.Add(1)
 	go s.serve()
@@ -110,8 +202,8 @@ func (s *Server) handleQuery(packet []byte, remoteAddr *net.UDPAddr) {
 	// 去掉末尾的点
 	domain = strings.TrimSuffix(domain, ".")
 
-	// 检查是否是 .beagle 域名
-	if strings.HasSuffix(domain, ".beagle") && qtype == 1 { // A 记录
+	// 检查是否是受管零信任内网域名（含动态品牌后缀与 .beagle）
+	if s.matchesManagedSuffix(domain) && qtype == 1 { // A 记录
 		vip, ok := s.resolve(domain)
 		if ok {
 			resp := buildDNSResponse(packet, vip)

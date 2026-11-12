@@ -345,6 +345,56 @@ func (m *Manager) Listen(network, addr string) (net.Listener, error) {
 	return m.tsServer.Listen(network, addr)
 }
 
+// PeerLinkInfo 描述指定对端节点在零信任隧道内的实时连接路径状态（P2P 直连或 DERP 中继）
+type PeerLinkInfo struct {
+	IP       string `json:"ip"`
+	Online   bool   `json:"online"`
+	Active   bool   `json:"active"`
+	IsDirect bool   `json:"is_direct"`
+	Relay    string `json:"relay"`
+	RxBytes  int64  `json:"rx_bytes"`
+	TxBytes  int64  `json:"tx_bytes"`
+}
+
+// GetPeerLinkInfos 查询所有对端隧道节点的实时直连/中继状态（按对端隧道 IP 索引）
+func (m *Manager) GetPeerLinkInfos() map[string]PeerLinkInfo {
+	result := make(map[string]PeerLinkInfo)
+	lc, err := m.LocalClient()
+	if err != nil || lc == nil {
+		return result
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	st, err := lc.Status(ctx)
+	if err != nil || st == nil {
+		return result
+	}
+
+	for _, peer := range st.Peer {
+		if peer == nil {
+			continue
+		}
+		isDirect := strings.TrimSpace(peer.CurAddr) != ""
+		for _, tsIP := range peer.TailscaleIPs {
+			ipStr := tsIP.String()
+			if ipStr == "" {
+				continue
+			}
+			result[ipStr] = PeerLinkInfo{
+				IP:       ipStr,
+				Online:   peer.Online,
+				Active:   peer.Active,
+				IsDirect: isDirect,
+				Relay:    strings.TrimSpace(peer.Relay),
+				RxBytes:  peer.RxBytes,
+				TxBytes:  peer.TxBytes,
+			}
+		}
+	}
+	return result
+}
+
 // GetIP 获取隧道 IP
 func (m *Manager) GetIP() string {
 	m.mutex.RLock()

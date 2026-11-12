@@ -12,14 +12,16 @@ import (
 
 // AuthResult 认证结果
 type AuthResult struct {
-	Success    bool
-	DesktopID  uint64
-	Secret     string
-	AuthKey    string
-	ServerURL  string
-	Message    string
-	IsNewLogin bool   // 是否是首次登录
-	DeviceName string // 设备名称（hostname）
+	Success         bool
+	DesktopID       uint64
+	Secret          string
+	AuthKey         string
+	ServerURL       string
+	Message         string
+	IsNewLogin      bool   // 是否是首次登录
+	DeviceName      string // 设备名称（hostname）
+	DomainSuffix    string
+	UserDomainLabel string
 }
 
 // Authenticate 认证（使用 Desktop 凭证）
@@ -65,6 +67,8 @@ func (c *DesktopClient) Authenticate(desktopID uint64, secret string) (*AuthResu
 	c.secret = secret
 	c.mu.Unlock()
 
+	c.applyDomainNamespace(resp.DomainSuffix, resp.UserDomainLabel)
+
 	// 启动心跳（初始状态：隧道未连接）
 	if err := c.startHeartbeat("", false); err != nil {
 		log.Printf("[DesktopClient] Warning: failed to start heartbeat: %v", err)
@@ -76,14 +80,16 @@ func (c *DesktopClient) Authenticate(desktopID uint64, secret string) (*AuthResu
 	}
 
 	return &AuthResult{
-		Success:    true,
-		DesktopID:  desktopID,
-		Secret:     secret,
-		AuthKey:    resp.AuthKey,
-		ServerURL:  resp.ServerUrl,
-		Message:    resp.Message,
-		IsNewLogin: false,
-		DeviceName: fingerprint.Hostname,
+		Success:         true,
+		DesktopID:       desktopID,
+		Secret:          secret,
+		AuthKey:         resp.AuthKey,
+		ServerURL:       resp.ServerUrl,
+		Message:         resp.Message,
+		IsNewLogin:      false,
+		DeviceName:      fingerprint.Hostname,
+		DomainSuffix:    c.GetDomainSuffix(),
+		UserDomainLabel: c.GetUserDomainLabel(),
 	}, nil
 }
 

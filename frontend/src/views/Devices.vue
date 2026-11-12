@@ -12,7 +12,7 @@
         </el-tag>
       </div>
       <div class="header-right">
-        <el-tooltip content="刷新设备与远程桌面状态" placement="bottom">
+        <el-tooltip content="刷新设备、域名与隧道直连状态" placement="bottom">
           <el-button
             :icon="Refresh"
             @click="refreshAll"
@@ -51,10 +51,54 @@
             </div>
             <span v-if="currentDevice" class="current-device-meta">
               当前设备：{{ currentDevice.device_name || currentDevice.hostname }}
-              <template v-if="currentDevice.ip"> ({{ currentDevice.ip }})</template>
+              <template v-if="currentDevice.device_domain"> · {{ currentDevice.device_domain }}</template>
+              <template v-else-if="currentDevice.ip"> ({{ currentDevice.ip }})</template>
             </span>
           </div>
         </template>
+
+        <!-- 三段式个人主机域名空间栏 -->
+        <div class="domain-namespace-bar">
+          <div class="domain-bar-left">
+            <span class="domain-bar-label">个人三段式域名空间：</span>
+            <code class="domain-pattern-code">*.{{ effectiveUserDomainLabel }}{{ effectiveDomainSuffix }}</code>
+            <el-button
+              v-if="currentDevice"
+              link
+              type="primary"
+              size="small"
+              :icon="EditPen"
+              :loading="updatingUserDomain"
+              @click="handleEditUserDomainLabel"
+            >
+              修改用户名域名段
+            </el-button>
+          </div>
+          <div class="domain-bar-right">
+            <el-tag
+              v-if="domainStatus?.system_dns_ready"
+              type="success"
+              size="small"
+              effect="light"
+            >
+              系统域名直连已就绪 ({{ effectiveDomainSuffix }})
+            </el-tag>
+            <template v-else-if="domainStatus?.dns_server_running">
+              <el-tag type="warning" size="small" effect="light">
+                未注册系统 {{ effectiveDomainSuffix }} 解析规则（回退本地端口）
+              </el-tag>
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                :loading="enablingSystemDNS"
+                @click="handleEnableSystemDNS"
+              >
+                一键启用域名解析
+              </el-button>
+            </template>
+          </div>
+        </div>
 
         <div class="settings-grid">
           <div class="setting-item">
@@ -122,7 +166,7 @@
         <div class="section-header">
           <h3>我的账号设备</h3>
           <span class="section-subtitle">
-            在任意一台 Signal Desktop 上均可一键连接家中/办公室电脑，或远程关闭某台设备的 RDP 暴露
+            支持为每台设备设置专属主机域名（如 home / work / qnap），一键通过专属域名 VIP 连接远程桌面
           </span>
         </div>
 
@@ -132,7 +176,7 @@
           stripe
           class="devices-table"
         >
-          <el-table-column label="设备 / 主机名" min-width="200">
+          <el-table-column label="设备 / 专属域名" min-width="255">
             <template #default="{ row }">
               <div class="device-primary">
                 <span class="device-title">{{ row.device_name || row.hostname || '-' }}</span>
@@ -140,30 +184,57 @@
                   本机
                 </el-tag>
               </div>
-              <div v-if="row.hostname && row.device_name && row.hostname !== row.device_name" class="device-sub">
+              <div v-if="row.device_domain" class="device-domain-row">
+                <code class="device-domain-code" @click="handleCopyRawDomain(row.device_domain)" title="点击复制域名">
+                  {{ row.device_domain }}
+                </code>
+                <el-tooltip content="自定义此设备的主机域名前缀（如 home / work / qnap）" placement="top">
+                  <el-button
+                    link
+                    type="primary"
+                    size="small"
+                    :icon="EditPen"
+                    :disabled="updatingToken === row.device_token"
+                    @click="handleEditHostDomainLabel(row)"
+                  />
+                </el-tooltip>
+              </div>
+              <div v-else-if="row.hostname && row.device_name && row.hostname !== row.device_name" class="device-sub">
                 主机名: {{ row.hostname }}
               </div>
             </template>
           </el-table-column>
 
-          <el-table-column label="系统环境" min-width="150">
+          <el-table-column label="系统环境" min-width="145">
             <template #default="{ row }">
               <span>{{ formatOSInfo(row.os) }} {{ formatArchInfo(row.arch) }}</span>
             </template>
           </el-table-column>
 
-          <el-table-column label="隧道状态" min-width="175">
+          <el-table-column label="隧道与链路状态" min-width="210">
             <template #default="{ row }">
-              <span v-if="row.status === 'online'" class="status-online">
-                ● 在线<span v-if="row.ip" class="status-detail"> · {{ row.ip }}</span>
-              </span>
-              <span v-else class="status-offline">
-                ○ 离线<span v-if="row.last_used_at" class="status-detail"> · {{ formatTime(row.last_used_at) }}</span>
-              </span>
+              <div class="tunnel-cell">
+                <span v-if="row.status === 'online'" class="status-online">
+                  ● 在线<span v-if="row.ip" class="status-detail"> · {{ row.ip }}</span>
+                </span>
+                <span v-else class="status-offline">
+                  ○ 离线<span v-if="row.last_used_at" class="status-detail"> · {{ formatTime(row.last_used_at) }}</span>
+                </span>
+                <template v-if="row.status === 'online' && !row.is_current && row.ip && getPeerLinkBadge(row.ip)">
+                  <el-tag
+                    :type="getPeerLinkBadge(row.ip)!.type"
+                    size="small"
+                    effect="light"
+                    class="link-mode-tag"
+                  >
+                    {{ getPeerLinkBadge(row.ip)!.label }}
+                  </el-tag>
+                </template>
+              </div>
             </template>
           </el-table-column>
 
-          <el-table-column label="远程桌面状态" min-width="190">
+          <el-table-column label="远程桌面状态" min-width="180">
             <template #default="{ row }">
               <div class="rdp-status-cell">
                 <el-tag :type="getRDPBadge(row).type" size="small" effect="plain">
@@ -181,7 +252,7 @@
             </template>
           </el-table-column>
 
-          <el-table-column label="开放模式与共享" min-width="235">
+          <el-table-column label="开放模式与共享" min-width="225">
             <template #default="{ row }">
               <div class="policy-controls">
                 <el-select
@@ -207,7 +278,7 @@
             </template>
           </el-table-column>
 
-          <el-table-column label="操作" width="260" fixed="right">
+          <el-table-column label="操作" width="255" fixed="right">
             <template #default="{ row }">
               <div class="action-buttons">
                 <template v-if="!row.is_current">
@@ -221,7 +292,7 @@
                   >
                     远程桌面
                   </el-button>
-                  <el-tooltip content="分配本地无冲突代理端口并复制连接地址" placement="top">
+                  <el-tooltip content="准备专属域名 VIP 代理并复制连接地址" placement="top">
                     <el-button
                       size="small"
                       :icon="CopyDocument"
@@ -271,15 +342,20 @@
         </div>
 
         <el-table :data="sharedDevices" stripe class="devices-table">
-          <el-table-column label="设备归属人" min-width="150">
+          <el-table-column label="设备归属人" min-width="140">
             <template #default="{ row }">
               <strong>{{ row.owner_username || '-' }}</strong>
             </template>
           </el-table-column>
 
-          <el-table-column label="设备 / 主机名" min-width="190">
+          <el-table-column label="设备 / 专属域名" min-width="230">
             <template #default="{ row }">
-              <span>{{ row.device_name || row.hostname || '-' }}</span>
+              <div>{{ row.device_name || row.hostname || '-' }}</div>
+              <div v-if="row.device_domain" class="device-domain-row">
+                <code class="device-domain-code" @click="handleCopyRawDomain(row.device_domain)">
+                  {{ row.device_domain }}
+                </code>
+              </div>
             </template>
           </el-table-column>
 
@@ -289,7 +365,7 @@
             </template>
           </el-table-column>
 
-          <el-table-column label="在线与 RDP 状态" min-width="190">
+          <el-table-column label="在线与链路状态" min-width="205">
             <template #default="{ row }">
               <div class="rdp-status-cell">
                 <el-tag :type="row.status === 'online' ? 'success' : 'info'" size="small" effect="plain">
@@ -297,6 +373,14 @@
                 </el-tag>
                 <el-tag :type="getRDPBadge(row).type" size="small" effect="plain">
                   {{ getRDPBadge(row).label }}
+                </el-tag>
+                <el-tag
+                  v-if="row.status === 'online' && row.ip && getPeerLinkBadge(row.ip)"
+                  :type="getPeerLinkBadge(row.ip)!.type"
+                  size="small"
+                  effect="light"
+                >
+                  {{ getPeerLinkBadge(row.ip)!.label }}
                 </el-tag>
               </div>
             </template>
@@ -321,7 +405,7 @@
                 >
                   远程桌面
                 </el-button>
-                <el-tooltip content="复制本地代理连接地址" placement="top">
+                <el-tooltip content="复制专属域名或本地连接地址" placement="top">
                   <el-button
                     size="small"
                     :icon="CopyDocument"
@@ -343,7 +427,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, SwitchButton, Delete, Monitor, CopyDocument } from '@element-plus/icons-vue'
+import { Refresh, SwitchButton, Delete, Monitor, CopyDocument, EditPen } from '@element-plus/icons-vue'
 import { Events } from '@wailsio/runtime'
 import {
   GetDevices,
@@ -355,22 +439,48 @@ import {
   ConnectDeviceRDP,
   GetAutostartEnabled,
   SetAutostartEnabled,
+  GetDomainNamespaceStatus,
+  EnsureSystemDNSConfigured,
+  GetPeerLinkStates,
 } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/internal/app/app'
-import type { DeviceInfo } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/internal/app/models'
+import {
+  UpdateDeviceRDPConfigInput,
+  type DeviceInfo,
+  type DomainNamespaceStatus,
+  type PeerLinkState,
+} from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/internal/app/models'
 import type { LocalRDPStatus } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/internal/rdp/models'
 
 const loading = ref(false)
 const devices = ref<DeviceInfo[]>([])
 const localRDPStatus = ref<LocalRDPStatus | null>(null)
+const domainStatus = ref<DomainNamespaceStatus | null>(null)
+const peerLinks = ref<Record<string, PeerLinkState>>({})
 const autostartEnabled = ref(false)
 const autostartSaving = ref(false)
 const updatingToken = ref('')
+const updatingUserDomain = ref(false)
+const enablingSystemDNS = ref(false)
 const connectingToken = ref('')
 const copyingToken = ref('')
+let peerLinkPollTimer: ReturnType<typeof setInterval> | null = null
 
 const myDevices = computed(() => devices.value.filter(d => !d.is_shared))
 const sharedDevices = computed(() => devices.value.filter(d => d.is_shared))
 const currentDevice = computed(() => myDevices.value.find(d => d.is_current) || null)
+
+const effectiveDomainSuffix = computed(() => {
+  return domainStatus.value?.domain_suffix || '.beagle'
+})
+
+const effectiveUserDomainLabel = computed(() => {
+  return (
+    domainStatus.value?.user_domain_label ||
+    currentDevice.value?.owner_domain_label ||
+    myDevices.value[0]?.owner_domain_label ||
+    'user'
+  )
+})
 
 const normalizeMode = (mode?: string) => {
   if (mode === 'enabled' || mode === 'disabled') return mode
@@ -402,23 +512,57 @@ const loadDevices = async () => {
   }
 }
 
+const loadPeerLinks = async () => {
+  try {
+    const states = await GetPeerLinkStates()
+    const nextMap: Record<string, PeerLinkState> = {}
+    if (states) {
+      for (const [ip, state] of Object.entries(states)) {
+        if (state) {
+          nextMap[ip] = state
+        }
+      }
+    }
+    peerLinks.value = nextMap
+  } catch {
+    // 忽略未就绪时的瞬态查询失败
+  }
+}
+
 const loadLocalStatus = async () => {
   try {
-    const [rdpStatus, autoStart] = await Promise.all([
+    const [rdpStatus, autoStart, nsStatus] = await Promise.all([
       GetLocalRDPStatus(),
       GetAutostartEnabled(),
+      GetDomainNamespaceStatus(),
     ])
     if (rdpStatus) {
       localRDPStatus.value = rdpStatus
     }
+    if (nsStatus) {
+      domainStatus.value = nsStatus
+    }
     autostartEnabled.value = Boolean(autoStart)
   } catch (error) {
-    console.warn('读取本机 RDP 或自启动状态失败:', error)
+    console.warn('读取本机 RDP 或域名状态失败:', error)
   }
 }
 
 const refreshAll = async () => {
-  await Promise.all([loadDevices(), loadLocalStatus()])
+  await Promise.all([loadDevices(), loadLocalStatus(), loadPeerLinks()])
+}
+
+const getPeerLinkBadge = (ip?: string): { label: string; type: 'success' | 'warning' } | null => {
+  if (!ip) return null
+  const st = peerLinks.value[ip]
+  if (!st) return null
+  if (st.is_direct) {
+    return { label: 'P2P 直连', type: 'success' }
+  }
+  if (st.active || st.relay) {
+    return { label: st.relay ? `DERP 中继 (${st.relay})` : 'DERP 中继', type: 'warning' }
+  }
+  return null
 }
 
 const canConnectRDP = (device: DeviceInfo) => {
@@ -468,13 +612,15 @@ const handleModeChange = async (device: DeviceInfo, rdpMode: string) => {
   if (updatingToken.value) return
   updatingToken.value = device.device_token
   try {
-    const updated = await UpdateDeviceRDPConfig({
-      node_id: Number(device.node_id || 0),
-      device_token: device.device_token,
-      rdp_mode: rdpMode,
-      update_allow_share: false,
-      rdp_allow_share: Boolean(device.rdp_allow_share),
-    })
+    const updated = await UpdateDeviceRDPConfig(
+      UpdateDeviceRDPConfigInput.createFrom({
+        node_id: Number(device.node_id || 0),
+        device_token: device.device_token,
+        rdp_mode: rdpMode,
+        update_allow_share: false,
+        rdp_allow_share: Boolean(device.rdp_allow_share),
+      })
+    )
     applyUpdatedDevice(updated)
     ElMessage.success(`已将 "${device.device_name || device.hostname}" 的远程桌面策略设为${rdpMode === 'auto' ? '自动开放' : rdpMode === 'enabled' ? '强制开启' : '关闭'}`)
   } catch (error: any) {
@@ -489,13 +635,15 @@ const handleAllowShareChange = async (device: DeviceInfo, allowShare: boolean) =
   if (updatingToken.value) return
   updatingToken.value = device.device_token
   try {
-    const updated = await UpdateDeviceRDPConfig({
-      node_id: Number(device.node_id || 0),
-      device_token: device.device_token,
-      rdp_mode: normalizeMode(device.rdp_mode),
-      update_allow_share: true,
-      rdp_allow_share: allowShare,
-    })
+    const updated = await UpdateDeviceRDPConfig(
+      UpdateDeviceRDPConfigInput.createFrom({
+        node_id: Number(device.node_id || 0),
+        device_token: device.device_token,
+        rdp_mode: normalizeMode(device.rdp_mode),
+        update_allow_share: true,
+        rdp_allow_share: allowShare,
+      })
+    )
     applyUpdatedDevice(updated)
     ElMessage.success(allowShare ? '已允许租户管理员创建临时协助授权' : '已关闭跨用户共享许可（现有跨人连接即刻失效）')
   } catch (error: any) {
@@ -503,6 +651,98 @@ const handleAllowShareChange = async (device: DeviceInfo, allowShare: boolean) =
     await loadDevices()
   } finally {
     updatingToken.value = ''
+  }
+}
+
+const handleEditUserDomainLabel = async () => {
+  const anchorDevice = currentDevice.value || myDevices.value[0]
+  if (!anchorDevice) return
+
+  try {
+    const { value } = await ElMessageBox.prompt(
+      `设置您的个人域名中间段（完整格式：<主机>.<用户名段>${effectiveDomainSuffix.value}，留空恢复登录用户名）：`,
+      '设置个人用户名域名段',
+      {
+        inputValue: effectiveUserDomainLabel.value,
+        inputPlaceholder: '例如 alice（小写字母、数字或连字符）',
+        confirmButtonText: '保存',
+        cancelButtonText: '取消',
+        inputPattern: /^[a-zA-Z0-9-]{0,63}$/,
+        inputErrorMessage: '仅允许字母、数字或连字符（-）',
+      }
+    )
+
+    updatingUserDomain.value = true
+    await UpdateDeviceRDPConfig(
+      UpdateDeviceRDPConfigInput.createFrom({
+        node_id: Number(anchorDevice.node_id || 0),
+        device_token: anchorDevice.device_token,
+        update_user_domain_label: true,
+        user_domain_label: (value || '').trim().toLowerCase(),
+      })
+    )
+    await Promise.all([loadDevices(), loadLocalStatus()])
+    ElMessage.success(`个人域名空间已更新为 *.${effectiveUserDomainLabel.value}${effectiveDomainSuffix.value}`)
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error('修改个人域名段失败: ' + (error?.message || error || '未知错误'))
+    }
+  } finally {
+    updatingUserDomain.value = false
+  }
+}
+
+const handleEditHostDomainLabel = async (device: DeviceInfo) => {
+  if (updatingToken.value) return
+  try {
+    const suffixPreview = `.${effectiveUserDomainLabel.value}${effectiveDomainSuffix.value}`
+    const { value } = await ElMessageBox.prompt(
+      `为设备 "${device.device_name || device.hostname}" 设置简短主机域名（后缀固定为 ${suffixPreview}）：`,
+      '设置设备专属主机域名',
+      {
+        inputValue: device.host_domain_label || '',
+        inputPlaceholder: '例如 home / work / qnap',
+        confirmButtonText: '保存',
+        cancelButtonText: '取消',
+        inputPattern: /^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$/,
+        inputErrorMessage: '请输入合法的主机标签（字母/数字开头结尾，可含连字符）',
+      }
+    )
+
+    updatingToken.value = device.device_token
+    const updated = await UpdateDeviceRDPConfig(
+      UpdateDeviceRDPConfigInput.createFrom({
+        node_id: Number(device.node_id || 0),
+        device_token: device.device_token,
+        update_host_domain_label: true,
+        host_domain_label: (value || '').trim().toLowerCase(),
+      })
+    )
+    applyUpdatedDevice(updated)
+    ElMessage.success(`设备域名已更新为 ${updated?.device_domain || value + suffixPreview}`)
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error('修改设备主机域名失败: ' + (error?.message || error || '未知错误'))
+    }
+  } finally {
+    updatingToken.value = ''
+  }
+}
+
+const handleEnableSystemDNS = async () => {
+  enablingSystemDNS.value = true
+  try {
+    const status = await EnsureSystemDNSConfigured()
+    if (status) {
+      domainStatus.value = status
+    }
+    if (status?.system_dns_ready) {
+      ElMessage.success(`已启用系统 ${effectiveDomainSuffix.value} 域名解析（重启亦持久有效）`)
+    }
+  } catch (error: any) {
+    ElMessage.error('启用系统域名解析失败: ' + (error?.message || error || '未知错误'))
+  } finally {
+    enablingSystemDNS.value = false
   }
 }
 
@@ -534,11 +774,20 @@ const copyText = async (text: string) => {
   document.body.removeChild(textarea)
 }
 
+const handleCopyRawDomain = async (domain: string) => {
+  if (!domain) return
+  await copyText(domain)
+  ElMessage.success(`已复制设备域名：${domain}`)
+}
+
 const handleConnectRDP = async (device: DeviceInfo) => {
   connectingToken.value = device.device_token
   try {
     const result = await ConnectDeviceRDP(device.device_token)
     if (!result) return
+    setTimeout(() => {
+      loadPeerLinks()
+    }, 1500)
     if (result.launched) {
       ElMessage.success(result.message || `已拉起远程桌面连接 (${result.endpoint?.recommended_target || result.endpoint?.local_addr})`)
     } else {
@@ -566,7 +815,7 @@ const handleCopyRDPEndpoint = async (device: DeviceInfo) => {
     if (!endpoint) return
     const target = endpoint.recommended_target || endpoint.local_addr
     await copyText(target)
-    ElMessage.success(`已复制本地连接地址：${target}（VIP 域名：${endpoint.domain}）`)
+    ElMessage.success(`已准备并复制连接地址：${target}`)
   } catch (error: any) {
     ElMessage.error('准备连接地址失败: ' + (error?.message || error || '未知错误'))
   } finally {
@@ -662,7 +911,15 @@ const formatGrantExpiry = (unixSec: number) => {
 
 onMounted(() => {
   refreshAll()
+  peerLinkPollTimer = setInterval(() => {
+    loadPeerLinks()
+  }, 8000)
   Events.On('devices:updated', () => {
+    loadDevices()
+    loadPeerLinks()
+  })
+  Events.On('domain:updated', () => {
+    loadLocalStatus()
     loadDevices()
   })
   Events.On('rdp:local-status', (ev: any) => {
@@ -679,7 +936,12 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (peerLinkPollTimer) {
+    clearInterval(peerLinkPollTimer)
+    peerLinkPollTimer = null
+  }
   Events.Off('devices:updated')
+  Events.Off('domain:updated')
   Events.Off('rdp:local-status')
   Events.Off('rdp:status-updated')
 })
@@ -758,6 +1020,44 @@ onUnmounted(() => {
 .current-device-meta {
   font-size: 12px;
   color: #6b7280;
+}
+
+.domain-namespace-bar {
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.domain-bar-left,
+.domain-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.domain-bar-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.domain-pattern-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0369a1;
+  background: #ffffff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid #7dd3fc;
 }
 
 .settings-grid {
@@ -855,10 +1155,43 @@ onUnmounted(() => {
   color: #111827;
 }
 
+.device-domain-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.device-domain-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #dbeafe;
+  padding: 1px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.device-domain-code:hover {
+  background: #dbeafe;
+}
+
 .device-sub {
   font-size: 12px;
   color: #6b7280;
   margin-top: 2px;
+}
+
+.tunnel-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.link-mode-tag {
+  font-weight: 500;
 }
 
 .status-online {

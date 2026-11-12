@@ -79,9 +79,15 @@ type DesktopClient struct {
 	// 重连回调（用于通知 App 层重新获取 authKey）
 	onReconnectNeeded func(reason ReconnectReason, message string) error
 
-	// RDP 策略与设备变更回调
-	onRDPPolicy      func(policy *pb.DesktopInboundRDPPolicy)
-	onDevicesUpdated func(devices []*DeviceInfo)
+	// RDP 策略、设备与域名空间变更回调
+	onRDPPolicy              func(policy *pb.DesktopInboundRDPPolicy)
+	onDevicesUpdated         func(devices []*DeviceInfo)
+	onDomainNamespaceChanged func(domainSuffix string, userDomainLabel string)
+
+	// 动态品牌根后缀与个人域名标签
+	domainMu        sync.RWMutex
+	domainSuffix    string
+	userDomainLabel string
 
 	// 已授权服务列表
 	authorizedServices []*pb.AuthorizedService
@@ -103,8 +109,10 @@ type DesktopClient struct {
 // NewDesktopClient 创建 Desktop 客户端
 func NewDesktopClient(serverAddr string) *DesktopClient {
 	ctx, cancel := context.WithCancel(context.Background())
+	derivedSuffix := netutil.SetActiveDomainSuffix(netutil.DeriveBrandDomainSuffix(serverAddr))
 	return &DesktopClient{
 		serverAddr:         serverAddr,
+		domainSuffix:       derivedSuffix,
 		authorizedServices: make([]*pb.AuthorizedService, 0),
 		cachedHostServices: make(map[string][]*pb.AuthorizedService),
 		ctx:                ctx,
@@ -209,6 +217,53 @@ func (c *DesktopClient) SetRDPPolicyCallback(callback func(policy *pb.DesktopInb
 // SetDevicesUpdatedCallback 设置设备列表推送变更回调
 func (c *DesktopClient) SetDevicesUpdatedCallback(callback func(devices []*DeviceInfo)) {
 	c.onDevicesUpdated = callback
+}
+
+// SetDomainNamespaceCallback 设置动态域名后缀或用户个人域名前缀变更回调
+func (c *DesktopClient) SetDomainNamespaceCallback(callback func(domainSuffix string, userDomainLabel string)) {
+	c.onDomainNamespaceChanged = callback
+}
+
+// GetDomainSuffix 返回当前客户端生效的品牌域名根后缀
+func (c *DesktopClient) GetDomainSuffix() string {
+	c.domainMu.RLock()
+	defer c.domainMu.RUnlock()
+	if c.domainSuffix == "" {
+		return netutil.ActiveDomainSuffix()
+	}
+	return c.domainSuffix
+}
+
+// GetUserDomainLabel 返回当前账号生效的三段式个人域名中间段
+func (c *DesktopClient) GetUserDomainLabel() string {
+	c.domainMu.RLock()
+	defer c.domainMu.RUnlock()
+	return c.userDomainLabel
+}
+
+func (c *DesktopClient) applyDomainNamespace(domainSuffix string, userDomainLabel string) {
+	c.domainMu.Lock()
+	changed := false
+	if strings.TrimSpace(domainSuffix) != "" {
+		normalized := netutil.SetActiveDomainSuffix(domainSuffix)
+		if normalized != c.domainSuffix {
+			c.domainSuffix = normalized
+			changed = true
+		}
+	}
+	trimmedUser := strings.ToLower(strings.TrimSpace(userDomainLabel))
+	if trimmedUser != "" && trimmedUser != c.userDomainLabel {
+		c.userDomainLabel = trimmedUser
+		changed = true
+	}
+	curSuffix := c.domainSuffix
+	curUser := c.userDomainLabel
+	cb := c.onDomainNamespaceChanged
+	c.domainMu.Unlock()
+
+	if changed && cb != nil {
+		cb(curSuffix, curUser)
+	}
 }
 
 // GetCachedRDPPolicy 返回最近一次收到的入站策略快照
@@ -764,6 +819,9 @@ type DeviceInfo struct {
 	OwnerUsername      string `json:"owner_username"`
 	IsShared           bool   `json:"is_shared"`
 	GrantExpiresAtUnix int64  `json:"grant_expires_at_unix"`
+	HostDomainLabel    string `json:"host_domain_label"`
+	DeviceDomain       string `json:"device_domain"`
+	OwnerDomainLabel   string `json:"owner_domain_label"`
 }
 
 func protoToDeviceInfo(d *pb.DeviceInfo) *DeviceInfo {
@@ -792,6 +850,9 @@ func protoToDeviceInfo(d *pb.DeviceInfo) *DeviceInfo {
 		OwnerUsername:      d.OwnerUsername,
 		IsShared:           d.IsShared,
 		GrantExpiresAtUnix: d.GrantExpiresAtUnix,
+		HostDomainLabel:    d.HostDomainLabel,
+		DeviceDomain:       d.DeviceDomain,
+		OwnerDomainLabel:   d.OwnerDomainLabel,
 	}
 }
 
@@ -825,6 +886,8 @@ func (c *DesktopClient) GetMyDevices() ([]*DeviceInfo, error) {
 		return nil, fmt.Errorf("获取设备列表失败: %w", err)
 	}
 
+	c.applyDomainNamespace(resp.DomainSuffix, resp.UserDomainLabel)
+
 	devices := make([]*DeviceInfo, 0, len(resp.Devices))
 	for _, d := range resp.Devices {
 		if converted := protoToDeviceInfo(d); converted != nil {
@@ -855,8 +918,21 @@ type RDPSessionAuditEvent struct {
 	TimestampUnix         int64
 }
 
-// UpdateDeviceRDPConfig 修改本人名下任一 Desktop 设备的远程桌面开放模式或共享许可
-func (c *DesktopClient) UpdateDeviceRDPConfig(targetNodeID uint64, deviceToken string, rdpMode string, updateAllowShare bool, rdpAllowShare bool) (*DeviceInfo, error) {
+// UpdateDeviceRDPConfigParams 修改远程桌面配置或个人主机/用户域名的请求参数
+type UpdateDeviceRDPConfigParams struct {
+	TargetNodeID          uint64
+	DeviceToken           string
+	RDPMode               string
+	UpdateAllowShare      bool
+	RDPAllowShare         bool
+	UpdateHostDomainLabel bool
+	HostDomainLabel       string
+	UpdateUserDomainLabel bool
+	UserDomainLabel       string
+}
+
+// UpdateDeviceRDPConfig 修改本人名下任一 Desktop 设备的远程桌面开放模式、共享许可或三段式个人域名
+func (c *DesktopClient) UpdateDeviceRDPConfig(params UpdateDeviceRDPConfigParams) (*DeviceInfo, error) {
 	c.mu.RLock()
 	desktopID, secret := c.desktopID, c.secret
 	c.mu.RUnlock()
@@ -868,28 +944,43 @@ func (c *DesktopClient) UpdateDeviceRDPConfig(targetNodeID uint64, deviceToken s
 	defer cancel()
 
 	resp, err := c.grpcClient.UpdateDeviceRDPConfig(ctx, &pb.UpdateDeviceRDPConfigRequest{
-		DesktopId:        desktopID,
-		Secret:           secret,
-		TargetNodeId:     targetNodeID,
-		DeviceToken:      deviceToken,
-		RdpMode:          rdpMode,
-		UpdateAllowShare: updateAllowShare,
-		RdpAllowShare:    rdpAllowShare,
+		DesktopId:             desktopID,
+		Secret:                secret,
+		TargetNodeId:          params.TargetNodeID,
+		DeviceToken:           params.DeviceToken,
+		RdpMode:               params.RDPMode,
+		UpdateAllowShare:      params.UpdateAllowShare,
+		RdpAllowShare:         params.RDPAllowShare,
+		UpdateHostDomainLabel: params.UpdateHostDomainLabel,
+		HostDomainLabel:       params.HostDomainLabel,
+		UpdateUserDomainLabel: params.UpdateUserDomainLabel,
+		UserDomainLabel:       params.UserDomainLabel,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("修改远程桌面配置失败: %w", err)
+		return nil, fmt.Errorf("修改配置失败: %w", err)
 	}
 	if !resp.Success {
 		return nil, fmt.Errorf("%s", resp.Message)
 	}
 
+	c.applyDomainNamespace(resp.DomainSuffix, resp.UserDomainLabel)
+
 	updated := protoToDeviceInfo(resp.Device)
 	if updated != nil {
+		suffix := c.GetDomainSuffix()
+		userLabel := c.GetUserDomainLabel()
 		c.cacheMutex.Lock()
 		for i, item := range c.cachedDevices {
-			if item != nil && !item.IsShared && (item.NodeID == updated.NodeID || item.DeviceToken == updated.DeviceToken) {
+			if item == nil || item.IsShared {
+				continue
+			}
+			if item.NodeID == updated.NodeID || item.DeviceToken == updated.DeviceToken {
 				c.cachedDevices[i] = updated
-				break
+				continue
+			}
+			if params.UpdateUserDomainLabel && userLabel != "" && item.HostDomainLabel != "" {
+				item.OwnerDomainLabel = userLabel
+				item.DeviceDomain = item.HostDomainLabel + "." + userLabel + suffix
 			}
 		}
 		c.cacheMutex.Unlock()
@@ -1122,6 +1213,8 @@ func (c *DesktopClient) WaitForLoginResult(sessionID, deviceFingerprint string) 
 		}, nil
 	}
 
+	c.applyDomainNamespace(resp.DomainSuffix, resp.UserDomainLabel)
+
 	// 登录成功
 	result := &LoginResultFromGRPC{
 		Success:     true,
@@ -1339,6 +1432,8 @@ func (c *DesktopClient) receiveDataStream(stopCh <-chan struct{}) {
 
 // handleDataStreamResponse 处理数据流推送，更新本地缓存
 func (c *DesktopClient) handleDataStreamResponse(resp *pb.DesktopDataResponse) {
+	c.applyDomainNamespace(resp.DomainSuffix, resp.UserDomainLabel)
+
 	switch resp.Type {
 	case pb.DesktopDataType_DESKTOP_DATA_TYPE_ALL:
 		// 全量更新
