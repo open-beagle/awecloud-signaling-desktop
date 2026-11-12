@@ -17,6 +17,7 @@ import (
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/client"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/containerroute"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/diagnostics"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/dns"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcher"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcheripc"
@@ -1537,6 +1538,7 @@ func GetRecentLogs(n int) []string {
 type logWriter struct{}
 
 func (w *logWriter) Write(p []byte) (n int, err error) {
+	diagnostics.Record("desktop", string(p))
 	logMutex.Lock()
 	defer logMutex.Unlock()
 

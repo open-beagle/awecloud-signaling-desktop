@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	desktopapp "github.com/open-beagle/awecloud-signaling-desktop/internal/app"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/assets"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/diagnostics"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcheripc"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/netutil"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/singleton"
@@ -36,6 +38,14 @@ func main() {
 		os.Exit(0)
 	}
 	defer singleton.ReleaseSingleInstance()
+	if appDir, err := config.GetAppDir(); err == nil {
+		if err := diagnostics.Init(appDir); err == nil {
+			log.SetOutput(io.MultiWriter(os.Stderr, diagnostics.Writer{}))
+		} else {
+			log.Printf("Diagnostic logs unavailable: %v", err)
+		}
+	}
+	log.Printf("[Startup] version=%s commit=%s build=%s", appVersion.Version, appVersion.GitCommit, appVersion.BuildNumber)
 
 	// 加载配置
 	cfg, err := config.Load()

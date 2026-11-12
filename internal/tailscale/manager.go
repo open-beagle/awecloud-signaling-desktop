@@ -18,6 +18,7 @@ import (
 	"tailscale.com/tsnet"
 
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/diagnostics"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/netutil"
 )
 
@@ -132,6 +133,7 @@ func (m *Manager) watchStatus() {
 			return
 		case <-ticker.C:
 			m.updateStatus()
+			m.recordPeerDiagnostics()
 
 			// 检测断开，尝试重连
 			if !m.IsConnected() {
@@ -440,6 +442,7 @@ func scopedStateDir(baseDir, scope string) string {
 // tailscaleLogf 自定义日志函数，过滤 tailscale 内部日志
 func (m *Manager) tailscaleLogf(format string, args ...any) {
 	msg := fmt.Sprintf(format, args...)
+	diagnostics.Tunnel(msg)
 
 	// 过滤掉过于频繁的 debug 日志
 	if shouldFilterLog(msg) {
