@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"unicode/utf16"
 	"unsafe"
+
+	"golang.org/x/sys/windows/registry"
 )
 
 // hiddenProcAttr 隐藏子进程窗口的 SysProcAttr
@@ -25,8 +27,13 @@ var hiddenProcAttr = &syscall.SysProcAttr{
 }
 
 var (
-	nrptPromptMu      sync.Mutex
+	nrptPromptMu       sync.Mutex
 	nrptPromptedKeySet = make(map[string]bool)
+
+	nrptRegistryPaths = []string{
+		`SYSTEM\CurrentControlSet\Services\Dnscache\Parameters\DnsPolicyConfig`,
+		`SOFTWARE\Policies\Microsoft\Windows NT\DnsClient\DnsPolicyConfig`,
+	}
 )
 
 // RecommendedListenAddr 返回 Windows 平台推荐的 DNS 监听地址
@@ -41,15 +48,20 @@ func RecommendedPort() int {
 }
 
 // IsSystemDNSConfigured 非提权检测当前系统生效的 NRPT 策略是否已将指定后缀指向本地监听 IP
+// 优先直接读取 Windows Dnscache 注册表（<0.1ms、零子进程开销），回退使用显式字符串化 PowerShell 查询
 func IsSystemDNSConfigured(suffix string, listenIP string) bool {
 	ns := NormalizeManagedSuffix(suffix)
 	ip := normalizeLoopbackDNSIP(listenIP)
+
+	if isNRPTConfiguredInRegistry(ns, ip) {
+		return true
+	}
 
 	psCmd := fmt.Sprintf(`$ProgressPreference = 'SilentlyContinue'
 $policies = Get-DnsClientNrptPolicy -Effective -ErrorAction SilentlyContinue | Where-Object { $_.Namespace -contains '%s' -or $_.Namespace -eq '%s' }
 foreach ($p in $policies) {
     foreach ($s in $p.NameServers) {
-        Write-Output $s
+        if ($null -ne $s) { Write-Output ($s.ToString()) }
     }
 }`, ns, ns)
 
@@ -60,13 +72,97 @@ foreach ($p in $policies) {
 		return false
 	}
 
-	for _, line := range strings.Split(string(output), "\n") {
-		server := strings.TrimSpace(line)
-		if server == "" {
+	return matchNRPTPowerShellOutput(string(output), ip)
+}
+
+func isNRPTConfiguredInRegistry(targetSuffix string, targetIP string) bool {
+	for _, basePath := range nrptRegistryPaths {
+		baseKey, err := registry.OpenKey(registry.LOCAL_MACHINE, basePath, registry.ENUMERATE_SUB_KEYS|registry.QUERY_VALUE)
+		if err != nil {
 			continue
 		}
-		if strings.EqualFold(server, ip) {
+		subKeys, enumErr := baseKey.ReadSubKeyNames(-1)
+		_ = baseKey.Close()
+		if enumErr != nil {
+			continue
+		}
+
+		for _, sub := range subKeys {
+			ruleKey, openErr := registry.OpenKey(registry.LOCAL_MACHINE, basePath+`\`+sub, registry.QUERY_VALUE)
+			if openErr != nil {
+				continue
+			}
+			names, _, nameErr := ruleKey.GetStringsValue("Name")
+			if nameErr != nil {
+				if singleName, _, singleErr := ruleKey.GetStringValue("Name"); singleErr == nil && singleName != "" {
+					names = []string{singleName}
+				}
+			}
+			genericServers, _, srvErr := ruleKey.GetStringValue("GenericDNSServers")
+			if srvErr != nil {
+				if multiSrv, _, multiErr := ruleKey.GetStringsValue("GenericDNSServers"); multiErr == nil {
+					genericServers = strings.Join(multiSrv, ";")
+				}
+			}
+			_ = ruleKey.Close()
+
+			if matchNRPTRuleEntry(names, genericServers, targetSuffix, targetIP) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func matchNRPTRuleEntry(names []string, genericServers string, targetSuffix string, targetIP string) bool {
+	wantSuffix := NormalizeManagedSuffix(targetSuffix)
+	wantIP := normalizeLoopbackDNSIP(targetIP)
+
+	matchedNamespace := false
+	for _, rawName := range names {
+		for _, token := range strings.FieldsFunc(rawName, func(r rune) bool {
+			return r == ';' || r == ',' || r == ' ' || r == '\t'
+		}) {
+			if NormalizeManagedSuffix(token) == wantSuffix {
+				matchedNamespace = true
+				break
+			}
+		}
+		if matchedNamespace {
+			break
+		}
+	}
+	if !matchedNamespace {
+		return false
+	}
+
+	for _, srv := range strings.FieldsFunc(genericServers, func(r rune) bool {
+		return r == ';' || r == ',' || r == ' ' || r == '\t'
+	}) {
+		if strings.EqualFold(strings.TrimSpace(srv), wantIP) {
 			return true
+		}
+	}
+	return false
+}
+
+func matchNRPTPowerShellOutput(output string, targetIP string) bool {
+	wantIP := normalizeLoopbackDNSIP(targetIP)
+	for _, rawLine := range strings.Split(output, "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+		if strings.EqualFold(line, wantIP) {
+			return true
+		}
+		// 兼容 Windows PowerShell 5.1 将 System.Net.IPAddress 格式化为 "IPAddressToString : 127.0.0.2"
+		if idx := strings.Index(line, ":"); idx > 0 {
+			key := strings.TrimSpace(line[:idx])
+			val := strings.TrimSpace(line[idx+1:])
+			if strings.EqualFold(key, "IPAddressToString") && strings.EqualFold(val, wantIP) {
+				return true
+			}
 		}
 	}
 	return false

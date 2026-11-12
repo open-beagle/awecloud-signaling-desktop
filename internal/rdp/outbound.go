@@ -322,7 +322,7 @@ func defaultOSVerifyDomainVIP(domain string, expectedVIP string) bool {
 	if domain == "" || expectedVIP == "" {
 		return false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 350*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
 	defer cancel()
 	resolver := &net.Resolver{PreferGo: false}
 	ips, err := resolver.LookupIPAddr(ctx, domain)

@@ -10,6 +10,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 )
 
 // ResolveFunc 域名解析回调函数
@@ -203,7 +204,13 @@ func (s *Server) handleQuery(packet []byte, remoteAddr *net.UDPAddr) {
 	domain = strings.TrimSuffix(domain, ".")
 
 	// 检查是否是受管零信任内网域名（含动态品牌后缀与 .beagle）
-	if s.matchesManagedSuffix(domain) && qtype == 1 { // A 记录
+	// 对所有受管后缀请求均在本地闭环响应，绝不将 AAAA / HTTPS 等查询转发至公网 DNS 造成阻塞或隐私泄露
+	if s.matchesManagedSuffix(domain) {
+		if qtype != 1 { // 非 A 记录（如 Windows 双栈并发发起的 AAAA qtype=28）直接返回 NODATA
+			resp := buildDNSNoData(packet)
+			s.conn.WriteToUDP(resp, remoteAddr)
+			return
+		}
 		vip, ok := s.resolve(domain)
 		if ok {
 			resp := buildDNSResponse(packet, vip)
@@ -218,7 +225,7 @@ func (s *Server) handleQuery(packet []byte, remoteAddr *net.UDPAddr) {
 		return
 	}
 
-	// 非 .beagle 域名，转发到上游 DNS
+	// 非受管域名，转发到上游 DNS
 	resp, err := s.forwardToUpstream(packet)
 	if err != nil {
 		log.Printf("[DNS] 转发到上游失败: %v", err)
@@ -239,6 +246,7 @@ func (s *Server) forwardToUpstream(packet []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 
 	if _, err := conn.Write(packet); err != nil {
 		return nil, err
@@ -312,12 +320,23 @@ func buildDNSResponse(query []byte, ip string) []byte {
 		0xc0, 0x0c, // 名称指针
 		0x00, 0x01, // Type: A
 		0x00, 0x01, // Class: IN
-		0x00, 0x00, 0x00, 0x3c, // TTL: 60 秒
+		0x00, 0x00, 0x00, 0x05, // TTL: 5 秒（支持用户随时切换短域名立即生效）
 		0x00, 0x04, // RDLENGTH: 4
 	}
 	answer = append(answer, parsedIP...)
 
 	return append(resp, answer...)
+}
+
+// buildDNSNoData 构建 NODATA 响应（RCODE=0, ANCOUNT=0，用于快速结束双栈 AAAA 查询）
+func buildDNSNoData(query []byte) []byte {
+	resp := make([]byte, len(query))
+	copy(resp, query)
+	resp[2] = 0x81 // QR=1, AA=1
+	resp[3] = 0x80 // RA=1, RCODE=0 (No Error)
+	resp[6] = 0x00
+	resp[7] = 0x00 // ANCOUNT=0
+	return resp
 }
 
 // buildDNSNXDomain 构建 NXDOMAIN 响应

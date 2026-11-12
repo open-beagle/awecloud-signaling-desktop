@@ -408,6 +408,9 @@ func (a *App) initializeZTNA() error {
 	}
 
 	log.Printf("[App] ZTNA 网络栈已就绪（DNS=%s, suffix=%s）", a.dnsServer.ListenAddr(), activeSuffix)
+	a.emitFrontendEvent("domain:updated", map[string]any{
+		"domain_suffix": activeSuffix,
+	})
 	return nil
 }
 
