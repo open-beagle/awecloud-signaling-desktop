@@ -18,6 +18,7 @@ import (
 	"tailscale.com/tsnet"
 
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/netutil"
 )
 
 // Manager 管理 Desktop 端 Tailscale 客户端 (tsnet 用户态模式)
@@ -65,6 +66,7 @@ func NewManagerForServer(serverAddress string) *Manager {
 // Connect 连接隧道网络（tsnet 用户态模式）
 func (m *Manager) Connect(controlURL, authKey, hostname string) error {
 	log.Printf("[INFO] [Tunnel] 正在连接: %s (tsnet 用户态模式)", controlURL)
+	netutil.EnsureProcessSafeResolverForTarget(controlURL)
 
 	// 初始化状态目录
 	stateDir := m.getStateDir()

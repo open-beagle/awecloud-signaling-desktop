@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/device"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/netutil"
 	pb "github.com/open-beagle/awecloud-signaling-desktop/pkg/proto"
 )
 
@@ -113,35 +114,34 @@ func NewDesktopClient(serverAddr string) *DesktopClient {
 
 // Start 启动客户端
 func (c *DesktopClient) Start() error {
-	// 规范化服务器地址（移除末尾的斜杠）
-	c.serverAddr = strings.TrimSuffix(c.serverAddr, "/")
+	rawAddr := strings.TrimSpace(c.serverAddr)
+	netutil.EnsureProcessSafeResolverForTarget(rawAddr)
 
-	// 根据地址判断是否使用 TLS
-	var opts []grpc.DialOption
+	hostPort, useTLS := netutil.NormalizeServerEndpoint(rawAddr)
+	c.serverAddr = hostPort
 
-	if strings.HasPrefix(c.serverAddr, "https://") {
-		// HTTPS：使用 TLS，跳过证书验证
+	opts := []grpc.DialOption{
+		grpc.WithContextDialer(netutil.DialContext),
+		grpc.WithNoProxy(),
+	}
+
+	if useTLS {
+		serverName := netutil.ExtractHost(rawAddr)
 		tlsConfig := &tls.Config{
+			ServerName:         serverName,
 			InsecureSkipVerify: true,
 			// 必须设置 NextProtos 以支持 HTTP/2（gRPC 要求）
 			NextProtos: []string{"h2"},
 		}
 		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)))
-		log.Printf("[DesktopClient] Using TLS connection (skip verify)")
-		c.serverAddr = strings.TrimPrefix(c.serverAddr, "https://")
-	} else if strings.HasPrefix(c.serverAddr, "http://") {
-		// HTTP：不使用 TLS
+		log.Printf("[DesktopClient] Using TLS connection (skip verify, serverName=%s)", serverName)
+	} else {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		log.Printf("[DesktopClient] Using plaintext connection")
-		c.serverAddr = strings.TrimPrefix(c.serverAddr, "http://")
-	} else {
-		// 没有协议前缀，默认使用 plaintext
-		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		log.Printf("[DesktopClient] Using plaintext connection (no protocol specified)")
 	}
 
-	// 连接 gRPC Server
-	conn, err := grpc.NewClient(c.serverAddr, opts...)
+	// 使用 passthrough:/// 将完整 host:port 透传给 netutil.DialContext，防止 Winsock 127.x 合成回环劫持
+	conn, err := grpc.NewClient("passthrough:///"+c.serverAddr, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to connect to server: %w", err)
 	}

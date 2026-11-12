@@ -84,7 +84,7 @@
             class="full-width-button"
             :disabled="isAutoLogging"
           >
-            {{ logtoLoading ? '等待浏览器授权...' : '浏览器登录' }}
+            {{ getLoginButtonLabel() }}
           </el-button>
         </el-form-item>
 
@@ -178,12 +178,19 @@ const getSubtitle = () => {
     return '正在自动登录...'
   }
   if (logtoLoading.value) {
-    return '请在系统默认浏览器中完成认证'
+    return browserLoginURL.value ? '请在系统默认浏览器中完成认证' : '正在连接服务器...'
   }
   if (loginMode.value === 'saved') {
     return `欢迎回来，${form.usernameHint}！`
   }
   return '连接到您的远程服务'
+}
+
+const getLoginButtonLabel = () => {
+  if (!logtoLoading.value) {
+    return '登录'
+  }
+  return browserLoginURL.value ? '等待浏览器授权...' : '连接中...'
 }
 
 const buildBrowserLoginURL = (serverBase: string, loginPath: string, forcePrompt: boolean) => {
@@ -213,7 +220,7 @@ const handleCancelLoginWait = async () => {
   } finally {
     browserLoginURL.value = ''
     logtoLoading.value = false
-    loginHint.value = '已取消等待，可重新点击「浏览器登录」'
+    loginHint.value = '已取消等待，可重新点击「登录」'
   }
 }
 
@@ -304,7 +311,7 @@ const handleSwitchAccount = async () => {
     form.rememberMe = true
     forcePromptLogin.value = true
     loginMode.value = 'new'
-    loginHint.value = '已切换账号模式，点击「浏览器登录」将在默认浏览器中选择其他账号'
+    loginHint.value = '已切换账号模式，点击「登录」将在默认浏览器中选择其他账号'
     ElMessage.success('已清除保存的凭据')
   } catch (error: any) {
     ElMessage.error('清除凭据失败: ' + (error.message || '未知错误'))
@@ -336,7 +343,7 @@ const handleAutoLogin = async () => {
     if (errorMsg.includes('禁用') || errorMsg.includes('disabled')) {
       loginHint.value = '您的账号已被禁用，请联系管理员'
     } else {
-      loginHint.value = '自动登录失败，请点击「浏览器登录」继续'
+      loginHint.value = '自动登录失败，请点击「登录」继续'
     }
   }
 }
@@ -367,7 +374,7 @@ const determineLoginMode = (savedCreds: any) => {
     }, 500)
   } else {
     loginMode.value = 'saved'
-    loginHint.value = '请点击「浏览器登录」继续'
+    loginHint.value = '请点击「登录」继续'
   }
 }
 

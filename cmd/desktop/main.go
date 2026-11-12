@@ -16,6 +16,7 @@ import (
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/assets"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcheripc"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/netutil"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/singleton"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/telemetry"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/tray"
@@ -48,6 +49,7 @@ func main() {
 			},
 		}
 	}
+	go netutil.EnsureProcessSafeResolverForTarget(cfg.ServerAddress)
 
 	// 设置 telemetry 日志记录器
 	telemetry.SetLogger(&telemetryLogger{})

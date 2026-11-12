@@ -12,6 +12,7 @@ import (
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/config"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcher"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/launcheripc"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/netutil"
 )
 
 func main() {
@@ -52,6 +53,7 @@ func run() (runErr error) {
 	}
 
 	updateServerAddress := launcher.ResolveUpdateServerAddress(cfg.ServerAddress)
+	netutil.EnsureProcessSafeResolverForTarget(updateServerAddress)
 	current, err := launcher.EnsureCurrentApp(context.Background(), paths, updateServerAddress, logger, showInitialInstallNotice)
 	if err != nil {
 		return err
