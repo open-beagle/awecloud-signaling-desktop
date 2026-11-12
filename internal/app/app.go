@@ -34,11 +34,13 @@ type App struct {
 	mainWindow *application.WebviewWindow
 	appIcon    []byte
 
-	desktopClient *client.DesktopClient
-	tsManager     *tailscale.Manager
-	authResult    *client.AuthResult
-	loginWindow   *application.WebviewWindow // 登录窗口引用（指针）
-	loginMutex    sync.Mutex                 // 保护登录窗口的并发访问
+	desktopClient      *client.DesktopClient
+	tsManager          *tailscale.Manager
+	authResult         *client.AuthResult
+	loginWindow        *application.WebviewWindow // 兼容保留字段
+	pendingLoginClient *client.DesktopClient      // 当前等待默认浏览器回调的临时 gRPC 客户端
+	loginWaitCancelled bool                       // 用户是否主动取消浏览器登录等待
+	loginMutex         sync.Mutex                 // 保护登录等待与窗口状态
 
 	// ZTNA: DNS 劫持 + VIP 分配 + 本地代理
 	dnsServer         *dns.Server
@@ -1609,54 +1611,41 @@ func (a *App) OpenBrowser(url string) error {
 	return openBrowser(url)
 }
 
-// OpenLoginWindow 打开登录窗口（在 Desktop 内部的 WebView 中）
-// 用于 Logto 登录流程
+// OpenLoginWindow 在系统默认浏览器中打开登录授权链接（兼容保留方法签名）
 func (a *App) OpenLoginWindow(loginURL string) error {
-	log.Printf("[App] OpenLoginWindow: %s", loginURL)
+	log.Printf("[App] OpenLoginWindow -> default browser: %s", loginURL)
+	return openBrowser(loginURL)
+}
 
-	if a.mainApp == nil {
-		return fmt.Errorf("mainApp is nil")
-	}
+// CloseLoginWindow 取消正在等待的浏览器登录流并关闭遗留窗口
+func (a *App) CloseLoginWindow() error {
+	log.Printf("[App] CloseLoginWindow / cancel pending login wait")
 
-	// 创建新的 WebView 窗口用于登录
-	loginWindow := a.mainApp.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:     "登录 - Signaling Desktop",
-		Width:     600,
-		Height:    700,
-		MinWidth:  600,
-		MinHeight: 700,
-		URL:       loginURL,
-		BackgroundColour: application.RGBA{
-			Red: 255, Green: 255, Blue: 255, Alpha: 255,
-		},
-	})
-
-	// 保存窗口引用
 	a.loginMutex.Lock()
-	a.loginWindow = loginWindow
+	win := a.loginWindow
+	a.loginWindow = nil
+	pending := a.pendingLoginClient
+	a.pendingLoginClient = nil
+	if pending != nil {
+		a.loginWaitCancelled = true
+	}
 	a.loginMutex.Unlock()
 
-	// 显示窗口
-	loginWindow.Show()
+	if win != nil {
+		win.Close()
+	}
+	if pending != nil {
+		pending.Stop()
+	}
 
-	log.Printf("[App] Login window opened")
 	return nil
 }
 
-// CloseLoginWindow 关闭登录窗口
-func (a *App) CloseLoginWindow() error {
-	log.Printf("[App] CloseLoginWindow")
-
-	a.loginMutex.Lock()
-	defer a.loginMutex.Unlock()
-
-	if a.loginWindow != nil {
-		a.loginWindow.Close()
-		a.loginWindow = nil
-		log.Printf("[App] Login window closed")
+func (a *App) focusMainWindow() {
+	if a.mainWindow != nil {
+		a.mainWindow.Show()
+		a.mainWindow.Focus()
 	}
-
-	return nil
 }
 
 // ConnectService 快速连接服务
@@ -1742,6 +1731,16 @@ type LoginResultGRPC struct {
 func (a *App) WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint string) (*LoginResultGRPC, error) {
 	log.Printf("[App] WaitForLoginResultGRPC: serverAddr=%s, sessionID=%s", serverAddr, sessionID)
 
+	// 若上一次仍有未结束的等待连接，先安全释放
+	a.loginMutex.Lock()
+	stalePending := a.pendingLoginClient
+	a.pendingLoginClient = nil
+	a.loginWaitCancelled = false
+	a.loginMutex.Unlock()
+	if stalePending != nil {
+		stalePending.Stop()
+	}
+
 	// 创建 Desktop 客户端（用于 gRPC 连接）
 	desktopClient := client.NewDesktopClient(serverAddr)
 	if err := desktopClient.Start(); err != nil {
@@ -1749,12 +1748,32 @@ func (a *App) WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint st
 	}
 	// 注意：不要在这里 defer Stop()，因为我们需要保留这个客户端用于后续的 API 调用
 
+	a.loginMutex.Lock()
+	a.pendingLoginClient = desktopClient
+	a.loginWaitCancelled = false
+	a.loginMutex.Unlock()
+
 	// 调用 gRPC 方法 WaitForLoginResult
 	// 这是一个双向流，我们发送 sessionID，Server 推送登录结果
 	result, err := desktopClient.WaitForLoginResult(sessionID, deviceFingerprint)
+
+	a.loginMutex.Lock()
+	wasCancelled := a.loginWaitCancelled
+	if a.pendingLoginClient == desktopClient {
+		a.pendingLoginClient = nil
+		a.loginWaitCancelled = false
+	}
+	a.loginMutex.Unlock()
+
 	if err != nil {
-		log.Printf("[App] WaitForLoginResult failed: %v", err)
+		log.Printf("[App] WaitForLoginResult ended: err=%v, cancelled=%v", err, wasCancelled)
 		desktopClient.Stop()
+		if wasCancelled {
+			return &LoginResultGRPC{
+				Success: false,
+				Message: "已取消登录等待",
+			}, nil
+		}
 		return nil, fmt.Errorf("wait for login result failed: %w", err)
 	}
 
@@ -1762,7 +1781,6 @@ func (a *App) WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint st
 		log.Printf("[App] Login failed: %s (isDisabled=%v)", result.Message, result.IsDisabled)
 		desktopClient.Stop()
 
-		// 用户被禁用/待审批
 		if result.IsDisabled {
 			return &LoginResultGRPC{
 				Success:    false,
@@ -1779,10 +1797,9 @@ func (a *App) WaitForLoginResultGRPC(serverAddr, sessionID, deviceFingerprint st
 
 	log.Printf("[App] Login successful: desktopID=%d, username=%s", result.DesktopID, result.Username)
 
-	// 关闭登录窗口
-	if err := a.CloseLoginWindow(); err != nil {
-		log.Printf("[App] Failed to close login window: %v", err)
-	}
+	// 清理可能残留的弹窗并前置唤醒主窗口
+	_ = a.CloseLoginWindow()
+	a.focusMainWindow()
 
 	// 保存 Desktop 客户端（重要：用于后续的 API 调用）
 	if a.desktopClient != nil || a.tsManager != nil {

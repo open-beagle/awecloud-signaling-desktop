@@ -7,9 +7,13 @@ import (
 	"syscall"
 )
 
-// openBrowser 在默认浏览器中打开 URL（Windows）
-func openBrowser(url string) error {
-	cmd := exec.Command("cmd", "/c", "start", url)
+// openBrowser 在系统默认浏览器中安全打开 HTTP(S) URL（避免 cmd /c start 截断 & 查询参数）
+func openBrowser(rawURL string) error {
+	safeURL, err := validateBrowserURL(rawURL)
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command("rundll32", "url.dll,FileProtocolHandler", safeURL)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow:    true,
 		CreationFlags: 0x08000000, // CREATE_NO_WINDOW

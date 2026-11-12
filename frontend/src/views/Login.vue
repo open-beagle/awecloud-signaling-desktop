@@ -3,7 +3,7 @@
     <UpgradeDialog ref="upgradeDialogRef" />
     <div class="login-box">
       <div class="logo-container">
-        <div class="logo-wrapper" :class="{ 'is-loading': isAutoLogging }">
+        <div class="logo-wrapper" :class="{ 'is-loading': isAutoLogging || logtoLoading }">
           <img src="../assets/logo.png" alt="AWECloud Logo" class="logo" />
         </div>
       </div>
@@ -22,9 +22,20 @@
         欢迎回来！正在使用保存的凭据登录...
       </el-alert>
 
+      <!-- 系统默认浏览器等待授权状态 -->
+      <el-alert
+        v-else-if="logtoLoading && browserLoginURL"
+        type="info"
+        :closable="false"
+        show-icon
+        class="status-alert"
+      >
+        已在系统默认浏览器打开登录页面，完成授权后将自动获取身份进入客户端。
+      </el-alert>
+
       <!-- 登录提示 -->
       <el-alert
-        v-if="loginHint && !isAutoLogging"
+        v-else-if="loginHint && !isAutoLogging"
         type="info"
         :closable="false"
         class="status-alert"
@@ -73,16 +84,28 @@
             class="full-width-button"
             :disabled="isAutoLogging"
           >
-            {{ logtoLoading ? '登录中...' : '登录' }}
+            {{ logtoLoading ? '等待浏览器授权...' : '浏览器登录' }}
           </el-button>
         </el-form-item>
 
-        <!-- 切换账号按钮（仅在 saved 模式显示） -->
-        <el-form-item v-if="loginMode === 'saved'" label=" " class="button-form-item">
+        <!-- 默认浏览器等待期间辅助按钮 -->
+        <el-form-item v-if="logtoLoading && browserLoginURL" label=" " class="button-form-item">
+          <div class="browser-wait-actions">
+            <el-button @click="handleReopenBrowser" class="half-width-button">
+              重新打开浏览器
+            </el-button>
+            <el-button @click="handleCancelLoginWait" class="half-width-button">
+              取消等待
+            </el-button>
+          </div>
+        </el-form-item>
+
+        <!-- 切换账号按钮（仅在 saved 模式且未加载时显示） -->
+        <el-form-item v-if="loginMode === 'saved' && !logtoLoading" label=" " class="button-form-item">
           <el-button
             @click="handleSwitchAccount"
             class="full-width-button"
-            :disabled="isAutoLogging || logtoLoading"
+            :disabled="isAutoLogging"
           >
             使用其他账号登录
           </el-button>
@@ -100,7 +123,16 @@ import { useAuthStore } from '../stores/auth'
 import { App } from '../../bindings/github.com/open-beagle/awecloud-signaling-desktop/internal/app'
 import UpgradeDialog from '../components/UpgradeDialog.vue'
 
-const { Login, GetVersion, CheckSavedCredentials, ClearCredentials, CreateLoginSession, OpenLoginWindow, WaitForLoginResultGRPC } = App
+const {
+  Login,
+  GetVersion,
+  CheckSavedCredentials,
+  ClearCredentials,
+  CreateLoginSession,
+  OpenBrowser,
+  CloseLoginWindow,
+  WaitForLoginResultGRPC
+} = App
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -113,6 +145,8 @@ const loginHint = ref('')
 const isAutoLogging = ref(false)
 const upgradeDialogRef = ref<InstanceType<typeof UpgradeDialog>>()
 const sessionId = ref('')
+const browserLoginURL = ref('')
+const forcePromptLogin = ref(false)
 
 const form = reactive({
   server: '',
@@ -139,10 +173,12 @@ const rules: FormRules = {
   ]
 }
 
-// 获取副标题文本
 const getSubtitle = () => {
   if (isAutoLogging.value) {
     return '正在自动登录...'
+  }
+  if (logtoLoading.value) {
+    return '请在系统默认浏览器中完成认证'
   }
   if (loginMode.value === 'saved') {
     return `欢迎回来，${form.usernameHint}！`
@@ -150,7 +186,38 @@ const getSubtitle = () => {
   return '连接到您的远程服务'
 }
 
-// 登录处理
+const buildBrowserLoginURL = (serverBase: string, loginPath: string, forcePrompt: boolean) => {
+  const raw = `${serverBase}${loginPath}`
+  if (!forcePrompt) {
+    return raw
+  }
+  const sep = raw.includes('?') ? '&' : '?'
+  return `${raw}${sep}prompt=login`
+}
+
+const handleReopenBrowser = async () => {
+  if (!browserLoginURL.value) return
+  try {
+    await OpenBrowser(browserLoginURL.value)
+    ElMessage.info('已重新在系统默认浏览器中打开登录页面')
+  } catch (error: any) {
+    ElMessage.error('打开系统默认浏览器失败: ' + (error.message || '未知错误'))
+  }
+}
+
+const handleCancelLoginWait = async () => {
+  try {
+    await CloseLoginWindow()
+  } catch {
+    // ignore
+  } finally {
+    browserLoginURL.value = ''
+    logtoLoading.value = false
+    loginHint.value = '已取消等待，可重新点击「浏览器登录」'
+  }
+}
+
+// 登录处理：调起系统默认浏览器并通过 gRPC 流等待用户身份回调
 const handleLogin = async () => {
   if (!formRef.value) return
 
@@ -164,10 +231,10 @@ const handleLogin = async () => {
 
     form.server = form.server.trim().replace(/\/+$/, '')
     logtoLoading.value = true
+    browserLoginURL.value = ''
     try {
-      // 第一步：通过 gRPC 创建登录会话
       const sessionResult = await CreateLoginSession(form.server, form.usernameHint || '')
-      
+
       if (!sessionResult || !sessionResult.session_id) {
         ElMessage.error('创建登录会话失败')
         logtoLoading.value = false
@@ -175,29 +242,29 @@ const handleLogin = async () => {
       }
 
       const sessionIdFromResponse = sessionResult.session_id
-      const loginURL = sessionResult.login_url
+      const fullLoginURL = buildBrowserLoginURL(
+        form.server,
+        sessionResult.login_url,
+        forcePromptLogin.value
+      )
 
-      // 保存 session_id
       sessionId.value = sessionIdFromResponse
+      browserLoginURL.value = fullLoginURL
 
-      // 第二步：在 Desktop 内部的 WebView 窗口中打开登录页面
-      ElMessage.info('正在打开登录窗口...')
-      const fullLoginURL = form.server + loginURL
-      await OpenLoginWindow(fullLoginURL)
+      await OpenBrowser(fullLoginURL)
 
-      // 第三步：通过 gRPC 双向流等待登录完成（5 分钟超时）
-      ElMessage.info('等待登录完成...')
       const loginResult = await WaitForLoginResultGRPC(form.server, sessionIdFromResponse, '')
 
       if (!loginResult) {
         ElMessage.error('登录超时，请重试')
+        browserLoginURL.value = ''
         logtoLoading.value = false
-        // 超时后返回登录界面，用户可以重新尝试
         return
       }
 
       if (loginResult.Success) {
-        // 登录成功，保存凭证并设置认证状态
+        forcePromptLogin.value = false
+        browserLoginURL.value = ''
         authStore.setServerAddress(form.server)
         authStore.setClientId(loginResult.Username || form.usernameHint || '')
         authStore.setAuthenticated(true)
@@ -206,78 +273,74 @@ const handleLogin = async () => {
         await new Promise(resolve => setTimeout(resolve, 100))
         await router.push('/hosts')
       } else if (loginResult.IsDisabled) {
-        // 用户被禁用/待审批
-        ElMessage.warning(loginResult.Message || '用户未注册或已禁用，请联系管理员审批')
-        loginHint.value = loginResult.Message || '用户未注册或已禁用，请联系管理员审批'
+        browserLoginURL.value = ''
         logtoLoading.value = false
+        const msg = loginResult.Message || '您的账号已被管理员禁用，请联系管理员'
+        ElMessage.warning(msg)
+        loginHint.value = msg
       } else {
-        ElMessage.error(loginResult.Message || '登录失败')
+        browserLoginURL.value = ''
         logtoLoading.value = false
+        if (loginResult.Message !== '已取消登录等待') {
+          ElMessage.error(loginResult.Message || '登录失败')
+        }
       }
     } catch (error: any) {
-      ElMessage.error('登录失败: ' + (error.message || '未知错误'))
+      browserLoginURL.value = ''
       logtoLoading.value = false
+      ElMessage.error('登录失败: ' + (error.message || '未知错误'))
     }
   })
 }
 
-// 切换账号
+// 切换账号：保留默认服务器地址并在下次浏览器登录附带 prompt=login
 const handleSwitchAccount = async () => {
   try {
+    const preservedServer = form.server
     await ClearCredentials()
-    form.server = ''
+    const freshCreds = await CheckSavedCredentials()
+    form.server = freshCreds?.server_address || preservedServer
     form.usernameHint = ''
     form.rememberMe = true
+    forcePromptLogin.value = true
     loginMode.value = 'new'
-    loginHint.value = ''
+    loginHint.value = '已切换账号模式，点击「浏览器登录」将在默认浏览器中选择其他账号'
     ElMessage.success('已清除保存的凭据')
   } catch (error: any) {
     ElMessage.error('清除凭据失败: ' + (error.message || '未知错误'))
   }
 }
 
-// 自动登录
 const handleAutoLogin = async () => {
   try {
-    // 尝试使用保存的Token自动登录
     await Login(
       form.server,
       form.usernameHint,
-      '', // 使用Token登录不需要Secret
+      '',
       true
     )
 
-    // 先设置状态
     authStore.setServerAddress(form.server)
     authStore.setClientId(form.usernameHint)
-    
-    // 最后设置认证状态，触发路由守卫
     authStore.setAuthenticated(true)
 
     ElMessage.success('自动登录成功')
-    
-    // 延迟导航，确保状态已更新
     await new Promise(resolve => setTimeout(resolve, 100))
-    
-    // 导航到资源总览
     await router.push('/hosts')
   } catch (error: any) {
     console.error('Auto login failed:', error)
-    // 自动登录失败，切换到 saved 模式
     isAutoLogging.value = false
     loginMode.value = 'saved'
-    
-    // 检查是否是用户禁用
+
     const errorMsg = error?.message || error?.toString() || ''
     if (errorMsg.includes('禁用') || errorMsg.includes('disabled')) {
       loginHint.value = '您的账号已被禁用，请联系管理员'
     } else {
-      loginHint.value = '自动登录失败，请点击"登录"按钮重新登录'
+      loginHint.value = '自动登录失败，请点击「浏览器登录」继续'
     }
   }
 }
 
-// 判断登录模式
 const determineLoginMode = (savedCreds: any) => {
   if (!savedCreds) {
     loginMode.value = 'new'
@@ -285,37 +348,30 @@ const determineLoginMode = (savedCreds: any) => {
     return
   }
 
-  // 设置服务器地址
   form.server = savedCreds.server_address || ''
 
-  // 如果没有保存的用户信息，显示新登录界面
   if (!savedCreds.client_id) {
     loginMode.value = 'new'
     loginHint.value = ''
     return
   }
 
-  // 有保存的凭据
   form.usernameHint = savedCreds.client_id
   form.rememberMe = savedCreds.remember_me
 
-  // 检查是否有有效Token，有则尝试自动登录
   if (savedCreds.has_token) {
     loginMode.value = 'auto'
     isAutoLogging.value = true
-    // 自动登录
     setTimeout(() => {
       handleAutoLogin()
     }, 500)
   } else {
-    // 没有Token，显示 saved 模式
     loginMode.value = 'saved'
-    loginHint.value = '请点击"登录"按钮继续'
+    loginHint.value = '请点击「浏览器登录」继续'
   }
 }
 
 onMounted(async () => {
-  // 如果已认证，直接导航到资源总览
   if (authStore.isAuthenticated) {
     await router.push('/hosts')
     return
@@ -424,6 +480,16 @@ onMounted(async () => {
 
 .full-width-button {
   width: 100%;
+}
+
+.browser-wait-actions {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+.half-width-button {
+  flex: 1;
 }
 
 .status-alert {
