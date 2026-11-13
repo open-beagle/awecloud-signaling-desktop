@@ -38,6 +38,29 @@ func IsSystemDNSConfigured(suffix string, _ string) bool {
 	return strings.Contains(string(data), "nameserver 127.0.0.1")
 }
 
+// AreManagedHostsConfigured 检查系统 /etc/hosts 是否已包含指定受管域名映射
+func AreManagedHostsConfigured(entries []ManagedHostEntry) bool {
+	clean := SanitizeManagedHostEntries(entries)
+	if len(clean) == 0 {
+		return false
+	}
+	raw, err := os.ReadFile("/etc/hosts")
+	if err != nil {
+		return false
+	}
+	return HasManagedHostsEntries(string(raw), clean)
+}
+
+// EnsureProxifierSuffixBypass 非 Windows 平台无需处理 Windows Proxifier 配置
+func EnsureProxifierSuffixBypass(_ string) (bool, error) {
+	return false, nil
+}
+
+// ConfigureSystemDNSWithHosts 配置系统 DNS（macOS 通过 /etc/resolver/<label> 原生支持按后缀端口分流）
+func ConfigureSystemDNSWithHosts(suffix string, listenIP string, port int, _ []ManagedHostEntry, allowElevation bool, forcePrompt bool) error {
+	return ConfigureSystemDNSForSuffix(suffix, listenIP, port, allowElevation, forcePrompt)
+}
+
 // ConfigureSystemDNS 配置系统 DNS，将 .beagle 域名指向本地 DNS 服务器
 func ConfigureSystemDNS(port int) error {
 	return ConfigureSystemDNSForSuffix(".beagle", "127.0.0.1", port, true, false)

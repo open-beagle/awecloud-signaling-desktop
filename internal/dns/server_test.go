@@ -100,4 +100,37 @@ func TestServerManagedSuffixHandlesAAndNoDataWithoutUpstreamLeak(t *testing.T) {
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, n, 12)
 	require.Equal(t, byte(3), buf[3]&0x0f)
+
+	// 4. 携带 EDNS0 OPT 附加记录 (ARCOUNT=1) 的查询 -> 响应必须剥离 OPT 并保持严格 Question -> Answer 顺序 (ARCOUNT=0)
+	baseQuery := buildTestDNSQuery("home.alice.acme", 1)
+	ednsQuery := make([]byte, len(baseQuery))
+	copy(ednsQuery, baseQuery)
+	binary.BigEndian.PutUint16(ednsQuery[10:12], 1) // ARCOUNT=1
+	// 标准 11 字节 EDNS0 OPT 伪记录 (Name=root 0x00, Type=41 0x0029, UDP size=4096 0x1000)
+	ednsOPT := []byte{0x00, 0x00, 0x29, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	ednsQuery = append(ednsQuery, ednsOPT...)
+
+	require.NoError(t, clientConn.SetDeadline(time.Now().Add(300*time.Millisecond)))
+	_, err = clientConn.Write(ednsQuery)
+	require.NoError(t, err)
+	n, err = clientConn.Read(buf)
+	require.NoError(t, err)
+	// 期望长度严格等于 baseQuery (Header+Question) + 16 字节 A Answer，不含 11 字节残留 OPT
+	require.Equal(t, len(baseQuery)+16, n)
+	require.Equal(t, uint16(1), binary.BigEndian.Uint16(buf[4:6]), "QDCOUNT=1")
+	require.Equal(t, uint16(1), binary.BigEndian.Uint16(buf[6:8]), "ANCOUNT=1")
+	require.Equal(t, uint16(0), binary.BigEndian.Uint16(buf[8:10]), "NSCOUNT=0")
+	require.Equal(t, uint16(0), binary.BigEndian.Uint16(buf[10:12]), "ARCOUNT=0")
+	require.Equal(t, []byte{0xc0, 0x0c}, buf[len(baseQuery):len(baseQuery)+2], "Answer 紧接 Question 段之后")
+	require.Equal(t, []byte{127, 1, 0, 9}, buf[n-4:n])
+
+	// 5. 内置金丝雀探针域名 _dns-check.acme -> 无需业务回调即可直接返回 127.0.0.1
+	require.NoError(t, clientConn.SetDeadline(time.Now().Add(300*time.Millisecond)))
+	_, err = clientConn.Write(buildTestDNSQuery(CanaryDomainForSuffix(".acme"), 1))
+	require.NoError(t, err)
+	n, err = clientConn.Read(buf)
+	require.NoError(t, err)
+	require.Equal(t, byte(0), buf[3]&0x0f)
+	require.Equal(t, uint16(1), binary.BigEndian.Uint16(buf[6:8]))
+	require.Equal(t, []byte{127, 0, 0, 1}, buf[n-4:n])
 }

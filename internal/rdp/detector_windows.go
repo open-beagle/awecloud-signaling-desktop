@@ -79,6 +79,10 @@ func isWindowsTCPPortListening(targetPort int) bool {
 	return checkWindowsTCPListenerTable(afInet, targetPort) || checkWindowsTCPListenerTable(afInet6, targetPort)
 }
 
+func isPlatformTCPPortListening(targetPort int) (bool, bool) {
+	return true, isWindowsTCPPortListening(targetPort)
+}
+
 func checkWindowsTCPListenerTable(family uintptr, targetPort int) bool {
 	if err := procGetExtendedTcpTable.Find(); err != nil {
 		return false

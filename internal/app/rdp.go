@@ -13,6 +13,7 @@ import (
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/dns"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/netutil"
 	"github.com/open-beagle/awecloud-signaling-desktop/internal/rdp"
+	"github.com/open-beagle/awecloud-signaling-desktop/internal/vip"
 	pb "github.com/open-beagle/awecloud-signaling-desktop/pkg/proto"
 )
 
@@ -139,7 +140,7 @@ func (a *App) initRDPRuntimeForClient(dc *client.DesktopClient) {
 		dc.SetDomainNamespaceCallback(func(domainSuffix string, userDomainLabel string) {
 			if a.dnsServer != nil && domainSuffix != "" {
 				a.dnsServer.SetDomainSuffix(domainSuffix)
-				_ = dns.ConfigureSystemDNSForSuffix(domainSuffix, a.dnsServer.ListenIP(), a.dnsServer.ListenPort(), true, false)
+				_ = a.syncSystemDNSAndHosts(domainSuffix, true, false, false)
 			}
 			a.emitFrontendEvent("domain:updated", map[string]any{
 				"domain_suffix":     domainSuffix,
@@ -259,17 +260,88 @@ func (a *App) UpdateDeviceRDPConfig(input *UpdateDeviceRDPConfigInput) (*DeviceI
 	if err != nil {
 		return nil, err
 	}
+	if (input.UpdateHostDomainLabel || input.UpdateUserDomainLabel) && a.dnsServer != nil {
+		_ = a.syncSystemDNSAndHosts(a.currentDomainSuffix(), true, false, false)
+	}
 	return clientDeviceToAppDevice(updated), nil
 }
 
-// GetDomainNamespaceStatus 获取当前动态品牌域名空间与本机系统 DNS 拦截就绪状态
-func (a *App) GetDomainNamespaceStatus() *DomainNamespaceStatus {
+func (a *App) currentDomainSuffix() string {
 	suffix := netutil.ActiveDomainSuffix()
-	userLabel := ""
 	if a.desktopClient != nil {
 		if s := a.desktopClient.GetDomainSuffix(); s != "" {
 			suffix = s
 		}
+	}
+	if suffix == "" {
+		suffix = ".beagle"
+	}
+	return suffix
+}
+
+func (a *App) collectManagedDeviceHostEntries(fetchFresh bool) []dns.ManagedHostEntry {
+	if a.desktopClient == nil || !a.desktopClient.IsAuthenticated() {
+		return nil
+	}
+	var devices []*client.DeviceInfo
+	if fetchFresh {
+		if fresh, err := a.desktopClient.GetMyDevices(); err == nil {
+			devices = fresh
+		}
+	}
+	if len(devices) == 0 {
+		devices = a.desktopClient.GetCachedDevices()
+	}
+
+	entries := make([]dns.ManagedHostEntry, 0, len(devices))
+	for _, d := range devices {
+		if d == nil {
+			continue
+		}
+		domain := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(d.DeviceDomain), "."))
+		if domain == "" {
+			continue
+		}
+		targetVIP := ""
+		if a.rdpOutbound != nil {
+			if v, ok := a.rdpOutbound.ResolveVIP(domain); ok {
+				targetVIP = v
+			}
+		}
+		if targetVIP == "" && a.vipAllocator != nil {
+			if v, ok := a.vipAllocator.GetVIP(domain); ok {
+				targetVIP = v
+			}
+		}
+		if targetVIP == "" {
+			targetVIP = vip.DeterministicVIP(domain)
+		}
+		if targetVIP != "" {
+			entries = append(entries, dns.ManagedHostEntry{
+				Domain: domain,
+				IP:     targetVIP,
+			})
+		}
+	}
+	return dns.SanitizeManagedHostEntries(entries)
+}
+
+func (a *App) syncSystemDNSAndHosts(suffix string, allowElevation bool, forcePrompt bool, fetchFresh bool) error {
+	if a.dnsServer == nil {
+		return fmt.Errorf("本地 DNS 服务尚未启动")
+	}
+	if strings.TrimSpace(suffix) == "" {
+		suffix = a.currentDomainSuffix()
+	}
+	entries := a.collectManagedDeviceHostEntries(fetchFresh)
+	return dns.ConfigureSystemDNSWithHosts(suffix, a.dnsServer.ListenIP(), a.dnsServer.ListenPort(), entries, allowElevation, forcePrompt)
+}
+
+// GetDomainNamespaceStatus 获取当前动态品牌域名空间与本机系统 DNS 拦截就绪状态
+func (a *App) GetDomainNamespaceStatus() *DomainNamespaceStatus {
+	suffix := a.currentDomainSuffix()
+	userLabel := ""
+	if a.desktopClient != nil {
 		userLabel = a.desktopClient.GetUserDomainLabel()
 	}
 
@@ -281,22 +353,31 @@ func (a *App) GetDomainNamespaceStatus() *DomainNamespaceStatus {
 		listenIP = a.dnsServer.ListenIP()
 	}
 
+	systemReady := false
+	if dnsRunning && dns.IsSystemDNSConfigured(suffix, listenIP) {
+		if dns.VerifySystemDNSResolution(suffix) {
+			systemReady = true
+		} else if entries := a.collectManagedDeviceHostEntries(false); len(entries) > 0 && dns.AreManagedHostsConfigured(entries) {
+			systemReady = true
+		}
+	}
+
 	return &DomainNamespaceStatus{
 		DomainSuffix:     suffix,
 		UserDomainLabel:  userLabel,
 		DNSServerRunning: dnsRunning,
 		DNSListenAddr:    listenAddr,
-		SystemDNSReady:   dnsRunning && dns.IsSystemDNSConfigured(suffix, listenIP),
+		SystemDNSReady:   systemReady,
 	}
 }
 
-// EnsureSystemDNSConfigured 手动触发一次性系统 DNS / NRPT 域名后缀规则持久化注册
+// EnsureSystemDNSConfigured 手动触发一次性系统 DNS / NRPT 与受管确定性 hosts 持久化注册
 func (a *App) EnsureSystemDNSConfigured() (*DomainNamespaceStatus, error) {
 	st := a.GetDomainNamespaceStatus()
 	if !st.DNSServerRunning || a.dnsServer == nil {
 		return st, fmt.Errorf("本地 DNS 服务尚未启动，请确认零信任隧道已连接")
 	}
-	if err := dns.ConfigureSystemDNSForSuffix(st.DomainSuffix, a.dnsServer.ListenIP(), a.dnsServer.ListenPort(), true, true); err != nil {
+	if err := a.syncSystemDNSAndHosts(st.DomainSuffix, true, true, true); err != nil {
 		return a.GetDomainNamespaceStatus(), err
 	}
 	return a.GetDomainNamespaceStatus(), nil
@@ -380,6 +461,12 @@ func (a *App) PrepareDeviceRDPEndpoint(deviceToken string) (*rdp.RDPEndpointInfo
 	ep, err := a.rdpOutbound.EnsureEndpointWithDomain(target.NodeID, name, target.IP, target.DeviceDomain)
 	if err != nil {
 		return nil, err
+	}
+	if ep.Domain != "" && ep.VIP != "" && ep.RecommendedTarget == ep.LocalAddr && a.dnsServer != nil {
+		_ = a.syncSystemDNSAndHosts(a.currentDomainSuffix(), true, false, false)
+		if refreshed, ok := a.rdpOutbound.RefreshEndpoint(target.NodeID); ok {
+			ep = refreshed
+		}
 	}
 	return &ep, nil
 }

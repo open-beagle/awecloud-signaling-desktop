@@ -161,11 +161,21 @@ func (s *Server) Stop() {
 	log.Printf("[DNS] 本地 DNS 服务器已停止")
 }
 
+// CanaryDomainForSuffix 返回用于端到端检测系统 DNS 是否真实路由至本地 DNS 服务的金丝雀域名
+func CanaryDomainForSuffix(suffix string) string {
+	return "_dns-check" + NormalizeManagedSuffix(suffix)
+}
+
+func isCanaryCheckDomain(domain string) bool {
+	lower := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), "."))
+	return strings.HasPrefix(lower, "_dns-check.")
+}
+
 // serve 处理 DNS 请求
 func (s *Server) serve() {
 	defer s.wg.Done()
 
-	buf := make([]byte, 512)
+	buf := make([]byte, 1500)
 	for {
 		select {
 		case <-s.stopCh:
@@ -193,8 +203,8 @@ func (s *Server) serve() {
 
 // handleQuery 处理单个 DNS 查询
 func (s *Server) handleQuery(packet []byte, remoteAddr *net.UDPAddr) {
-	// 解析查询域名
-	domain, qtype, err := parseDNSQuestion(packet)
+	// 解析查询域名与 Question 段结束偏移（剥离 EDNS0 OPT 等 Additional 段）
+	domain, qtype, questionEnd, err := parseDNSQuestion(packet)
 	if err != nil {
 		log.Printf("[DNS] 解析查询失败: %v", err)
 		return
@@ -207,19 +217,24 @@ func (s *Server) handleQuery(packet []byte, remoteAddr *net.UDPAddr) {
 	// 对所有受管后缀请求均在本地闭环响应，绝不将 AAAA / HTTPS 等查询转发至公网 DNS 造成阻塞或隐私泄露
 	if s.matchesManagedSuffix(domain) {
 		if qtype != 1 { // 非 A 记录（如 Windows 双栈并发发起的 AAAA qtype=28）直接返回 NODATA
-			resp := buildDNSNoData(packet)
+			resp := buildDNSNoData(packet, questionEnd)
+			s.conn.WriteToUDP(resp, remoteAddr)
+			return
+		}
+		if isCanaryCheckDomain(domain) {
+			resp := buildDNSResponse(packet, questionEnd, "127.0.0.1")
 			s.conn.WriteToUDP(resp, remoteAddr)
 			return
 		}
 		vip, ok := s.resolve(domain)
 		if ok {
-			resp := buildDNSResponse(packet, vip)
+			resp := buildDNSResponse(packet, questionEnd, vip)
 			s.conn.WriteToUDP(resp, remoteAddr)
 			log.Printf("[DNS] 解析: %s → %s", domain, vip)
 			return
 		}
 		// 域名未注册，返回 NXDOMAIN
-		resp := buildDNSNXDomain(packet)
+		resp := buildDNSNXDomain(packet, questionEnd)
 		s.conn.WriteToUDP(resp, remoteAddr)
 		log.Printf("[DNS] 域名未注册: %s", domain)
 		return
@@ -229,7 +244,7 @@ func (s *Server) handleQuery(packet []byte, remoteAddr *net.UDPAddr) {
 	resp, err := s.forwardToUpstream(packet)
 	if err != nil {
 		log.Printf("[DNS] 转发到上游失败: %v", err)
-		resp = buildDNSServerFailure(packet)
+		resp = buildDNSServerFailure(packet, questionEnd)
 	}
 	s.conn.WriteToUDP(resp, remoteAddr)
 }
@@ -252,7 +267,7 @@ func (s *Server) forwardToUpstream(packet []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	buf := make([]byte, 512)
+	buf := make([]byte, 1500)
 	n, err := conn.Read(buf)
 	if err != nil {
 		return nil, err
@@ -261,10 +276,10 @@ func (s *Server) forwardToUpstream(packet []byte) ([]byte, error) {
 	return buf[:n], nil
 }
 
-// parseDNSQuestion 从 DNS 报文中解析查询域名和类型
-func parseDNSQuestion(packet []byte) (string, uint16, error) {
+// parseDNSQuestion 从 DNS 报文中解析查询域名、类型和第一个 Question 结束字节偏移
+func parseDNSQuestion(packet []byte) (string, uint16, int, error) {
 	if len(packet) < 12 {
-		return "", 0, fmt.Errorf("报文太短")
+		return "", 0, 0, fmt.Errorf("报文太短")
 	}
 
 	// 跳过 DNS 头部（12 字节）
@@ -277,34 +292,60 @@ func parseDNSQuestion(packet []byte) (string, uint16, error) {
 			offset++
 			break
 		}
+		if (length & 0xc0) == 0xc0 {
+			if offset+2 > len(packet) {
+				return "", 0, 0, fmt.Errorf("压缩指针越界")
+			}
+			offset += 2
+			break
+		}
 		offset++
 		if offset+length > len(packet) {
-			return "", 0, fmt.Errorf("域名标签越界")
+			return "", 0, 0, fmt.Errorf("域名标签越界")
 		}
 		parts = append(parts, string(packet[offset:offset+length]))
 		offset += length
 	}
 
 	if offset+4 > len(packet) {
-		return "", 0, fmt.Errorf("查询类型越界")
+		return "", 0, 0, fmt.Errorf("查询类型越界")
 	}
 
 	qtype := binary.BigEndian.Uint16(packet[offset : offset+2])
+	questionEnd := offset + 4
 	domain := strings.Join(parts, ".")
 
-	return domain, qtype, nil
+	return domain, qtype, questionEnd, nil
+}
+
+// cloneHeaderAndQuestion 仅复制 DNS Header + Question 段并清零 NSCOUNT/ARCOUNT，避免 EDNS0 OPT 附加段破坏段序
+func cloneHeaderAndQuestion(query []byte, questionEnd int) []byte {
+	if questionEnd < 12 || questionEnd > len(query) {
+		questionEnd = len(query)
+	}
+	resp := make([]byte, questionEnd)
+	copy(resp, query[:questionEnd])
+	if len(resp) >= 12 {
+		resp[4] = 0x00
+		resp[5] = 0x01 // QDCOUNT=1
+		resp[6] = 0x00
+		resp[7] = 0x00 // ANCOUNT=0
+		resp[8] = 0x00
+		resp[9] = 0x00 // NSCOUNT=0
+		resp[10] = 0x00
+		resp[11] = 0x00 // ARCOUNT=0
+	}
+	return resp
 }
 
 // buildDNSResponse 构建 DNS A 记录响应
-func buildDNSResponse(query []byte, ip string) []byte {
+func buildDNSResponse(query []byte, questionEnd int, ip string) []byte {
 	parsedIP := net.ParseIP(ip).To4()
 	if parsedIP == nil {
-		return buildDNSServerFailure(query)
+		return buildDNSServerFailure(query, questionEnd)
 	}
 
-	// 复制查询报文作为响应基础
-	resp := make([]byte, len(query))
-	copy(resp, query)
+	resp := cloneHeaderAndQuestion(query, questionEnd)
 
 	// 设置响应标志
 	resp[2] = 0x81 // QR=1, Opcode=0, AA=1
@@ -329,29 +370,24 @@ func buildDNSResponse(query []byte, ip string) []byte {
 }
 
 // buildDNSNoData 构建 NODATA 响应（RCODE=0, ANCOUNT=0，用于快速结束双栈 AAAA 查询）
-func buildDNSNoData(query []byte) []byte {
-	resp := make([]byte, len(query))
-	copy(resp, query)
+func buildDNSNoData(query []byte, questionEnd int) []byte {
+	resp := cloneHeaderAndQuestion(query, questionEnd)
 	resp[2] = 0x81 // QR=1, AA=1
 	resp[3] = 0x80 // RA=1, RCODE=0 (No Error)
-	resp[6] = 0x00
-	resp[7] = 0x00 // ANCOUNT=0
 	return resp
 }
 
 // buildDNSNXDomain 构建 NXDOMAIN 响应
-func buildDNSNXDomain(query []byte) []byte {
-	resp := make([]byte, len(query))
-	copy(resp, query)
+func buildDNSNXDomain(query []byte, questionEnd int) []byte {
+	resp := cloneHeaderAndQuestion(query, questionEnd)
 	resp[2] = 0x81 // QR=1, AA=1
 	resp[3] = 0x83 // RA=1, RCODE=3 (NXDOMAIN)
 	return resp
 }
 
 // buildDNSServerFailure 构建 Server Failure 响应
-func buildDNSServerFailure(query []byte) []byte {
-	resp := make([]byte, len(query))
-	copy(resp, query)
+func buildDNSServerFailure(query []byte, questionEnd int) []byte {
+	resp := cloneHeaderAndQuestion(query, questionEnd)
 	resp[2] = 0x81 // QR=1, AA=1
 	resp[3] = 0x82 // RA=1, RCODE=2 (Server Failure)
 	return resp

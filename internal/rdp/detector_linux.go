@@ -38,3 +38,7 @@ func isLinuxTCPPortListening(port int) bool {
 	}
 	return false
 }
+
+func isPlatformTCPPortListening(targetPort int) (bool, bool) {
+	return true, isLinuxTCPPortListening(targetPort)
+}

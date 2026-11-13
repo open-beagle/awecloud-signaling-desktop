@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"syscall"
@@ -168,67 +169,151 @@ func matchNRPTPowerShellOutput(output string, targetIP string) bool {
 	return false
 }
 
+func windowsHostsFilePath() string {
+	sysRoot := strings.TrimSpace(os.Getenv("SystemRoot"))
+	if sysRoot == "" {
+		sysRoot = `C:\Windows`
+	}
+	return filepath.Join(sysRoot, "System32", "drivers", "etc", "hosts")
+}
+
+// AreManagedHostsConfigured 非提权读取系统 etc\hosts，检查是否已包含全部指定受管域名与确定性 VIP 映射
+func AreManagedHostsConfigured(entries []ManagedHostEntry) bool {
+	clean := SanitizeManagedHostEntries(entries)
+	if len(clean) == 0 {
+		return false
+	}
+	raw, err := os.ReadFile(windowsHostsFilePath())
+	if err != nil {
+		return false
+	}
+	return HasManagedHostsEntries(string(raw), clean)
+}
+
+// EnsureProxifierSuffixBypass 检测本机已有 Proxifier 配置文件并幂等补齐动态品牌后缀与本地 VIP 直连豁免（无需提权）
+func EnsureProxifierSuffixBypass(suffix string) (bool, error) {
+	if isGoTestProcess() {
+		return false, nil
+	}
+	appData := strings.TrimSpace(os.Getenv("APPDATA"))
+	if appData == "" {
+		return false, nil
+	}
+	profilesDir := filepath.Join(appData, "Proxifier4", "Profiles")
+	changed, err := EnsureProxifierSuffixBypassInDir(profilesDir, suffix)
+	if changed {
+		log.Printf("[DNS] 已自动更新本机 Proxifier 配置：补齐 %s 域名解析排除与 127.1.*.* 本地直连豁免", NormalizeManagedSuffix(suffix))
+	}
+	return changed, err
+}
+
 // ConfigureSystemDNS 兼容默认入口
 func ConfigureSystemDNS(port int) error {
 	return ConfigureSystemDNSForSuffix(".beagle", "127.0.0.2", port, true, false)
 }
 
 // ConfigureSystemDNSForSuffix 按需检测并持久化配置 Windows NRPT 域名后缀分流规则
-// 已存在匹配规则时直接静默返回（零 UAC 弹窗）；缺失时支持一次性 UAC 提权写入并跨重启持久生效
 func ConfigureSystemDNSForSuffix(suffix string, listenIP string, port int, allowElevation bool, forcePrompt bool) error {
+	return ConfigureSystemDNSWithHosts(suffix, listenIP, port, nil, allowElevation, forcePrompt)
+}
+
+// ConfigureSystemDNSWithHosts 按需检测并持久化配置 Windows NRPT 规则与受管 etc\hosts 确定性 VIP 映射
+// 当通配系统解析或受管 hosts 已就绪时静默返回（零 UAC 弹窗）；缺失时通过单次 UAC 提权原子写入 NRPT 与受管 hosts 块
+func ConfigureSystemDNSWithHosts(suffix string, listenIP string, port int, entries []ManagedHostEntry, allowElevation bool, forcePrompt bool) error {
 	if port != 53 {
 		log.Printf("[DNS] 警告: Windows NRPT 固定查询 UDP 53 端口（当前: %d）", port)
 	}
 
+	_, _ = EnsureProxifierSuffixBypass(suffix)
+
 	ns := NormalizeManagedSuffix(suffix)
 	ip := normalizeLoopbackDNSIP(listenIP)
+	cleanEntries := SanitizeManagedHostEntries(entries)
 
-	if IsSystemDNSConfigured(ns, ip) {
-		log.Printf("[DNS] Windows NRPT 策略已就绪: %s -> %s:53", ns, ip)
-		return nil
+	nrptReady := IsSystemDNSConfigured(ns, ip)
+	wildcardReady := nrptReady && VerifySystemDNSResolution(ns)
+	hostsReady := len(cleanEntries) > 0 && AreManagedHostsConfigured(cleanEntries)
+
+	if !forcePrompt {
+		if wildcardReady {
+			log.Printf("[DNS] Windows NRPT 与系统动态解析已就绪: %s -> %s:53", ns, ip)
+			return nil
+		}
+		if nrptReady && (hostsReady || len(cleanEntries) == 0) {
+			log.Printf("[DNS] Windows NRPT 策略已就绪: %s -> %s:53 (hostsReady=%v)", ns, ip, hostsReady)
+			return nil
+		}
+	}
+
+	if isGoTestProcess() {
+		return fmt.Errorf("测试环境跳过系统 NRPT/hosts 写入 (%s -> %s)", ns, ip)
 	}
 
 	suffixes := []string{ns}
 	if ns != ".beagle" {
 		suffixes = append(suffixes, ".beagle")
 	}
-	script := buildNRPTUpsertScript(suffixes, ip)
+	script := buildNRPTAndHostsUpsertScript(suffixes, ip, cleanEntries)
+
+	isFullyApplied := func() bool {
+		if !IsSystemDNSConfigured(ns, ip) {
+			return false
+		}
+		if len(cleanEntries) > 0 && !AreManagedHostsConfigured(cleanEntries) {
+			return false
+		}
+		return true
+	}
 
 	// 1. 先尝试直接执行（若当前进程已具备管理员权限可静默成功）
 	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand", encodeCommandForPowerShell(script))
 	cmd.SysProcAttr = hiddenProcAttr
-	if _, err := cmd.CombinedOutput(); err == nil && IsSystemDNSConfigured(ns, ip) {
-		log.Printf("[DNS] Windows NRPT 规则已直接写入: %s -> %s:53", ns, ip)
+	if _, err := cmd.CombinedOutput(); err == nil && isFullyApplied() {
+		log.Printf("[DNS] Windows NRPT 与受管 hosts 规则已直接写入: %s -> %s:53 (hosts=%d)", ns, ip, len(cleanEntries))
 		return nil
 	}
 
-	// 2. 若允许一次性 UAC 提权（且非单测进程），拉起 ShellExecuteExW("runas") 持久化注册
-	if !allowElevation || isGoTestProcess() {
-		return fmt.Errorf("NRPT 规则 %s -> %s 尚未配置（需要管理员授权）", ns, ip)
+	// 2. 若允许一次性 UAC 提权，拉起 ShellExecuteExW("runas") 持久化注册
+	if !allowElevation {
+		return fmt.Errorf("系统域名解析规则 %s -> %s 尚未配置（需要管理员授权）", ns, ip)
 	}
 
-	promptKey := ns + "@" + ip
+	promptKey := buildPromptDedupeKey(ns, ip, cleanEntries)
 	nrptPromptMu.Lock()
 	alreadyPrompted := nrptPromptedKeySet[promptKey]
 	if alreadyPrompted && !forcePrompt {
 		nrptPromptMu.Unlock()
-		return fmt.Errorf("NRPT 规则 %s -> %s 尚未启用", ns, ip)
+		return fmt.Errorf("系统域名解析规则 %s -> %s 尚未启用", ns, ip)
 	}
 	nrptPromptedKeySet[promptKey] = true
 	nrptPromptMu.Unlock()
 
 	if err := runPowerShellElevated(script); err != nil {
-		return fmt.Errorf("提权写入 NRPT 规则失败: %w", err)
+		return fmt.Errorf("提权写入系统域名解析规则失败: %w", err)
 	}
-	if !IsSystemDNSConfigured(ns, ip) {
-		return fmt.Errorf("提权完成后未检测到生效的 NRPT 规则 (%s -> %s)", ns, ip)
+	if !isFullyApplied() {
+		return fmt.Errorf("提权完成后未检测到生效的系统域名解析规则 (%s -> %s)", ns, ip)
 	}
 
-	log.Printf("[DNS] Windows NRPT 持久化规则已通过一次性授权生效: %s -> %s:53", ns, ip)
+	log.Printf("[DNS] Windows NRPT 与受管 hosts 持久化规则已通过一次性授权生效: %s -> %s:53 (hosts=%d)", ns, ip, len(cleanEntries))
 	return nil
 }
 
-// CleanupSystemDNS 在 Windows 上保持空操作，使 NRPT 后缀规则跨重启持久保留，彻底避免每次启动重复弹出 UAC
+func buildPromptDedupeKey(ns string, ip string, entries []ManagedHostEntry) string {
+	var b strings.Builder
+	b.WriteString(ns)
+	b.WriteByte('@')
+	b.WriteString(ip)
+	for _, item := range entries {
+		b.WriteByte('|')
+		b.WriteString(item.Domain)
+		b.WriteByte('=')
+		b.WriteString(item.IP)
+	}
+	return b.String()
+}
+
+// CleanupSystemDNS 在 Windows 上保持空操作，使 NRPT 后缀规则与受管确定性 hosts 跨重启持久保留，彻底避免每次启动重复弹出 UAC
 func CleanupSystemDNS() error {
 	return nil
 }
@@ -244,12 +329,48 @@ func normalizeLoopbackDNSIP(raw string) string {
 }
 
 func buildNRPTUpsertScript(suffixes []string, ip string) string {
+	return buildNRPTAndHostsUpsertScript(suffixes, ip, nil)
+}
+
+func buildNRPTAndHostsUpsertScript(suffixes []string, ip string, entries []ManagedHostEntry) string {
+	cleanEntries := SanitizeManagedHostEntries(entries)
 	var b strings.Builder
 	b.WriteString("$ProgressPreference = 'SilentlyContinue'\n")
 	for _, s := range suffixes {
 		ns := NormalizeManagedSuffix(s)
 		fmt.Fprintf(&b, "Get-DnsClientNrptRule -ErrorAction SilentlyContinue | Where-Object { $_.Namespace -contains '%s' -or $_.Namespace -eq '%s' } | Remove-DnsClientNrptRule -Force -ErrorAction SilentlyContinue\n", ns, ns)
 		fmt.Fprintf(&b, "Add-DnsClientNrptRule -Namespace '%s' -NameServers '%s' -ErrorAction Stop | Out-Null\n", ns, ip)
+	}
+	if len(cleanEntries) > 0 {
+		var block strings.Builder
+		block.WriteString(ManagedHostsBeginMarker + "\r\n")
+		for _, item := range cleanEntries {
+			block.WriteString(item.IP + "\t" + item.Domain + "\r\n")
+		}
+		block.WriteString(ManagedHostsEndMarker + "\r\n")
+		blockB64 := base64.StdEncoding.EncodeToString([]byte(block.String()))
+
+		b.WriteString("$hostsPath = Join-Path $env:SystemRoot 'System32\\drivers\\etc\\hosts'\n")
+		b.WriteString("$existingHosts = ''\n")
+		b.WriteString("if (Test-Path -LiteralPath $hostsPath) {\n")
+		b.WriteString("    $existingHosts = [System.IO.File]::ReadAllText($hostsPath, [System.Text.Encoding]::UTF8)\n")
+		b.WriteString("}\n")
+		b.WriteString("$hostLines = $existingHosts -replace \"`r`n\", \"`n\" -split \"`n\"\n")
+		b.WriteString("$keptLines = New-Object System.Collections.Generic.List[string]\n")
+		b.WriteString("$inManaged = $false\n")
+		b.WriteString("foreach ($ln in $hostLines) {\n")
+		b.WriteString("    $tr = $ln.Trim()\n")
+		fmt.Fprintf(&b, "    if ($tr -eq '%s') { $inManaged = $true; continue }\n", ManagedHostsBeginMarker)
+		fmt.Fprintf(&b, "    if ($tr -eq '%s') { $inManaged = $false; continue }\n", ManagedHostsEndMarker)
+		b.WriteString("    if (-not $inManaged) { $keptLines.Add($ln) }\n")
+		b.WriteString("}\n")
+		b.WriteString("while ($keptLines.Count -gt 0 -and [string]::IsNullOrWhiteSpace($keptLines[$keptLines.Count - 1])) {\n")
+		b.WriteString("    $keptLines.RemoveAt($keptLines.Count - 1)\n")
+		b.WriteString("}\n")
+		fmt.Fprintf(&b, "$managedBlock = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s'))\n", blockB64)
+		b.WriteString("$prefixText = ''\n")
+		b.WriteString("if ($keptLines.Count -gt 0) { $prefixText = ($keptLines -join \"`r`n\") + \"`r`n`r`n\" }\n")
+		b.WriteString("[System.IO.File]::WriteAllText($hostsPath, ($prefixText + $managedBlock), (New-Object System.Text.UTF8Encoding($false)))\n")
 	}
 	b.WriteString("Clear-DnsClientCache -ErrorAction SilentlyContinue\n")
 	return b.String()

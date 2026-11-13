@@ -402,10 +402,10 @@ func (a *App) initializeZTNA() error {
 		return fmt.Errorf("启动 DNS 服务器失败: %w", err)
 	}
 
-	// 4. 配置系统 DNS（将动态品牌后缀与 .beagle 指向本地 DNS 监听地址；已存在 NRPT 规则时零弹窗）
-	if err := dns.ConfigureSystemDNSForSuffix(activeSuffix, a.dnsServer.ListenIP(), a.dnsServer.ListenPort(), true, false); err != nil {
+	// 4. 配置系统 DNS 与确定性受管 hosts（支持 Proxifier 自动旁路；通配系统解析或受管 hosts 已就绪时零弹窗）
+	if err := a.syncSystemDNSAndHosts(activeSuffix, true, false, true); err != nil {
 		log.Printf("[App] Warning: 系统 DNS 配置暂未就绪: %v", err)
-		// 不返回错误，前端可一键触发启用或自动降级本地无冲突端口
+		// 不返回错误，前端可一键触发启用或点击远程桌面时自动同步恢复
 	}
 
 	log.Printf("[App] ZTNA 网络栈已就绪（DNS=%s, suffix=%s）", a.dnsServer.ListenAddr(), activeSuffix)

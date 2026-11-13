@@ -19,6 +19,21 @@ func IsSystemDNSConfigured(_ string, _ string) bool {
 	return false
 }
 
+// AreManagedHostsConfigured 默认平台返回 false
+func AreManagedHostsConfigured(_ []ManagedHostEntry) bool {
+	return false
+}
+
+// EnsureProxifierSuffixBypass 默认平台空操作
+func EnsureProxifierSuffixBypass(_ string) (bool, error) {
+	return false, nil
+}
+
+// ConfigureSystemDNSWithHosts 默认平台转发至 ConfigureSystemDNSForSuffix
+func ConfigureSystemDNSWithHosts(suffix string, listenIP string, port int, _ []ManagedHostEntry, allowElevation bool, forcePrompt bool) error {
+	return ConfigureSystemDNSForSuffix(suffix, listenIP, port, allowElevation, forcePrompt)
+}
+
 // ConfigureSystemDNS 配置系统 DNS
 func ConfigureSystemDNS(port int) error {
 	return ConfigureSystemDNSForSuffix(".beagle", "127.0.0.2", port, false, false)

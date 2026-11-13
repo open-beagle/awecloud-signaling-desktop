@@ -295,6 +295,21 @@ func (m *OutboundManager) EnsureEndpointWithDomain(nodeID uint64, deviceName str
 	return info, nil
 }
 
+// RefreshEndpoint 在系统 DNS / hosts 完成自愈同步后重新核验并返回指定节点的最新推荐连接地址
+func (m *OutboundManager) RefreshEndpoint(nodeID uint64) (RDPEndpointInfo, bool) {
+	m.mu.RLock()
+	route, ok := m.routesByNode[nodeID]
+	m.mu.RUnlock()
+	if !ok || route == nil {
+		return RDPEndpointInfo{}, false
+	}
+	route.touch(m.nowFunc())
+	info := m.routeToEndpointInfo(route)
+	log.Printf("[RDP Outbound] 已刷新本地远程桌面入口: target=%s (local=%s, domain=%s, vip=%s:%d)",
+		info.RecommendedTarget, info.LocalAddr, info.Domain, info.VIP, info.VIPPort)
+	return info, true
+}
+
 func (m *OutboundManager) routeToEndpointInfo(r *outboundRoute) RDPEndpointInfo {
 	localAddr := fmt.Sprintf("127.0.0.1:%d", r.localPort)
 	recommended := localAddr
@@ -322,16 +337,20 @@ func defaultOSVerifyDomainVIP(domain string, expectedVIP string) bool {
 	if domain == "" || expectedVIP == "" {
 		return false
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
-	defer cancel()
 	resolver := &net.Resolver{PreferGo: false}
-	ips, err := resolver.LookupIPAddr(ctx, domain)
-	if err != nil {
-		return false
-	}
-	for _, item := range ips {
-		if item.IP != nil && item.IP.String() == expectedVIP {
-			return true
+	for attempt := 0; attempt < 2; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
+		ips, err := resolver.LookupIPAddr(ctx, domain)
+		cancel()
+		if err == nil {
+			for _, item := range ips {
+				if item.IP != nil && item.IP.String() == expectedVIP {
+					return true
+				}
+			}
+		}
+		if attempt == 0 {
+			time.Sleep(40 * time.Millisecond)
 		}
 	}
 	return false

@@ -693,7 +693,8 @@ const loadLocalStatus = async () => {
 };
 
 const refreshAll = async () => {
-  await Promise.all([loadDevices(), loadLocalStatus(), loadPeerLinks()]);
+  await loadDevices();
+  await Promise.all([loadLocalStatus(), loadPeerLinks()]);
 };
 
 const getPeerLinkBadge = (
@@ -899,6 +900,7 @@ const handleEditHostDomainLabel = async (device: DeviceInfo) => {
       }),
     );
     applyUpdatedDevice(updated);
+    await loadLocalStatus();
     ElMessage.success(
       `设备域名已更新为 ${updated?.device_domain || value + suffixPreview}`,
     );
@@ -977,6 +979,7 @@ const handleConnectRDP = async (device: DeviceInfo) => {
   try {
     const result = await ConnectDeviceRDP(device.device_token);
     if (!result) return;
+    void loadLocalStatus();
     setTimeout(() => {
       loadPeerLinks();
     }, 1500);
@@ -1013,6 +1016,7 @@ const handleCopyRDPEndpoint = async (device: DeviceInfo) => {
   try {
     const endpoint = await PrepareDeviceRDPEndpoint(device.device_token);
     if (!endpoint) return;
+    void loadLocalStatus();
     const target = endpoint.recommended_target || endpoint.local_addr;
     await copyText(target);
     ElMessage.success(`已准备并复制连接地址：${target}`);

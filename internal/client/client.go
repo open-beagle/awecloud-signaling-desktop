@@ -903,6 +903,18 @@ func (c *DesktopClient) GetMyDevices() ([]*DeviceInfo, error) {
 	return devices, nil
 }
 
+// GetCachedDevices 返回最近一次缓存的设备列表副本（零网络阻塞）
+func (c *DesktopClient) GetCachedDevices() []*DeviceInfo {
+	c.cacheMutex.RLock()
+	defer c.cacheMutex.RUnlock()
+	if len(c.cachedDevices) == 0 {
+		return nil
+	}
+	out := make([]*DeviceInfo, len(c.cachedDevices))
+	copy(out, c.cachedDevices)
+	return out
+}
+
 // RDPSessionAuditEvent 远程桌面入站审计事件上报载体
 type RDPSessionAuditEvent struct {
 	SessionUUID           string
