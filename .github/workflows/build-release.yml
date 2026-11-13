@@ -160,11 +160,16 @@ jobs:
           ARTIFACT_BASE_URL: https://cache.ali.wodcloud.com/vscode/awecloud-signaling
         run: bash ./scripts/build.sh
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+
       - name: Setup MinIO Client
         run: |
-          curl -fsSLo mc https://dl.min.io/client/mc/release/linux-amd64/mc
-          chmod +x mc
-          sudo mv mc /usr/local/bin/
+          go install github.com/minio/mc@latest
+          sudo cp "$(go env GOPATH)/bin/mc" /usr/local/bin/mc
 
       - name: Publish artifacts
         env:
